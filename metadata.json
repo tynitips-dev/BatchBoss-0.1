@@ -1,0 +1,6 @@
+{
+  "name": "BatchBoss",
+  "description": "Bakery costing, recipe pricing, profit analysis, tasks, inventory alerts and supplier management for bakers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
