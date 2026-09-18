@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -40,9 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.QuoteEntity
 import com.example.data.local.UserProfileEntity
+import com.example.ui.components.BatchBossEmblem
 import com.example.ui.theme.*
 import com.example.ui.util.PdfGenerator
 
@@ -126,6 +130,7 @@ fun EditBusinessBrandingDialog(
     }
 
     val presetLogoEmblems = listOf(
+        "BatchBoss Emblem" to "emblem_batchboss",
         "Chef Toque" to "emblem_chef",
         "Artisan Cake" to "emblem_cake",
         "Golden Whisk" to "emblem_whisk",
@@ -190,9 +195,14 @@ fun EditBusinessBrandingDialog(
                                             "emblem_whisk" -> Icons.Outlined.AutoAwesome
                                             "emblem_cupcake" -> Icons.Outlined.Cookie
                                             "emblem_bread" -> Icons.Outlined.BakeryDining
-                                            else -> Icons.Outlined.Storefront
+                                            "emblem_chef" -> Icons.Outlined.Storefront
+                                            else -> null
                                         }
-                                        Icon(icon, contentDescription = null, tint = BatchPink, modifier = Modifier.size(28.dp))
+                                        if (icon != null) {
+                                            Icon(icon, contentDescription = null, tint = BatchPink, modifier = Modifier.size(28.dp))
+                                        } else {
+                                            BatchBossEmblem(size = 46)
+                                        }
                                     }
                                 }
                             }
@@ -242,7 +252,7 @@ fun EditBusinessBrandingDialog(
                     value = bakeryName,
                     onValueChange = { bakeryName = it; errorMessage = null },
                     label = { Text("Bakery / Business Name *") },
-                    placeholder = { Text("e.g. Tyne's Artisan Bakery") },
+                    placeholder = { Text("e.g. Example Bakery Name") },
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth().testTag("input_business_name")
@@ -446,15 +456,7 @@ fun SendableInvoiceDialog(
                                     .border(1.5.dp, BatchPink, CircleShape)
                             )
                         } else {
-                            Surface(
-                                shape = CircleShape,
-                                color = BatchPinkLight,
-                                modifier = Modifier.size(42.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.Storefront, contentDescription = null, tint = BatchPink, modifier = Modifier.size(22.dp))
-                                }
-                            }
+                            BatchBossEmblem(size = 42)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -724,24 +726,36 @@ fun SendableQuoteDialog(
 
     val formattedShareText = remember(quote, biz) {
         buildString {
-            appendLine("📋 OFFICIAL QUOTE & ESTIMATE - ${biz.bakeryName.uppercase()}")
+            appendLine("📋 OFFICIAL ${quote.docType.uppercase()} - ${biz.bakeryName.uppercase()}")
             appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            appendLine("Quote No: ${quote.quoteNumber}")
+            appendLine("${quote.docType} No: ${quote.quoteNumber}")
             appendLine("Event Type: ${quote.eventType}")
             appendLine("Event Date: ${quote.eventDate}")
             appendLine("Status: ${quote.status.uppercase()}")
             appendLine()
             appendLine("👤 PREPARED FOR:")
-            appendLine("${quote.clientName}")
+            appendLine(quote.clientName)
             if (quote.clientPhone.isNotBlank()) appendLine("Phone: ${quote.clientPhone}")
             appendLine()
-            appendLine("🎂 ITEM & SPECIFICATIONS:")
-            appendLine("${quote.recipeOrItemName}")
+            if (quote.items.isNotEmpty()) {
+                appendLine("📦 LINE ITEMS:")
+                quote.items.forEach { item ->
+                    val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
+                    appendLine("• ${item.itemName} x$qtyStr (${item.unit}) @ R${String.format("%,.2f", item.unitPrice)} = R${String.format("%,.2f", item.lineTotal)}")
+                }
+                appendLine()
+                if (quote.subtotal > 0) appendLine("Subtotal: R${String.format("%,.2f", quote.subtotal)}")
+                if (quote.discountAmount > 0) appendLine("Discount: -R${String.format("%,.2f", quote.discountAmount)}")
+                if (quote.taxAmount > 0) appendLine("VAT (15%): R${String.format("%,.2f", quote.taxAmount)}")
+            } else {
+                appendLine("🎂 ITEM & SPECIFICATIONS:")
+                appendLine(quote.recipeOrItemName)
+            }
             appendLine()
-            appendLine("💵 QUOTED TOTAL: R${String.format("%,.2f", quote.quotedPrice)}")
+            appendLine("💵 TOTAL ${quote.docType.uppercase()}: R${String.format("%,.2f", quote.quotedPrice)}")
             appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             appendLine("📌 ACCEPTANCE & DEPOSIT INSTRUCTIONS:")
-            appendLine("A 50% deposit secures your order on our baking schedule.")
+            appendLine("A 50% deposit (R${String.format("%,.2f", quote.quotedPrice * 0.5)}) secures your order.")
             appendLine("Bank: ${biz.bankName}")
             appendLine("Account: ${biz.accountNumber}")
             appendLine("Branch Code: ${biz.branchCode}")
@@ -786,15 +800,7 @@ fun SendableQuoteDialog(
                                     .border(1.5.dp, BatchPink, CircleShape)
                             )
                         } else {
-                            Surface(
-                                shape = CircleShape,
-                                color = AmberLight,
-                                modifier = Modifier.size(42.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.ReceiptLong, contentDescription = null, tint = WarmAmber, modifier = Modifier.size(22.dp))
-                                }
-                            }
+                            BatchBossEmblem(size = 42)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -873,17 +879,76 @@ fun SendableQuoteDialog(
                             }
                         }
 
-                        // Item details
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text("Cake / Baked Item Specifications", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LightText)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(quote.recipeOrItemName, fontSize = 12.sp, color = DarkText)
+                        // Item details & line items
+                        if (quote.items.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("Line Items", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LightText)
+                                    quote.items.forEach { item ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
+                                            Text(
+                                                text = "${item.itemName} x$qtyStr (${item.unit})",
+                                                fontSize = 12.sp,
+                                                color = DarkText,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Text(
+                                                text = "R${String.format("%,.2f", item.lineTotal)}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = DarkText
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (quote.subtotal > 0 || quote.discountAmount > 0 || quote.taxAmount > 0) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    if (quote.subtotal > 0) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("Subtotal", fontSize = 11.sp, color = MediumText)
+                                            Text("R${String.format("%,.2f", quote.subtotal)}", fontSize = 11.sp, color = DarkText)
+                                        }
+                                    }
+                                    if (quote.discountAmount > 0) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("Discount", fontSize = 11.sp, color = MintGreen)
+                                            Text("-R${String.format("%,.2f", quote.discountAmount)}", fontSize = 11.sp, color = MintGreen)
+                                        }
+                                    }
+                                    if (quote.taxAmount > 0) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("VAT (15%)", fontSize = 11.sp, color = MediumText)
+                                            Text("R${String.format("%,.2f", quote.taxAmount)}", fontSize = 11.sp, color = DarkText)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("Cake / Baked Item Specifications", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LightText)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(quote.recipeOrItemName, fontSize = 12.sp, color = DarkText)
+                                }
                             }
                         }
 
@@ -893,7 +958,7 @@ fun SendableQuoteDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Quoted Price:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("Total ${quote.docType}:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
                             Text(
                                 text = "R${String.format("%,.2f", quote.quotedPrice)}",
                                 fontSize = 18.sp,

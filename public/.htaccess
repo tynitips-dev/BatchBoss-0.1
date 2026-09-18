@@ -1,0 +1,17 @@
+# Hetzner Web Hosting (konsoleH / Apache) Configuration for batchboss.co.za
+RewriteEngine On
+
+# 1. Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# 2. Allow clean URL /delete-account to serve delete-account.html
+RewriteRule ^delete-account/?$ delete-account.html [L,QSA]
+RewriteRule ^data-deletion/?$ data-deletion.html [L,QSA]
+
+# 3. Security Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>

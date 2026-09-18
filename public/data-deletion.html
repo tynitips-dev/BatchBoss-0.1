@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatchBoss™ - Account & Data Deletion Request</title>
+  <style>
+    :root {
+      --primary: #E91E63;
+      --primary-dark: #C2185B;
+      --primary-light: #FCE4EC;
+      --text-dark: #1E293B;
+      --text-muted: #64748B;
+      --border: #E2E8F0;
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --danger: #DC2626;
+      --success: #16A34A;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text-dark);
+      line-height: 1.6;
+      padding: 24px 16px 48px;
+    }
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .badge {
+      display: inline-block;
+      background-color: var(--primary-light);
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--text-dark);
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .card h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text-dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    p, li {
+      font-size: 14px;
+      color: #334155;
+    }
+    ul {
+      margin-left: 20px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+    }
+    li {
+      margin-bottom: 6px;
+    }
+    .highlight-box {
+      background-color: #FEF2F2;
+      border-left: 4px solid var(--danger);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-top: 14px;
+    }
+    .highlight-box p {
+      color: #991B1B;
+      font-size: 13px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text-dark);
+    }
+    input[type="text"], input[type="email"], select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      background: #FFFFFF;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-top: 16px;
+      margin-bottom: 20px;
+    }
+    .checkbox-group input {
+      margin-top: 3px;
+    }
+    .checkbox-group label {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-dark);
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      background-color: var(--danger);
+      color: #FFFFFF;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background-color 0.2s;
+    }
+    .btn:hover {
+      background-color: #B91C1C;
+    }
+    .btn-secondary {
+      background-color: #F1F5F9;
+      color: var(--text-dark);
+      margin-top: 10px;
+    }
+    .btn-secondary:hover {
+      background-color: #E2E8F0;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 32px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .footer p {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .contact-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .success-message {
+      display: none;
+      background-color: #F0FDF4;
+      border: 1px solid #BBF7D0;
+      color: #166534;
+      padding: 16px;
+      border-radius: 12px;
+      text-align: center;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">Google Play Data Safety Compliance</span>
+      <h1>BatchBoss™ Account & Data Deletion</h1>
+      <p class="subtitle">Request complete removal of your account, bakery records, and associated data.</p>
+    </div>
+
+    <!-- Overview Card -->
+    <div class="card">
+      <h2>How Data Deletion Works</h2>
+      <p>Under Google Play Developer Policy and our privacy commitments, BatchBoss provides users with full autonomy over their personal and bakery data. You can delete your account and all associated data through two methods:</p>
+      
+      <div style="margin-top: 14px;">
+        <strong>Method 1: Instant In-App Deletion (Recommended)</strong>
+        <p style="margin-top: 4px;">Open the <strong>BatchBoss</strong> app &gt; navigate to <strong>More</strong> &gt; tap <strong>Account & Data Deletion</strong> &gt; tap <strong>Delete My Account & Data Immediately</strong>. Your data is instantly and permanently wiped from your device and local storage.</p>
+      </div>
+
+      <div style="margin-top: 14px;">
+        <strong>Method 2: Web Deletion Request Form</strong>
+        <p style="margin-top: 4px;">Submit the form below or email us directly at <a href="mailto:info@batchboss.co.za?subject=Account%20and%20Data%20Deletion%20Request" class="contact-link">info@batchboss.co.za</a>. Our administrative team will process the deletion within <strong>48 hours</strong>.</p>
+      </div>
+    </div>
+
+    <!-- Data Scope Card -->
+    <div class="card">
+      <h2>Data Types Subject to Deletion</h2>
+      <p>When you request deletion of your BatchBoss account, the following data categories will be permanently removed:</p>
+      <ul>
+        <li><strong>User Profile:</strong> Name, email address, bakery name, phone number, operating model, location, and authentication credentials.</li>
+        <li><strong>Bakery Recipes & Formulas:</strong> All created recipes, ingredient ratios, batch sizes, cost calculations, and pricing margins.</li>
+        <li><strong>Inventory & Stock:</strong> Ingredient stock levels, unit purchase prices, low-stock thresholds, and custom suppliers.</li>
+        <li><strong>Financial Records:</strong> Quotes, invoices, custom line items, tax settings, and profit calculations.</li>
+        <li><strong>Customer Directory:</strong> Client names, phone numbers, delivery addresses, notes, and order histories.</li>
+        <li><strong>Audit & Login Logs:</strong> Device logs, session records, and task lists.</li>
+      </ul>
+
+      <div class="highlight-box">
+        <p><strong>Notice on Data Retention:</strong> Once deleted, your account and recipes cannot be recovered. Data required to be retained under statutory financial or tax laws (e.g. issued fiscal invoices) will be kept only as strictly mandated by law.</p>
+      </div>
+    </div>
+
+    <!-- Web Request Form Card -->
+    <div class="card">
+      <h2>Submit Online Deletion Request</h2>
+      <form id="deletionForm" onsubmit="handleFormSubmit(event)">
+        <div class="form-group">
+          <label for="email">Account Email Address *</label>
+          <input type="email" id="email" name="email" required placeholder="e.g. baker@mybakery.com">
+        </div>
+
+        <div class="form-group">
+          <label for="bakeryName">Bakery Name (Optional)</label>
+          <input type="text" id="bakeryName" name="bakeryName" placeholder="e.g. Sweet Treats Bakery">
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone / WhatsApp Number</label>
+          <input type="text" id="phone" name="phone" placeholder="+27 78 141 3985">
+        </div>
+
+        <div class="form-group">
+          <label for="reason">Reason for Deletion (Optional)</label>
+          <select id="reason" name="reason">
+            <option value="closing_bakery">Closing or pausing bakery operations</option>
+            <option value="switching_app">Switching to another system</option>
+            <option value="data_privacy">Privacy concerns / Data removal</option>
+            <option value="no_longer_needed">No longer baking</option>
+            <option value="other">Other reason</option>
+          </select>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="confirm" required>
+          <label for="confirm">I understand that submitting this request will permanently delete my BatchBoss account, recipes, ingredients, and invoices, and that this action cannot be undone.</label>
+        </div>
+
+        <button type="submit" class="btn">Submit Account & Data Deletion Request</button>
+      </form>
+
+      <div id="successMessage" class="success-message">
+        <h3>Deletion Request Received</h3>
+        <p style="margin-top: 6px;">We have logged your request for account: <strong id="submittedEmail"></strong>.</p>
+        <p style="margin-top: 6px;">Your data deletion will be processed within 48 hours. A confirmation email will be sent upon completion.</p>
+      </div>
+    </div>
+
+    <!-- Support Contacts Card -->
+    <div class="card">
+      <h2>Direct Support & Questions</h2>
+      <p>If you have any questions or need assistance regarding your data:</p>
+      <ul style="margin-top: 10px;">
+        <li><strong>Email:</strong> <a href="mailto:info@batchboss.co.za" class="contact-link">info@batchboss.co.za</a></li>
+        <li><strong>WhatsApp Support:</strong> <a href="https://wa.me/27781413985" class="contact-link">+27 78 141 3985</a></li>
+        <li><strong>Developer:</strong> Tada Innovations (Pty) Ltd</li>
+      </ul>
+    </div>
+
+    <div class="footer">
+      <p><strong>© 2026 Tada Innovations (Pty) Ltd. All rights reserved.</strong></p>
+      <p>BatchBoss™ is a trademark of Tada Innovations (Pty) Ltd.</p>
+      <p style="margin-top: 6px;">URL for Google Play Data Safety: <code>https://batchboss.co.za/delete-account</code></p>
+    </div>
+  </div>
+
+  <script>
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      document.getElementById('submittedEmail').innerText = email;
+      document.getElementById('deletionForm').style.display = 'none';
+      document.getElementById('successMessage').style.display = 'block';
+    }
+  </script>
+
+</body>
+</html>

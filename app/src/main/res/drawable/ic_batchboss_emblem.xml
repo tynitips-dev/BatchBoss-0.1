@@ -1,0 +1,138 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="500"
+    android:viewportHeight="500">
+
+    <!-- Background circle / container if needed; transparent by default -->
+
+    <!-- Accent Dots on Left Outer Ring -->
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 100,210 m -7,0 a 7,7 0 1,0 14,0 a 7,7 0 1,0 -14,0" />
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 90,245 m -7.5,0 a 7.5,7.5 0 1,0 15,0 a 7.5,7.5 0 1,0 -15,0" />
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 92,280 m -7,0 a 7,7 0 1,0 14,0 a 7,7 0 1,0 -14,0" />
+
+    <!-- Outer Circle Ring Segments (Navy #1B2533) -->
+    <!-- Left-to-bottom arc -->
+    <path
+        android:strokeColor="#1B2533"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 180,145 A 170,170 0 0,0 80,265 A 170,170 0 0,0 150,385" />
+    <!-- Bottom-to-right arc -->
+    <path
+        android:strokeColor="#1B2533"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 195,410 A 170,170 0 0,0 330,405" />
+    <!-- Top-right arc -->
+    <path
+        android:strokeColor="#1B2533"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 315,145 A 170,170 0 0,1 395,210" />
+    <path
+        android:strokeColor="#1B2533"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 412,280 A 170,170 0 0,1 385,340" />
+
+    <!-- Letter B (Navy #1B2533) -->
+    <path
+        android:fillColor="#1B2533"
+        android:pathData="M 172,175 L 255,175 C 292,175 315,192 315,225 C 315,248 300,265 278,272 C 308,280 326,302 326,338 C 326,375 298,395 252,395 L 172,395 Z" />
+    <!-- Upper Hole in B -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 208,206 L 246,206 C 268,206 280,214 280,228 C 280,243 268,252 246,252 L 208,252 Z" />
+    <!-- Lower Hole in B -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 208,284 L 252,284 C 277,284 290,294 290,314 C 290,335 275,348 250,348 L 208,348 Z" />
+
+    <!-- Chef Hat Base Band -->
+    <path
+        android:strokeColor="#F04C7D"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 188,170 C 218,164 252,163 288,170" />
+
+    <!-- Chef Hat Puffs (White fill, Pink stroke) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#F04C7D"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 182,170 C 168,150 142,132 156,106 C 170,80 198,84 212,100 C 222,70 258,55 282,75 C 302,90 298,115 310,118 C 330,122 335,152 318,170 Z" />
+
+    <!-- 4 Growth Bar Chart Columns (Pink #F04C7D) -->
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 330,300 h 16 v 60 h -16 z" />
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 352,280 h 16 v 80 h -16 z" />
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 374,258 h 16 v 102 h -16 z" />
+    <path
+        android:fillColor="#F04C7D"
+        android:pathData="M 396,236 h 16 v 124 h -16 z" />
+
+    <!-- Trendline Arrow -->
+    <path
+        android:strokeColor="#1B2533"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 324,272 L 350,248 L 375,264 L 416,204" />
+    <!-- Arrowhead -->
+    <path
+        android:fillColor="#1B2533"
+        android:pathData="M 388,202 L 424,198 L 420,234 Z" />
+
+    <!-- Whisk Wires (White fill, Navy outline) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#1B2533"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M 215,315 C 235,280 265,248 285,225 C 275,250 250,285 228,330 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1B2533"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M 212,322 C 230,290 255,260 278,235" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1B2533"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M 222,310 C 240,280 262,255 282,238" />
+
+    <!-- Whisk Handle (Pink #F04C7D capsule) -->
+    <path
+        android:strokeColor="#F04C7D"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 205,335 L 155,395" />
+    <!-- Whisk Eyelet Hole (White) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 155,395 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" />
+
+</vector>

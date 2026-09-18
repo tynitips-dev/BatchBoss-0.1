@@ -1,12 +1,17 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -17,24 +22,53 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import com.example.data.local.LineItem
+import com.example.data.local.ProductServiceEntity
 import com.example.data.local.QuoteEntity
 import com.example.data.local.UserProfileEntity
 import com.example.ui.theme.*
-import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.border
+import java.text.NumberFormat
+import java.util.Locale
+
+private fun formatZar(amount: Double): String {
+    val format = NumberFormat.getCurrencyInstance(Locale("en", "ZA"))
+    return format.format(amount).replace("ZAR", "R").trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuotesListScreen(
     quotes: List<QuoteEntity>,
+    products: List<ProductServiceEntity> = emptyList(),
     onBack: () -> Unit,
-    onCreateQuote: (clientName: String, phone: String, eventType: String, eventDate: String, itemName: String, cost: Double, margin: Double, quotedPrice: Double, status: String) -> Unit,
+    onCreateQuote: (
+        clientName: String,
+        phone: String,
+        eventType: String,
+        eventDate: String,
+        itemName: String,
+        cost: Double,
+        margin: Double,
+        quotedPrice: Double,
+        status: String,
+        docType: String,
+        subtotal: Double,
+        discountAmount: Double,
+        taxRatePercent: Double,
+        taxAmount: Double,
+        items: List<LineItem>
+    ) -> Unit,
+    onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
+    onNavigateToProducts: (() -> Unit)? = null,
     onUpdateStatus: (id: Long, status: String) -> Unit,
     onConvertToInvoice: (QuoteEntity) -> Unit,
     onDeleteQuote: (id: Long) -> Unit,
@@ -113,6 +147,11 @@ fun QuotesListScreen(
                     }
                 },
                 actions = {
+                    if (onNavigateToProducts != null) {
+                        IconButton(onClick = onNavigateToProducts, modifier = Modifier.testTag("btn_goto_products_quotes")) {
+                            Icon(Icons.Outlined.LocalOffer, contentDescription = "Products & Services", tint = DarkText)
+                        }
+                    }
                     IconButton(onClick = { showBrandingDialog = true }, modifier = Modifier.testTag("btn_business_branding_quotes")) {
                         Icon(Icons.Outlined.Storefront, contentDescription = "Business Branding & Logo", tint = DarkText)
                     }
@@ -337,11 +376,14 @@ fun QuotesListScreen(
 
     if (showCreateDialog) {
         CreateQuoteDialog(
+            products = products,
             onDismiss = { showCreateDialog = false },
-            onConfirm = { client, phone, event, date, item, cost, margin, price, status ->
-                onCreateQuote(client, phone, event, date, item, cost, margin, price, status)
+            onConfirm = { client, phone, event, date, item, cost, margin, price, status, docType, sub, disc, taxRate, taxAmt, lineItems ->
+                onCreateQuote(client, phone, event, date, item, cost, margin, price, status, docType, sub, disc, taxRate, taxAmt, lineItems)
                 showCreateDialog = false
-            }
+            },
+            onSaveProductService = onSaveProductService,
+            onNavigateToProducts = onNavigateToProducts
         )
     }
 
@@ -444,13 +486,26 @@ private fun QuoteItemCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = PurpleLight
+                            color = if (quote.docType == "Estimate") AmberLight else PurpleLight
+                        ) {
+                            Text(
+                                text = quote.docType,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (quote.docType == "Estimate") WarmAmber else PurpleAccent,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = BackgroundLight
                         ) {
                             Text(
                                 text = quote.eventType,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = PurpleAccent,
+                                fontWeight = FontWeight.Medium,
+                                color = MediumText,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -487,6 +542,40 @@ private fun QuoteItemCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
+            if (quote.items.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BackgroundLight, RoundedCornerShape(8.dp))
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    quote.items.forEach { item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
+                            Text(
+                                text = "${qtyStr}x ${item.itemName} (${item.unit})",
+                                fontSize = 12.sp,
+                                color = DarkText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = formatZar(item.lineTotal),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = DarkText
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -527,7 +616,7 @@ private fun QuoteItemCard(
             ) {
                 Column {
                     Text(
-                        text = "Quoted Price",
+                        text = if (quote.docType == "Estimate") "Estimated Price" else "Quoted Price",
                         fontSize = 11.sp,
                         color = LightText
                     )
@@ -625,150 +714,628 @@ private fun QuoteItemCard(
 
 @Composable
 fun CreateQuoteDialog(
+    products: List<ProductServiceEntity> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (client: String, phone: String, eventType: String, date: String, item: String, cost: Double, margin: Double, price: Double, status: String) -> Unit
+    onConfirm: (
+        client: String,
+        phone: String,
+        eventType: String,
+        date: String,
+        item: String,
+        cost: Double,
+        margin: Double,
+        price: Double,
+        status: String,
+        docType: String,
+        subtotal: Double,
+        discountAmount: Double,
+        taxRatePercent: Double,
+        taxAmount: Double,
+        lineItems: List<LineItem>
+    ) -> Unit,
+    onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
+    onNavigateToProducts: (() -> Unit)? = null
 ) {
+    var docType by remember { mutableStateOf("Quote") } // "Quote" or "Estimate"
     var clientName by remember { mutableStateOf("") }
     var clientPhone by remember { mutableStateOf("") }
     var eventType by remember { mutableStateOf("Wedding") }
     var eventDate by remember { mutableStateOf("15 Oct 2026") }
-    var itemName by remember { mutableStateOf("") }
-    var costText by remember { mutableStateOf("500") }
-    var marginText by remember { mutableStateOf("45") }
-    var priceText by remember { mutableStateOf("") }
+    var manualItemName by remember { mutableStateOf("") }
+    var manualCostText by remember { mutableStateOf("500") }
+    var manualMarginText by remember { mutableStateOf("45") }
+    var manualPriceText by remember { mutableStateOf("") }
+
+    var lineItems by remember { mutableStateOf<List<LineItem>>(emptyList()) }
+    var showProductSelector by remember { mutableStateOf(false) }
+    var showCustomItemDialog by remember { mutableStateOf(false) }
+
+    var discountText by remember { mutableStateOf("0") }
+    var isVatEnabled by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
 
-    val calculatedPrice = remember(costText, marginText) {
-        val cost = costText.toDoubleOrNull() ?: 0.0
-        val margin = marginText.toDoubleOrNull() ?: 0.0
-        if (margin in 0.0..99.0 && cost > 0.0) {
-            cost / (1.0 - (margin / 100.0))
-        } else {
-            cost * 1.5
-        }
-    }
+    // Computations
+    val lineSubtotal = lineItems.sumOf { it.lineTotal }
+    val lineCost = lineItems.sumOf { it.costPrice * it.quantity }
 
-    LaunchedEffect(calculatedPrice) {
-        if (priceText.isBlank() || priceText.toDoubleOrNull() != null) {
-            priceText = String.format("%.0f", calculatedPrice)
-        }
-    }
+    val discountAmount = discountText.toDoubleOrNull() ?: 0.0
+    val taxRate = if (isVatEnabled) 15.0 else 0.0
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.RequestQuote, contentDescription = null, tint = BatchPink)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("New Quote & Estimate", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-        },
-        text = {
+    val subtotal = if (lineItems.isNotEmpty()) lineSubtotal else (manualPriceText.toDoubleOrNull() ?: 0.0)
+    val discountedSubtotal = (subtotal - discountAmount).coerceAtLeast(0.0)
+    val taxAmount = (discountedSubtotal * taxRate) / 100.0
+    val finalTotal = discountedSubtotal + taxAmount
+    val totalCost = if (lineItems.isNotEmpty()) lineCost else (manualCostText.toDoubleOrNull() ?: 0.0)
+    val calculatedMargin = if (finalTotal > 0) {
+        ((finalTotal - totalCost) / finalTotal * 100).coerceAtLeast(0.0)
+    } else 0.0
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
             ) {
-                OutlinedTextField(
-                    value = clientName,
-                    onValueChange = { clientName = it; hasError = false },
-                    label = { Text("Client Name *") },
-                    placeholder = { Text("e.g. Lerato Mthembu") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = eventType,
-                        onValueChange = { eventType = it },
-                        label = { Text("Event Type") },
-                        placeholder = { Text("Wedding, Birthday...") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = eventDate,
-                        onValueChange = { eventDate = it },
-                        label = { Text("Event Date") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                OutlinedTextField(
-                    value = itemName,
-                    onValueChange = { itemName = it; hasError = false },
-                    label = { Text("Cake / Order Details *") },
-                    placeholder = { Text("e.g. 3-Tier Rustic Semi-Naked Wedding Cake (75 Servings)") },
-                    shape = RoundedCornerShape(10.dp),
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = costText,
-                        onValueChange = { costText = it; hasError = false },
-                        label = { Text("Est. Cost (R) *") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = marginText,
-                        onValueChange = { marginText = it },
-                        label = { Text("Margin %") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                OutlinedTextField(
-                    value = priceText,
-                    onValueChange = { priceText = it },
-                    label = { Text("Quoted Selling Price (R)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (hasError) {
-                    Text(
-                        text = "Please fill in Client Name, Details, and Cost.",
-                        color = BatchPink,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val cost = costText.toDoubleOrNull()
-                    val margin = marginText.toDoubleOrNull() ?: 40.0
-                    val price = priceText.toDoubleOrNull() ?: calculatedPrice
-                    if (clientName.isBlank() || itemName.isBlank() || cost == null || cost <= 0.0) {
-                        hasError = true
-                    } else {
-                        onConfirm(clientName, clientPhone, eventType, eventDate, itemName, cost, margin, price, "Sent")
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.RequestQuote,
+                            contentDescription = null,
+                            tint = BatchPink
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "New $docType",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = DarkText
+                        )
                     }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Generate Quote", color = Color.White, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = LightText)
+                    }
+                }
+
+                // Doc Type Toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .background(BackgroundLight, RoundedCornerShape(10.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("Quote", "Estimate").forEach { type ->
+                        val isSelected = docType == type
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) BatchPink else Color.Transparent)
+                                .clickable { docType = type }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = type,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else MediumText,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Client Details
+                    item {
+                        Text(
+                            text = "Client & Event Details",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = DarkText
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = clientName,
+                            onValueChange = { clientName = it; hasError = false },
+                            label = { Text("Client Name *") },
+                            placeholder = { Text("e.g. Lerato Mthembu") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("input_quote_client_name")
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = clientPhone,
+                            onValueChange = { clientPhone = it },
+                            label = { Text("Client Phone / WhatsApp") },
+                            placeholder = { Text("e.g. +27 82 123 4567") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = eventType,
+                                onValueChange = { eventType = it },
+                                label = { Text("Event Type") },
+                                placeholder = { Text("Wedding, Birthday...") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = eventDate,
+                                onValueChange = { eventDate = it },
+                                label = { Text("Event Date") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Line items section
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Line Items",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = DarkText
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(
+                                    onClick = { showProductSelector = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BatchPinkLight),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.testTag("btn_add_item_from_catalog_quote")
+                                ) {
+                                    Icon(Icons.Filled.Add, contentDescription = null, tint = BatchPink, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("From Catalog", color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showCustomItemDialog = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("+ Custom", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    if (lineItems.isEmpty()) {
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = BackgroundLight,
+                                border = BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "No line items selected yet.",
+                                        fontSize = 13.sp,
+                                        color = MediumText
+                                    )
+                                    Text(
+                                        text = "Add products/services from your catalog for automatic pricing & line totals, or enter details manually below.",
+                                        fontSize = 11.sp,
+                                        color = LightText,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        item {
+                            OutlinedTextField(
+                                value = manualItemName,
+                                onValueChange = { manualItemName = it; hasError = false },
+                                label = { Text("Cake / Order Details *") },
+                                placeholder = { Text("e.g. 3-Tier Rustic Semi-Naked Wedding Cake (75 Servings)") },
+                                shape = RoundedCornerShape(10.dp),
+                                maxLines = 2,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = manualCostText,
+                                    onValueChange = { manualCostText = it; hasError = false },
+                                    label = { Text("Est. Cost (R)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = manualMarginText,
+                                    onValueChange = { manualMarginText = it },
+                                    label = { Text("Margin %") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = manualPriceText,
+                                onValueChange = { manualPriceText = it },
+                                label = { Text("Quoted Selling Price (R) *") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    } else {
+                        items(lineItems.size) { index ->
+                            val item = lineItems[index]
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = BackgroundLight),
+                                border = BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.itemName,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = DarkText
+                                            )
+                                            if (item.description.isNotBlank()) {
+                                                Text(
+                                                    text = item.description,
+                                                    fontSize = 11.sp,
+                                                    color = LightText,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                lineItems = lineItems.toMutableList().also { it.removeAt(index) }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = BatchPink, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Quantity stepper
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = {
+                                                    val newQty = (item.quantity - 1.0).coerceAtLeast(1.0)
+                                                    lineItems = lineItems.toMutableList().also {
+                                                        it[index] = item.copy(
+                                                            quantity = newQty,
+                                                            lineTotal = ((newQty * item.unitPrice) - item.discount).coerceAtLeast(0.0)
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Remove, contentDescription = "Dec", modifier = Modifier.size(14.dp))
+                                            }
+                                            Text(
+                                                text = "${if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity} ${item.unit}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    val newQty = item.quantity + 1.0
+                                                    lineItems = lineItems.toMutableList().also {
+                                                        it[index] = item.copy(
+                                                            quantity = newQty,
+                                                            lineTotal = ((newQty * item.unitPrice) - item.discount).coerceAtLeast(0.0)
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Inc", modifier = Modifier.size(14.dp))
+                                            }
+                                        }
+
+                                        // Editable Unit Price
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("@ R", fontSize = 11.sp, color = MediumText)
+                                            var unitPriceText by remember(item.unitPrice) { mutableStateOf(String.format(Locale.US, "%.2f", item.unitPrice)) }
+                                            BasicTextField(
+                                                value = unitPriceText,
+                                                onValueChange = { str ->
+                                                    unitPriceText = str
+                                                    val newP = str.toDoubleOrNull() ?: 0.0
+                                                    lineItems = lineItems.toMutableList().also {
+                                                        it[index] = item.copy(
+                                                            unitPrice = newP,
+                                                            lineTotal = ((item.quantity * newP) - item.discount).coerceAtLeast(0.0)
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier
+                                                    .width(60.dp)
+                                                    .background(Color.White, RoundedCornerShape(4.dp))
+                                                    .border(1.dp, BorderLight, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
+                                            )
+                                        }
+
+                                        Text(
+                                            text = formatZar(item.lineTotal),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = DarkText
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Discounts & Tax Settings
+                    item {
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Discounts & Tax",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = DarkText
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = discountText,
+                                onValueChange = { discountText = it },
+                                label = { Text("Discount (R)") },
+                                placeholder = { Text("0.00") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { isVatEnabled = !isVatEnabled }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isVatEnabled,
+                                    onCheckedChange = { isVatEnabled = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = BatchPink)
+                                )
+                                Text("Add 15% VAT", fontSize = 12.sp, color = DarkText)
+                            }
+                        }
+                    }
+
+                    // Summary Breakdown Box
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = BackgroundLight,
+                            border = BorderStroke(1.dp, BorderLight),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Subtotal", fontSize = 12.sp, color = MediumText)
+                                    Text(formatZar(subtotal), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                                }
+                                if (discountAmount > 0.0) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Discount", fontSize = 12.sp, color = MintGreen)
+                                        Text("- ${formatZar(discountAmount)}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MintGreen)
+                                    }
+                                }
+                                if (isVatEnabled) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("VAT (15%)", fontSize = 12.sp, color = MediumText)
+                                        Text(formatZar(taxAmount), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                                    }
+                                }
+                                HorizontalDivider(color = DividerColor)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Total $docType", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                    Text(formatZar(finalTotal), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Est. Cost: ${formatZar(totalCost)}", fontSize = 11.sp, color = LightText)
+                                    Text("Margin: ${calculatedMargin.toInt()}%", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MintGreen)
+                                    Text("50% Deposit: ${formatZar(finalTotal * 0.5)}", fontSize = 11.sp, color = MediumText)
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasError) {
+                        item {
+                            Text(
+                                text = "Please enter Client Name and provide line items or cake details with price.",
+                                color = BatchPink,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel", color = MediumText)
+                    }
+                    Button(
+                        onClick = {
+                            val mainItem = when {
+                                lineItems.isNotEmpty() -> lineItems.joinToString(", ") { "${if (it.quantity % 1.0 == 0.0) it.quantity.toInt() else it.quantity}x ${it.itemName}" }
+                                manualItemName.isNotBlank() -> manualItemName
+                                else -> ""
+                            }
+                            if (clientName.isBlank() || (lineItems.isEmpty() && (manualItemName.isBlank() || finalTotal <= 0.0))) {
+                                hasError = true
+                            } else {
+                                onConfirm(
+                                    clientName,
+                                    clientPhone,
+                                    eventType,
+                                    eventDate,
+                                    mainItem,
+                                    totalCost,
+                                    calculatedMargin,
+                                    finalTotal,
+                                    "Sent",
+                                    docType,
+                                    subtotal,
+                                    discountAmount,
+                                    taxRate,
+                                    taxAmount,
+                                    lineItems
+                                )
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(2f).testTag("btn_confirm_create_quote")
+                    ) {
+                        Text("Generate $docType", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = MediumText)
+        }
+    }
+
+    // Product Selector / Custom Item Dialog
+    if (showProductSelector || showCustomItemDialog) {
+        ProductLineItemSelectorDialog(
+            products = products,
+            onDismiss = {
+                showProductSelector = false
+                showCustomItemDialog = false
+            },
+            onSelectProduct = { prod ->
+                lineItems = lineItems + LineItem(
+                    productId = prod.id,
+                    itemName = prod.name,
+                    description = prod.description,
+                    quantity = 1.0,
+                    unit = prod.unit,
+                    unitPrice = prod.sellingPrice,
+                    discount = 0.0,
+                    costPrice = prod.costPrice,
+                    lineTotal = prod.sellingPrice
+                )
+                showProductSelector = false
+                showCustomItemDialog = false
+            },
+            onAddCustomItem = { name, desc, qty, unit, unitPrice, discount, saveToMaster, category ->
+                val lineTot = ((qty * unitPrice) - discount).coerceAtLeast(0.0)
+                if (saveToMaster && onSaveProductService != null) {
+                    onSaveProductService(name, desc, category, 0.0, unitPrice, unit)
+                }
+                lineItems = lineItems + LineItem(
+                    itemName = name,
+                    description = desc,
+                    quantity = qty,
+                    unit = unit,
+                    unitPrice = unitPrice,
+                    discount = discount,
+                    costPrice = 0.0,
+                    lineTotal = lineTot
+                )
+                showProductSelector = false
+                showCustomItemDialog = false
+            },
+            onQuickCreateMasterProduct = {
+                showProductSelector = false
+                showCustomItemDialog = false
+                onNavigateToProducts?.invoke()
             }
-        },
-        shape = RoundedCornerShape(18.dp),
-        containerColor = Color.White
-    )
+        )
+    }
 }

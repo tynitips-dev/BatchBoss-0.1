@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -1151,7 +1152,8 @@ fun AddTaskDialog(
 fun NotificationsScreen(
     notifications: List<NotificationEntity>,
     onBack: () -> Unit,
-    onMarkAllRead: () -> Unit
+    onMarkAllRead: () -> Unit,
+    onNotificationClick: ((NotificationEntity) -> Unit)? = null
 ) {
     var selectedFilter by remember { mutableStateOf("All") }
 
@@ -1257,7 +1259,10 @@ fun NotificationsScreen(
                     )
                 }
                 items(todayNotifications) { notif ->
-                    NotificationCard(notif = notif)
+                    NotificationCard(
+                        notif = notif,
+                        onClick = onNotificationClick?.let { { it(notif) } }
+                    )
                 }
             }
 
@@ -1273,7 +1278,10 @@ fun NotificationsScreen(
                     )
                 }
                 items(yesterdayNotifications) { notif ->
-                    NotificationCard(notif = notif)
+                    NotificationCard(
+                        notif = notif,
+                        onClick = onNotificationClick?.let { { it(notif) } }
+                    )
                 }
             }
         }
@@ -1281,28 +1289,37 @@ fun NotificationsScreen(
 }
 
 @Composable
-private fun NotificationCard(notif: NotificationEntity) {
-    val icon = when (notif.type) {
-        "Alerts" -> Icons.Outlined.WarningAmber
-        "Orders" -> Icons.Outlined.Receipt
+private fun NotificationCard(
+    notif: NotificationEntity,
+    onClick: (() -> Unit)? = null
+) {
+    val isWelcome = notif.title.contains("Welcome", ignoreCase = true)
+    val icon = when {
+        isWelcome -> Icons.Outlined.MarkEmailRead
+        notif.type == "Alerts" -> Icons.Outlined.WarningAmber
+        notif.type == "Orders" -> Icons.Outlined.Receipt
         else -> Icons.Outlined.Settings
     }
-    val iconColor = when (notif.type) {
-        "Alerts" -> WarmAmber
-        "Orders" -> SoftBlue
+    val iconColor = when {
+        isWelcome -> BatchPink
+        notif.type == "Alerts" -> WarmAmber
+        notif.type == "Orders" -> SoftBlue
         else -> MediumText
     }
-    val iconBg = when (notif.type) {
-        "Alerts" -> AmberLight
-        "Orders" -> BlueLight
+    val iconBg = when {
+        isWelcome -> BatchPinkLight
+        notif.type == "Alerts" -> AmberLight
+        notif.type == "Orders" -> BlueLight
         else -> BorderLight
     }
 
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = CardBackground,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-        modifier = Modifier.fillMaxWidth()
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isWelcome) BatchPink.copy(alpha = 0.4f) else BorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -1347,6 +1364,20 @@ private fun NotificationCard(notif: NotificationEntity) {
                     color = MediumText,
                     lineHeight = 18.sp
                 )
+
+                if (isWelcome) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Tap to open welcome letter & starter guide",
+                            color = BatchPink,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = BatchPink, modifier = Modifier.size(13.dp))
+                    }
+                }
             }
 
             if (notif.isUnread) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
 import com.example.data.repository.AppRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -41,12 +42,37 @@ sealed class Screen {
 
     data object InvoicesList : Screen()
     data object QuotesList : Screen()
+    data object CustomersList : Screen()
+    data object ProductsServicesList : Screen()
+    data class CreateEditProductService(val productId: Long? = null) : Screen()
     data object PremiumSubscription : Screen()
+    data object AiRecipeScanner : Screen()
+    data object BarcodeScanner : Screen()
+    data object BakingSupplyStoreLocator : Screen()
+    data object AboutBatchBoss : Screen()
+    data object AccountDataDeletion : Screen()
+    data object MasterBackend : Screen()
+    data class BakingSupplyStoreDetail(val storeId: Long) : Screen()
+    data class WelcomeEmail(
+        val fullName: String,
+        val email: String,
+        val bakeryName: String,
+        val city: String = "Cape Town",
+        val operatingModel: String = "Home Kitchen",
+        val currency: String = "ZAR (R)"
+    ) : Screen()
 }
 
 class BatchBossViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application, viewModelScope)
     val repository = AppRepository(database)
+
+    // Auth Session Management
+    private val authPrefs = application.getSharedPreferences("batchboss_auth_prefs", android.content.Context.MODE_PRIVATE)
+    private val initialSavedUserId: Long = authPrefs.getLong("active_user_id", -1L)
+
+    private val _isUserLoggedIn = MutableStateFlow(initialSavedUserId > 0)
+    val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
 
     // Navigation stack / current screen
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Splash)
@@ -59,17 +85,50 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedTimeFrame = MutableStateFlow("This Week")
     val selectedTimeFrame: StateFlow<String> = _selectedTimeFrame.asStateFlow()
 
-    // Data streams
-    val allRecipes: StateFlow<List<RecipeEntity>> = repository.allRecipes
+    // Active User
+    private val _currentUserId = MutableStateFlow<Long>(if (initialSavedUserId > 0) initialSavedUserId else 1L)
+    val currentUserId: StateFlow<Long> = _currentUserId.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val currentUserAccount: StateFlow<UserAccountEntity?> = _currentUserId
+        .flatMapLatest { id -> repository.getUserById(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Master Backend Streams
+    val allRegisteredUsers: StateFlow<List<UserAccountEntity>> = repository.allUsers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allTasks: StateFlow<List<TaskEntity>> = repository.allTasks
+    val allLoginLogs: StateFlow<List<UserLoginLogEntity>> = repository.allLoginLogs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allInventory: StateFlow<List<InventoryItemEntity>> = repository.allInventory
+    val allDeletionRequests: StateFlow<List<DataDeletionRequestEntity>> = repository.allDeletionRequests
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val lowStockItems: StateFlow<List<InventoryItemEntity>> = repository.lowStockItems
+    // Data streams scoped to active user account
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allRecipes: StateFlow<List<RecipeEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getRecipesByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allTasks: StateFlow<List<TaskEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getTasksByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allInventory: StateFlow<List<InventoryItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getInventoryByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lowStockItems: StateFlow<List<InventoryItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getLowStockByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Customers scoped to active user
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allCustomers: StateFlow<List<CustomerEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getCustomersByUser(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allSuppliers: StateFlow<List<SupplierEntity>> = repository.allSuppliers
@@ -82,18 +141,42 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val unreadCount: StateFlow<Int> = repository.unreadNotificationsCount
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 3)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    // Invoices & Quotes
-    val allInvoices: StateFlow<List<InvoiceEntity>> = repository.allInvoices
+    // Invoices & Quotes scoped to active user
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allInvoices: StateFlow<List<InvoiceEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getInvoicesByUser(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allQuotes: StateFlow<List<QuoteEntity>> = repository.allQuotes
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allQuotes: StateFlow<List<QuoteEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getQuotesByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allProductsServices: StateFlow<List<ProductServiceEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getProductsByUser(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // User Profile & Premium Subscription
     val userProfile: StateFlow<UserProfileEntity?> = repository.userProfile
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Baking Supply Stores
+    val allBakingSupplyStores: StateFlow<List<BakingSupplyStoreEntity>> = repository.allBakingSupplyStores
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedStoreId = MutableStateFlow<Long?>(1L)
+    val selectedBakingSupplyStore: StateFlow<BakingSupplyStoreEntity?> = _selectedStoreId
+        .flatMapLatest { id ->
+            if (id != null) repository.getBakingSupplyStoreById(id) else flowOf(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun selectBakingSupplyStore(id: Long) {
+        _selectedStoreId.value = id
+    }
 
     private val _isPremiumUser = MutableStateFlow(false)
     val isPremiumUser: StateFlow<Boolean> = _isPremiumUser.asStateFlow()
@@ -116,6 +199,10 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     _isPremiumUser.value = profile.isPremium
                 }
             }
+        }
+        // Ensure baking supply stores are seeded
+        viewModelScope.launch {
+            repository.ensureInitialBakingStores()
         }
     }
 
@@ -163,7 +250,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             is Screen.RecipesList -> _selectedTab.value = 1
             is Screen.InventoryList, is Screen.LowStock -> _selectedTab.value = 2
             is Screen.SuppliersList -> _selectedTab.value = 3
-            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler -> _selectedTab.value = 4
+            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.MasterBackend -> _selectedTab.value = 4
             is Screen.RecipeDetail -> {
                 _selectedRecipeId.value = screen.recipeId
                 _selectedTab.value = 1
@@ -190,6 +277,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             }
             is Screen.SpecialDetail -> {
                 _selectedSpecialId.value = screen.specialId
+                _selectedTab.value = 3
+            }
+            is Screen.BakingSupplyStoreLocator -> {
+                _selectedTab.value = 3
+            }
+            is Screen.BakingSupplyStoreDetail -> {
+                _selectedStoreId.value = screen.storeId
                 _selectedTab.value = 3
             }
             else -> {}
@@ -242,6 +336,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             repository.insertTask(
                 TaskEntity(
+                    userId = _currentUserId.value,
                     title = title,
                     orderRef = orderRef,
                     dueTime = dueTime,
@@ -271,6 +366,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val isLow = currentStock <= minStock
             repository.insertInventoryItem(
                 InventoryItemEntity(
+                    userId = _currentUserId.value,
                     name = name,
                     unitPrice = unitPrice,
                     currentStock = currentStock,
@@ -303,6 +399,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val isLow = currentStock <= minStock
             repository.insertInventoryItem(
                 InventoryItemEntity(
+                    userId = _currentUserId.value,
                     name = name,
                     unitPrice = calcUnitPrice,
                     packagePrice = packagePrice,
@@ -357,6 +454,15 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun deleteRecipe(id: Long) {
+        viewModelScope.launch {
+            repository.deleteRecipe(id)
+            if (_selectedRecipeId.value == id) {
+                _selectedRecipeId.value = null
+            }
+        }
+    }
+
     fun updateBusinessBranding(
         logoUri: String,
         bakeryName: String,
@@ -401,6 +507,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun updateRecipePhoto(id: Long, photoUri: String) {
+        viewModelScope.launch {
+            repository.updateRecipePhoto(id, photoUri)
+        }
+    }
+
     fun updateIngredientCost(id: Long, cost: Double, quantity: Double) {
         viewModelScope.launch {
             repository.updateIngredientCost(id, cost, quantity)
@@ -430,11 +542,14 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         packagingCost: Double,
         utilitiesCost: Double,
         profitMargin: Double,
-        ingredients: List<RecipeIngredientEntity>
+        ingredients: List<RecipeIngredientEntity>,
+        instructions: String = "",
+        photoUri: String = ""
     ) {
         viewModelScope.launch {
             val recipeId = repository.insertRecipe(
                 RecipeEntity(
+                    userId = _currentUserId.value,
                     name = name,
                     category = category,
                     description = description,
@@ -448,12 +563,66 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     overheadsCost = overheadsCost,
                     packagingCost = packagingCost,
                     utilitiesCost = utilitiesCost,
-                    profitMarginPercent = profitMargin
+                    profitMarginPercent = profitMargin,
+                    instructions = instructions,
+                    photoUri = photoUri
                 )
             )
-            val updatedIngredients = ingredients.map { it.copy(recipeId = recipeId) }
+            val updatedIngredients = ingredients.map { it.copy(recipeId = recipeId, userId = _currentUserId.value) }
             repository.saveIngredients(recipeId, updatedIngredients)
+
+            // Auto-sync extracted ingredients into inventory pantry
+            for (ing in ingredients) {
+                if (ing.name.isNotBlank()) {
+                    repository.insertInventoryItem(
+                        InventoryItemEntity(
+                            userId = _currentUserId.value,
+                            name = ing.name,
+                            currentStock = maxOf(ing.quantity * 2, 500.0),
+                            minStock = maxOf(ing.quantity, 200.0),
+                            unit = ing.unit.ifBlank { "g" },
+                            unitPrice = if (ing.quantity > 0) ing.cost / ing.quantity else 0.05,
+                            packagePrice = maxOf(ing.cost * 1.5, 25.0),
+                            gramsPerUnit = 1000.0,
+                            category = "Baking Staples",
+                            isLowStock = false
+                        )
+                    )
+                }
+            }
+
             navigateTo(Screen.RecipeDetail(recipeId))
+        }
+    }
+
+    fun saveScannedIngredient(
+        name: String,
+        currentStock: Double,
+        minStock: Double,
+        unit: String,
+        packagePrice: Double,
+        gramsPerUnit: Double,
+        category: String,
+        barcode: String = ""
+    ) {
+        val calculatedUnitPrice = if (gramsPerUnit > 0) packagePrice / gramsPerUnit else packagePrice
+        val effectiveUserId = if (_currentUserId.value > 0) _currentUserId.value else 1L
+        viewModelScope.launch {
+            repository.insertInventoryItem(
+                InventoryItemEntity(
+                    userId = effectiveUserId,
+                    name = name,
+                    currentStock = currentStock,
+                    minStock = minStock,
+                    unit = unit,
+                    unitPrice = calculatedUnitPrice,
+                    packagePrice = packagePrice,
+                    gramsPerUnit = gramsPerUnit,
+                    category = category,
+                    barcode = barcode,
+                    isLowStock = currentStock <= minStock
+                )
+            )
         }
     }
 
@@ -497,6 +666,57 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun triggerPaywall(featureName: String, description: String) = openPaywall(featureName, description)
     fun dismissPaywall() = closePaywall()
+
+    // Baking Supply Store Locator
+    fun toggleFavoriteBakingSupplyStore(id: Long) {
+        viewModelScope.launch {
+            repository.toggleFavoriteStore(id)
+        }
+    }
+
+    fun addCustomBakingSupplyStore(
+        name: String,
+        category: String,
+        address: String,
+        city: String,
+        phone: String,
+        website: String,
+        specialties: String,
+        inStockHighlights: String = "",
+        distanceKm: Double = 3.2
+    ) {
+        viewModelScope.launch {
+            val id = repository.insertBakingSupplyStore(
+                BakingSupplyStoreEntity(
+                    name = name,
+                    category = category,
+                    address = address,
+                    city = city,
+                    distanceKm = distanceKm,
+                    rating = 5.0,
+                    reviewCount = 1,
+                    openingHours = "Open • Closes 17:00",
+                    phone = phone,
+                    website = website,
+                    specialties = specialties,
+                    inStockHighlights = inStockHighlights,
+                    lat = -26.1450 + (Math.random() - 0.5) * 0.04,
+                    lng = 28.0350 + (Math.random() - 0.5) * 0.04,
+                    hasDelivery = true,
+                    hasPickup = true,
+                    isFavorite = true,
+                    isCustomAdded = true
+                )
+            )
+            selectBakingSupplyStore(id)
+        }
+    }
+
+    fun deleteBakingSupplyStore(id: Long) {
+        viewModelScope.launch {
+            repository.deleteBakingSupplyStore(id)
+        }
+    }
 
     fun upgradeToPremium(plan: String = "Pro Monthly") {
         viewModelScope.launch {
@@ -550,6 +770,126 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // Products & Services (Central Single Source of Truth)
+    fun saveProductService(
+        name: String,
+        description: String = "",
+        category: String = "Cakes",
+        imageUrl: String = "",
+        sku: String = "",
+        costPrice: Double = 0.0,
+        sellingPrice: Double = 0.0,
+        unit: String = "Each",
+        isActive: Boolean = true,
+        isService: Boolean = false,
+        linkedRecipeId: Long? = null,
+        onSuccess: (Long) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val product = ProductServiceEntity(
+                userId = _currentUserId.value,
+                name = name.trim(),
+                description = description.trim(),
+                category = category.trim().ifBlank { "Cakes" },
+                imageUrl = imageUrl,
+                sku = sku.trim(),
+                costPrice = costPrice,
+                sellingPrice = sellingPrice,
+                unit = unit.ifBlank { "Each" },
+                isActive = isActive,
+                isService = isService,
+                linkedRecipeId = linkedRecipeId,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            val newId = repository.insertProduct(product)
+            val dateStr = java.text.SimpleDateFormat("dd MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+            repository.insertPriceHistory(
+                ProductPriceHistoryEntity(
+                    productId = newId,
+                    userId = _currentUserId.value,
+                    previousPrice = 0.0,
+                    newPrice = sellingPrice,
+                    dateChanged = dateStr,
+                    notes = "Initial price set"
+                )
+            )
+            onSuccess(newId)
+        }
+    }
+
+    fun updateProductService(
+        existing: ProductServiceEntity,
+        name: String,
+        description: String,
+        category: String,
+        imageUrl: String,
+        sku: String,
+        costPrice: Double,
+        sellingPrice: Double,
+        unit: String,
+        isActive: Boolean,
+        isService: Boolean,
+        linkedRecipeId: Long?,
+        changeNotes: String = ""
+    ) {
+        viewModelScope.launch {
+            val oldPrice = existing.sellingPrice
+            val priceChanged = kotlin.math.abs(oldPrice - sellingPrice) > 0.001
+            val updated = existing.copy(
+                name = name.trim(),
+                description = description.trim(),
+                category = category.trim().ifBlank { "Cakes" },
+                imageUrl = imageUrl,
+                sku = sku.trim(),
+                costPrice = costPrice,
+                sellingPrice = sellingPrice,
+                unit = unit.ifBlank { "Each" },
+                isActive = isActive,
+                isService = isService,
+                linkedRecipeId = linkedRecipeId,
+                updatedAt = System.currentTimeMillis()
+            )
+            repository.updateProduct(updated)
+
+            if (priceChanged) {
+                val dateStr = java.text.SimpleDateFormat("dd MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+                repository.insertPriceHistory(
+                    ProductPriceHistoryEntity(
+                        productId = existing.id,
+                        userId = _currentUserId.value,
+                        previousPrice = oldPrice,
+                        newPrice = sellingPrice,
+                        dateChanged = dateStr,
+                        notes = changeNotes.ifBlank { "Master price updated" }
+                    )
+                )
+            }
+        }
+    }
+
+    fun updateProductService(updated: ProductServiceEntity) {
+        viewModelScope.launch {
+            repository.updateProduct(updated.copy(updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun toggleProductServiceActive(id: Long, active: Boolean) {
+        viewModelScope.launch {
+            val existing = allProductsServices.value.find { it.id == id } ?: return@launch
+            repository.updateProduct(existing.copy(isActive = active, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    fun deleteProductService(id: Long) {
+        viewModelScope.launch {
+            repository.deleteProduct(id)
+        }
+    }
+
+    fun getPriceHistory(productId: Long): Flow<List<ProductPriceHistoryEntity>> =
+        repository.getPriceHistory(productId)
+
     // Invoices
     fun createInvoice(
         clientName: String,
@@ -557,23 +897,63 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         orderDescription: String,
         amount: Double,
         dueDate: String,
-        status: String = "Pending"
+        status: String = "Pending",
+        subtotal: Double = amount,
+        discountAmount: Double = 0.0,
+        taxRatePercent: Double = 0.0,
+        taxAmount: Double = 0.0,
+        items: List<LineItem> = emptyList(),
+        totalCost: Double = 0.0
     ) {
         viewModelScope.launch {
             val count = (allInvoices.value.size + 1008)
             val invNumber = "INV-2024-$count"
-            repository.insertInvoice(
+            val lineItemsJson = LineItemJsonUtil.toJson(items)
+            val finalDescription = if (orderDescription.isNotBlank()) {
+                orderDescription
+            } else if (items.isNotEmpty()) {
+                items.joinToString(", ") { "${it.quantity.let { q -> if (q % 1.0 == 0.0) q.toInt().toString() else q.toString() }}x ${it.itemName}" }
+            } else {
+                "Bakery Order"
+            }
+            val invId = repository.insertInvoice(
                 InvoiceEntity(
+                    userId = _currentUserId.value,
                     invoiceNumber = invNumber,
                     clientName = clientName,
                     clientPhone = clientPhone,
-                    orderDescription = orderDescription,
+                    orderDescription = finalDescription,
                     issueDate = "Today",
                     dueDate = dueDate,
                     amount = amount,
-                    status = status
+                    status = status,
+                    subtotal = subtotal,
+                    discountAmount = discountAmount,
+                    taxRatePercent = taxRatePercent,
+                    taxAmount = taxAmount,
+                    lineItemsJson = lineItemsJson,
+                    totalCost = totalCost
                 )
             )
+            if (items.isNotEmpty()) {
+                val dbEntities = items.map {
+                    DocumentLineItemEntity(
+                        documentType = "INVOICE",
+                        documentId = invId,
+                        userId = _currentUserId.value,
+                        productId = it.productId,
+                        itemName = it.itemName,
+                        description = it.description,
+                        quantity = it.quantity,
+                        unit = it.unit,
+                        unitPrice = it.unitPrice,
+                        discount = it.discount,
+                        costPrice = it.costPrice,
+                        lineTotal = it.lineTotal
+                    )
+                }
+                repository.insertLineItems(dbEntities)
+            }
         }
     }
 
@@ -586,10 +966,11 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteInvoice(id: Long) {
         viewModelScope.launch {
             repository.deleteInvoice(id)
+            repository.deleteLineItems("INVOICE", id)
         }
     }
 
-    // Quotes
+    // Quotes & Estimates
     fun createQuote(
         clientName: String,
         clientPhone: String,
@@ -599,25 +980,68 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         estimatedCost: Double,
         profitMarginPercent: Double,
         quotedPrice: Double,
-        status: String = "Sent"
+        status: String = "Sent",
+        docType: String = "Quote",
+        subtotal: Double = quotedPrice,
+        discountAmount: Double = 0.0,
+        taxRatePercent: Double = 0.0,
+        taxAmount: Double = 0.0,
+        items: List<LineItem> = emptyList(),
+        totalCost: Double = estimatedCost
     ) {
         viewModelScope.launch {
             val count = (allQuotes.value.size + 1008)
-            val quoteNumber = "QT-2024-$count"
-            repository.insertQuote(
+            val prefix = if (docType.equals("Estimate", ignoreCase = true)) "EST" else "QT"
+            val quoteNumber = "$prefix-2024-$count"
+            val lineItemsJson = LineItemJsonUtil.toJson(items)
+            val finalItemName = if (recipeOrItemName.isNotBlank()) {
+                recipeOrItemName
+            } else if (items.isNotEmpty()) {
+                items.joinToString(", ") { "${it.quantity.let { q -> if (q % 1.0 == 0.0) q.toInt().toString() else q.toString() }}x ${it.itemName}" }
+            } else {
+                "Custom Cake & Treats"
+            }
+            val quoteId = repository.insertQuote(
                 QuoteEntity(
+                    userId = _currentUserId.value,
                     quoteNumber = quoteNumber,
                     clientName = clientName,
                     clientPhone = clientPhone,
                     eventType = eventType,
                     eventDate = eventDate,
-                    recipeOrItemName = recipeOrItemName,
+                    recipeOrItemName = finalItemName,
                     estimatedCost = estimatedCost,
                     profitMarginPercent = profitMarginPercent,
                     quotedPrice = quotedPrice,
-                    status = status
+                    status = status,
+                    docType = docType,
+                    subtotal = subtotal,
+                    discountAmount = discountAmount,
+                    taxRatePercent = taxRatePercent,
+                    taxAmount = taxAmount,
+                    lineItemsJson = lineItemsJson,
+                    totalCost = totalCost
                 )
             )
+            if (items.isNotEmpty()) {
+                val dbEntities = items.map {
+                    DocumentLineItemEntity(
+                        documentType = docType.uppercase(),
+                        documentId = quoteId,
+                        userId = _currentUserId.value,
+                        productId = it.productId,
+                        itemName = it.itemName,
+                        description = it.description,
+                        quantity = it.quantity,
+                        unit = it.unit,
+                        unitPrice = it.unitPrice,
+                        discount = it.discount,
+                        costPrice = it.costPrice,
+                        lineTotal = it.lineTotal
+                    )
+                }
+                repository.insertLineItems(dbEntities)
+            }
         }
     }
 
@@ -631,24 +1055,421 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             repository.updateQuoteStatus(quote.id, "Accepted")
             val invCount = (allInvoices.value.size + 1008)
-            repository.insertInvoice(
+            val invId = repository.insertInvoice(
                 InvoiceEntity(
+                    userId = _currentUserId.value,
                     invoiceNumber = "INV-2024-$invCount",
                     clientName = quote.clientName,
                     clientPhone = quote.clientPhone,
-                    orderDescription = "${quote.eventType} Cake: ${quote.recipeOrItemName}",
+                    orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
                     issueDate = "Today",
                     dueDate = quote.eventDate,
                     amount = quote.quotedPrice,
-                    status = "Pending"
+                    status = "Pending",
+                    subtotal = quote.subtotal,
+                    discountAmount = quote.discountAmount,
+                    taxRatePercent = quote.taxRatePercent,
+                    taxAmount = quote.taxAmount,
+                    lineItemsJson = quote.lineItemsJson,
+                    totalCost = quote.totalCost
                 )
             )
+            val items = quote.items
+            if (items.isNotEmpty()) {
+                val dbEntities = items.map {
+                    DocumentLineItemEntity(
+                        documentType = "INVOICE",
+                        documentId = invId,
+                        userId = _currentUserId.value,
+                        productId = it.productId,
+                        itemName = it.itemName,
+                        description = it.description,
+                        quantity = it.quantity,
+                        unit = it.unit,
+                        unitPrice = it.unitPrice,
+                        discount = it.discount,
+                        costPrice = it.costPrice,
+                        lineTotal = it.lineTotal
+                    )
+                }
+                repository.insertLineItems(dbEntities)
+            }
         }
     }
 
     fun deleteQuote(id: Long) {
         viewModelScope.launch {
             repository.deleteQuote(id)
+            repository.deleteLineItems("QUOTE", id)
+            repository.deleteLineItems("ESTIMATE", id)
+        }
+    }
+
+    // Customers
+    fun addCustomer(
+        name: String,
+        phone: String = "",
+        email: String = "",
+        address: String = "",
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            repository.insertCustomer(
+                CustomerEntity(
+                    userId = _currentUserId.value,
+                    name = name.trim(),
+                    phone = phone.trim(),
+                    email = email.trim(),
+                    address = address.trim(),
+                    notes = notes.trim()
+                )
+            )
+        }
+    }
+
+    fun updateCustomer(customer: CustomerEntity) {
+        viewModelScope.launch {
+            repository.updateCustomer(customer.copy(userId = _currentUserId.value))
+        }
+    }
+
+    fun deleteCustomer(id: Long) {
+        viewModelScope.launch {
+            repository.deleteCustomer(id)
+        }
+    }
+
+    // Notifications
+    fun markNotificationAsRead(id: Long) {
+        viewModelScope.launch {
+            repository.markNotificationAsRead(id)
+        }
+    }
+
+    // User Authentication & Account Isolation
+    fun loginUser(emailOrPhone: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val cleanInput = emailOrPhone.trim().lowercase()
+            val user = repository.getUserByEmail(cleanInput)
+            if (user != null) {
+                _currentUserId.value = user.id
+                _isUserLoggedIn.value = true
+                authPrefs.edit().putLong("active_user_id", user.id).apply()
+                updateUserProfile(
+                    fullName = user.fullName,
+                    bakeryName = user.bakeryName,
+                    specialty = user.specialty,
+                    phone = user.phone,
+                    city = user.city,
+                    operatingModel = user.operatingModel,
+                    currency = user.currency,
+                    email = user.email
+                )
+                repository.recordLoginLog(
+                    userId = user.id,
+                    email = user.email,
+                    bakeryName = user.bakeryName,
+                    action = "LOGIN",
+                    branch = branch,
+                    notes = "Signed in successfully"
+                )
+                onResult(true, "Welcome back, ${user.firstName.ifBlank { "Baker" }}!")
+            } else {
+                val firstName = if (cleanInput.contains("@")) {
+                    cleanInput.substringBefore("@").replaceFirstChar { it.uppercase() }
+                } else {
+                    cleanInput.ifBlank { "Baker" }
+                }
+                val newId = repository.insertUserAccount(
+                    UserAccountEntity(
+                        firstName = firstName,
+                        surname = "",
+                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
+                        bakeryName = "$firstName's Bakery",
+                        phone = if (cleanInput.contains("@")) "" else cleanInput,
+                        city = "Cape Town",
+                        operatingModel = "Home Kitchen",
+                        currency = "ZAR (R)",
+                        specialty = "Cakes & Pastries"
+                    )
+                )
+                _currentUserId.value = newId
+                _isUserLoggedIn.value = true
+                authPrefs.edit().putLong("active_user_id", newId).apply()
+                val userEmail = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com"
+                updateUserProfile(
+                    fullName = firstName,
+                    bakeryName = "$firstName's Bakery",
+                    specialty = "Cakes & Pastries",
+                    phone = if (cleanInput.contains("@")) "" else cleanInput,
+                    city = "Cape Town",
+                    operatingModel = "Home Kitchen",
+                    currency = "ZAR (R)",
+                    email = userEmail
+                )
+                repository.recordLoginLog(
+                    userId = newId,
+                    email = userEmail,
+                    bakeryName = "$firstName's Bakery",
+                    action = "REGISTER",
+                    branch = branch,
+                    notes = "Account auto-provisioned on login"
+                )
+                onResult(true, "Welcome to BatchBoss, $firstName!")
+            }
+        }
+    }
+
+    fun logoutUser() {
+        val uid = _currentUserId.value
+        if (uid != null && uid > 0) {
+            viewModelScope.launch {
+                val user = repository.getUserByIdOnce(uid)
+                if (user != null) {
+                    repository.recordLoginLog(
+                        userId = uid,
+                        email = user.email,
+                        bakeryName = user.bakeryName,
+                        action = "LOGOUT",
+                        notes = "User logged out"
+                    )
+                }
+            }
+        }
+        authPrefs.edit().remove("active_user_id").apply()
+        _isUserLoggedIn.value = false
+        _currentScreen.value = Screen.Login
+    }
+
+    fun createAccountWithDetails(
+        firstName: String,
+        surname: String,
+        email: String,
+        password: String,
+        bakeryName: String,
+        phone: String,
+        city: String,
+        operatingModel: String,
+        currency: String,
+        specialty: String,
+        onComplete: (Long) -> Unit
+    ) {
+        viewModelScope.launch {
+            val cleanEmail = email.trim().lowercase()
+            val user = UserAccountEntity(
+                firstName = firstName.trim(),
+                surname = surname.trim(),
+                email = cleanEmail,
+                passwordHash = password,
+                bakeryName = bakeryName.trim(),
+                phone = phone.trim(),
+                city = city.trim(),
+                operatingModel = operatingModel,
+                currency = currency,
+                specialty = specialty
+            )
+            val newUserId = repository.insertUserAccount(user)
+            _currentUserId.value = newUserId
+            _isUserLoggedIn.value = true
+            authPrefs.edit().putLong("active_user_id", newUserId).apply()
+
+            updateUserProfile(
+                fullName = "$firstName $surname".trim(),
+                bakeryName = bakeryName.trim(),
+                specialty = specialty,
+                phone = phone.trim(),
+                city = city.trim(),
+                operatingModel = operatingModel,
+                currency = currency,
+                email = cleanEmail
+            )
+
+            repository.recordLoginLog(
+                userId = newUserId,
+                email = cleanEmail,
+                bakeryName = bakeryName.trim(),
+                action = "REGISTER",
+                notes = "New bakery account created"
+            )
+
+            // Insert official Welcome Email notification from BatchBoss
+            repository.insertNotification(
+                NotificationEntity(
+                    userId = newUserId,
+                    title = "Welcome Email from BatchBoss 🧁",
+                    message = "Hi $firstName! Welcome to BatchBoss. We have dispatched your official welcome letter & starter guide to $cleanEmail. Tap to open and read.",
+                    type = "System",
+                    timeLabel = "Just now",
+                    isUnread = true,
+                    dateGroup = "Today"
+                )
+            )
+
+            onComplete(newUserId)
+        }
+    }
+
+    // Google Play Account & Data Deletion
+    fun submitDataDeletionRequest(reason: String, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            val uid = _currentUserId.value ?: 0L
+            val user = if (uid > 0) repository.getUserByIdOnce(uid) else null
+            val email = user?.email ?: "user@batchboss.app"
+            val bakery = user?.bakeryName ?: "Bakery"
+            repository.recordDeletionRequest(uid, email, bakery, reason)
+            repository.recordLoginLog(
+                userId = uid,
+                email = email,
+                bakeryName = bakery,
+                action = "DELETION_REQUESTED",
+                notes = reason
+            )
+            onComplete()
+        }
+    }
+
+    fun instantDeleteCurrentAccountAndData(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            val uid = _currentUserId.value
+            if (uid != null && uid > 0) {
+                val user = repository.getUserByIdOnce(uid)
+                if (user != null) {
+                    repository.recordLoginLog(
+                        userId = uid,
+                        email = user.email,
+                        bakeryName = user.bakeryName,
+                        action = "ACCOUNT_DELETED",
+                        notes = "User triggered instant account & data wipe"
+                    )
+                }
+                repository.deleteUserAndAllData(uid)
+            }
+            authPrefs.edit().remove("active_user_id").apply()
+            _currentUserId.value = 1L
+            _isUserLoggedIn.value = false
+            _currentScreen.value = Screen.Login
+            onComplete()
+        }
+    }
+
+    // Master Personal Backend & Admin Console Operations
+    fun adminDeleteUserData(targetUserId: Long, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            val user = repository.getUserByIdOnce(targetUserId)
+            if (user != null) {
+                repository.recordLoginLog(
+                    userId = targetUserId,
+                    email = user.email,
+                    bakeryName = user.bakeryName,
+                    action = "ADMIN_DELETED_USER",
+                    notes = "Admin executed full user & data purge"
+                )
+            }
+            repository.deleteUserAndAllData(targetUserId)
+            if (_currentUserId.value == targetUserId) {
+                authPrefs.edit().remove("active_user_id").apply()
+                _currentUserId.value = 1L
+                _isUserLoggedIn.value = false
+            }
+            onComplete()
+        }
+    }
+
+    fun adminProcessDeletionRequest(requestId: Long, targetUserId: Long, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            if (targetUserId > 0) {
+                repository.deleteUserAndAllData(targetUserId)
+            }
+            repository.updateDeletionRequestStatus(requestId, "COMPLETED")
+            onComplete()
+        }
+    }
+
+    fun adminRejectDeletionRequest(requestId: Long, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            repository.updateDeletionRequestStatus(requestId, "REJECTED")
+            onComplete()
+        }
+    }
+
+    fun adminClearLoginLogs() {
+        viewModelScope.launch {
+            repository.clearAllLoginLogs()
+        }
+    }
+
+    fun adminFactoryResetDatabase(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            repository.factoryResetDatabase()
+            authPrefs.edit().clear().apply()
+            _currentUserId.value = 1L
+            _isUserLoggedIn.value = false
+            _currentScreen.value = Screen.Login
+            onComplete()
+        }
+    }
+
+    fun adminCreateUserAccount(
+        firstName: String,
+        surname: String,
+        email: String,
+        bakeryName: String,
+        phone: String,
+        city: String,
+        operatingModel: String,
+        currency: String,
+        isPro: Boolean,
+        onComplete: (Long) -> Unit
+    ) {
+        viewModelScope.launch {
+            val id = repository.insertUserAccount(
+                UserAccountEntity(
+                    firstName = firstName.trim(),
+                    surname = surname.trim(),
+                    email = email.trim().lowercase(),
+                    bakeryName = bakeryName.trim(),
+                    phone = phone.trim(),
+                    city = city.trim(),
+                    operatingModel = operatingModel,
+                    currency = currency,
+                    isPremium = isPro,
+                    specialty = "Cakes & Bakes"
+                )
+            )
+            repository.recordLoginLog(
+                userId = id,
+                email = email.trim().lowercase(),
+                bakeryName = bakeryName.trim(),
+                action = "ADMIN_CREATED",
+                notes = "Provisioned via Master Backend"
+            )
+            onComplete(id)
+        }
+    }
+
+    fun adminToggleUserPro(userId: Long, isPro: Boolean) {
+        viewModelScope.launch {
+            val user = repository.getUserByIdOnce(userId)
+            if (user != null) {
+                repository.updateUserAccount(user.copy(isPremium = isPro))
+                if (_currentUserId.value == userId) {
+                    _isPremiumUser.value = isPro
+                }
+            }
+        }
+    }
+
+    fun adminPurgeUserInvoices(userId: Long, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            repository.purgeAllInvoices(userId)
+            onComplete()
+        }
+    }
+
+    fun adminPurgeUserQuotes(userId: Long, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            repository.purgeAllQuotes(userId)
+            onComplete()
         }
     }
 }

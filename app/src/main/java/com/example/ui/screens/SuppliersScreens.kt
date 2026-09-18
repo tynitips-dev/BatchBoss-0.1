@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -37,7 +38,8 @@ fun SuppliersListScreen(
     onToggleFavorite: (Long) -> Unit,
     onAddSupplier: () -> Unit,
     isPremium: Boolean = true,
-    onUnlockPremium: () -> Unit = {}
+    onUnlockPremium: () -> Unit = {},
+    onOpenStoreLocator: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) } // 0: All, 1: My Suppliers, 2: Favourites
     var searchQuery by remember { mutableStateOf("") }
@@ -93,21 +95,43 @@ fun SuppliersListScreen(
                         }
                     }
 
-                    IconButton(
-                        onClick = {
-                            if (!isPremium) onUnlockPremium() else onAddSupplier()
-                        },
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(BatchPink)
-                            .testTag("btn_add_supplier")
-                    ) {
-                        Icon(
-                            imageVector = if (!isPremium) Icons.Filled.Lock else Icons.Filled.Add,
-                            contentDescription = "Add Supplier",
-                            tint = Color.White
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = BatchPinkLight,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(onClick = onOpenStoreLocator)
+                                .testTag("btn_topbar_store_locator")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.NearMe, contentDescription = null, tint = BatchPink, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Store Locator", color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (!isPremium) onUnlockPremium() else onAddSupplier()
+                            },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(BatchPink)
+                                .testTag("btn_add_supplier")
+                        ) {
+                            Icon(
+                                imageVector = if (!isPremium) Icons.Filled.Lock else Icons.Filled.Add,
+                                contentDescription = "Add Supplier",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -122,6 +146,46 @@ fun SuppliersListScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
         ) {
+            // Store Locator Banner
+            item {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, BatchPinkLight),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenStoreLocator)
+                        .testTag("banner_store_locator")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(BatchPinkLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.NearMe, contentDescription = null, tint = BatchPink, modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Baking Supply Store Locator", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(shape = RoundedCornerShape(6.dp), color = MintGreen.copy(alpha = 0.2f)) {
+                                    Text("MAP", color = Color(0xFF2E7D32), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Find local baking shops, cake boxes, flour & tools near you", fontSize = 11.sp, color = MediumText)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
             // PRO Lock Banner if Free
             if (!isPremium) {
                 item {

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,9 +18,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
@@ -44,10 +51,13 @@ fun RecipesListScreen(
     onCalculatePricingClick: (Long) -> Unit,
     onCreateRecipeClick: () -> Unit,
     isPremium: Boolean = false,
-    onUnlockPremium: () -> Unit = {}
+    onUnlockPremium: () -> Unit = {},
+    onScanRecipeAi: () -> Unit = {},
+    onDeleteRecipe: (Long) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
+    var recipeToDelete by remember { mutableStateOf<RecipeEntity?>(null) }
 
     val categories = listOf("All", "Cakes", "Cupcakes", "Cookies", "Breads")
 
@@ -81,25 +91,48 @@ fun RecipesListScreen(
                         color = DarkText
                     )
 
-                    IconButton(
-                        onClick = {
-                            if (!isPremium && recipes.size >= 5) {
-                                onUnlockPremium()
-                            } else {
-                                onCreateRecipeClick()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(BatchPink)
-                            .testTag("btn_create_recipe")
-                    ) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = "Create Recipe",
-                            tint = Color.White
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = onScanRecipeAi,
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .height(38.dp)
+                                .testTag("btn_scan_recipe_ai_top")
+                        ) {
+                            Icon(
+                                Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                tint = BatchPink,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("AI Scan", color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = {
+                                if (!isPremium && recipes.size >= 5) {
+                                    onUnlockPremium()
+                                } else {
+                                    onCreateRecipeClick()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(BatchPink)
+                                .testTag("btn_create_recipe")
+                        ) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Create Recipe",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -196,6 +229,48 @@ fun RecipesListScreen(
                 }
             }
 
+            // AI Recipe Vision Scanner Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onScanRecipeAi)
+                        .testTag("card_ai_recipe_scanner_prompt")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(BatchPink, CoralOrange))
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Scan Recipe Photo", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkText)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(shape = RoundedCornerShape(6.dp), color = BatchPinkLight) {
+                                    Text("PRO AI", color = BatchPink, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
+                                }
+                            }
+                            Text("Take a photo of any recipe to extract ingredients & steps automatically.", fontSize = 11.sp, color = MediumText, lineHeight = 15.sp)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
             // Search Bar
             item {
                 OutlinedTextField(
@@ -254,14 +329,56 @@ fun RecipesListScreen(
             }
 
             // Recipe Cards
-            items(filteredRecipes) { recipe ->
+            items(filteredRecipes, key = { it.id }) { recipe ->
                 RecipeListItemCard(
                     recipe = recipe,
                     onViewClick = { onRecipeClick(recipe.id) },
-                    onCalculateClick = { onCalculatePricingClick(recipe.id) }
+                    onCalculateClick = { onCalculatePricingClick(recipe.id) },
+                    onDeleteClick = { recipeToDelete = recipe }
                 )
             }
         }
+    }
+
+    // Confirmation Dialog: Delete Recipe
+    if (recipeToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { recipeToDelete = null },
+            icon = {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Delete Recipe?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Text(
+                    "Are you sure you want to delete \"${recipeToDelete?.name}\"? All ingredients and pricing records for this recipe will be permanently deleted.",
+                    color = MediumText,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = recipeToDelete
+                        recipeToDelete = null
+                        toDelete?.let { onDeleteRecipe(it.id) }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.testTag("btn_confirm_delete_recipe")
+                ) {
+                    Text("Delete Recipe", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { recipeToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -269,7 +386,8 @@ fun RecipesListScreen(
 fun RecipeListItemCard(
     recipe: RecipeEntity,
     onViewClick: () -> Unit,
-    onCalculateClick: () -> Unit
+    onCalculateClick: () -> Unit,
+    onDeleteClick: (() -> Unit)? = null
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -287,14 +405,23 @@ fun RecipeListItemCard(
                     .height(150.dp)
                     .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             ) {
-                Image(
-                    painter = painterResource(
-                        id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
-                    ),
-                    contentDescription = recipe.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (recipe.photoUri.isNotBlank()) {
+                    AsyncImage(
+                        model = recipe.photoUri,
+                        contentDescription = recipe.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(
+                            id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
+                        ),
+                        contentDescription = recipe.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
 
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -359,7 +486,8 @@ fun RecipeListItemCard(
                 // Action Buttons matching Figma screens
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
                         onClick = onViewClick,
@@ -368,6 +496,7 @@ fun RecipeListItemCard(
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp)
+                            .testTag("btn_view_recipe_${recipe.id}")
                     ) {
                         Text("View Recipe", color = BatchPink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
@@ -379,8 +508,27 @@ fun RecipeListItemCard(
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp)
+                            .testTag("btn_calculate_${recipe.id}")
                     ) {
-                        Text("Calculate Pricing", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text("Pricing", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+
+                    if (onDeleteClick != null) {
+                        IconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFFFEBEE))
+                                .testTag("btn_delete_recipe_${recipe.id}")
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = "Delete Recipe",
+                                tint = Color(0xFFD32F2F),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -391,11 +539,14 @@ fun RecipeListItemCard(
 @Composable
 fun RecipeDetailScreen(
     recipe: RecipeEntity?,
+    ingredients: List<RecipeIngredientEntity> = emptyList(),
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
     onViewRecipeIngredients: () -> Unit,
     onCalculatePricing: () -> Unit,
-    onUpdatePricing: (id: Long, labour: Double, overheads: Double, packaging: Double, utilities: Double, profitMargin: Double, customSellingPrice: Double) -> Unit = { _, _, _, _, _, _, _ -> }
+    onUpdatePricing: (id: Long, labour: Double, overheads: Double, packaging: Double, utilities: Double, profitMargin: Double, customSellingPrice: Double) -> Unit = { _, _, _, _, _, _, _ -> },
+    onDeleteRecipe: (Long) -> Unit = {},
+    onUpdatePhoto: (String) -> Unit = {}
 ) {
     if (recipe == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -404,11 +555,19 @@ fun RecipeDetailScreen(
         return
     }
 
-    var showEditPricingDialog by remember { mutableStateOf(false) }
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { onUpdatePhoto(it.toString()) }
+    }
 
-    val batchSize = if (recipe.batchSize > 0) recipe.batchSize else 124
-    val totalCosts = recipe.labourCost + recipe.overheadsCost + recipe.packagingCost + recipe.utilitiesCost + 34.01
-    val costPerItem = totalCosts / batchSize
+    var showEditPricingDialog by remember { mutableStateOf(false) }
+    var showDeleteRecipeDialog by remember { mutableStateOf(false) }
+
+    val batchSize = if (recipe.batchSize > 0) recipe.batchSize else 1
+    val calculatedIngredientsCost = ingredients.sumOf { it.cost }
+    val totalCosts = recipe.labourCost + recipe.overheadsCost + recipe.packagingCost + recipe.utilitiesCost + calculatedIngredientsCost
+    val costPerItem = if (batchSize > 0) totalCosts / batchSize else totalCosts
     val marginFrac = (recipe.profitMarginPercent / 100.0).coerceIn(0.05, 0.95)
     val sellingPricePerItem = if (recipe.customSellingPrice > 0.0) recipe.customSellingPrice else (costPerItem / (1.0 - marginFrac))
 
@@ -466,13 +625,33 @@ fun RecipeDetailScreen(
                         .fillMaxWidth()
                         .height(260.dp)
                 ) {
-                    Image(
-                        painter = painterResource(
-                            id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
-                        ),
-                        contentDescription = recipe.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                    if (recipe.photoUri.isNotBlank()) {
+                        AsyncImage(
+                            model = recipe.photoUri,
+                            contentDescription = recipe.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(
+                                id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
+                            ),
+                            contentDescription = recipe.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Scrim gradient for readability
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent, Color.Black.copy(alpha = 0.5f))
+                                )
+                            )
                     )
 
                     Row(
@@ -493,7 +672,7 @@ fun RecipeDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = DarkText)
                         }
 
-                        Row {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             IconButton(
                                 onClick = onToggleFavorite,
                                 modifier = Modifier
@@ -507,6 +686,50 @@ fun RecipeDetailScreen(
                                     tint = if (recipe.isFavorite) BatchPink else DarkText
                                 )
                             }
+
+                            IconButton(
+                                onClick = { showDeleteRecipeDialog = true },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.85f))
+                                    .testTag("btn_delete_recipe_detail")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = "Delete Recipe",
+                                    tint = Color(0xFFD32F2F)
+                                )
+                            }
+                        }
+                    }
+
+                    // Floating Change / Add Photo Pill
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.Black.copy(alpha = 0.65f),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                            .clickable {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("btn_change_recipe_photo")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (recipe.photoUri.isNotBlank()) "Change Photo" else "Add Photo",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -651,6 +874,45 @@ fun RecipeDetailScreen(
             }
         )
     }
+
+    if (showDeleteRecipeDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteRecipeDialog = false },
+            icon = {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Delete Recipe?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Text(
+                    "Are you sure you want to delete \"${recipe.name}\"? All ingredients, steps, and pricing will be permanently deleted.",
+                    color = MediumText,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteRecipeDialog = false
+                        onDeleteRecipe(recipe.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.testTag("btn_confirm_delete_recipe_detail")
+                ) {
+                    Text("Delete Recipe", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteRecipeDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -659,10 +921,33 @@ fun RecipeIngredientsScreen(
     ingredients: List<RecipeIngredientEntity>,
     onBack: () -> Unit,
     onNavigateToCosting: () -> Unit,
-    onUpdateIngredientCost: (id: Long, cost: Double, quantity: Double) -> Unit = { _, _, _ -> }
+    onUpdateIngredientCost: (id: Long, cost: Double, quantity: Double) -> Unit = { _, _, _ -> },
+    onDeleteIngredient: (id: Long) -> Unit = {}
 ) {
     val totalCost = ingredients.sumOf { it.cost }
     var editingIngredient by remember { mutableStateOf<RecipeIngredientEntity?>(null) }
+    var ingredientToDelete by remember { mutableStateOf<RecipeIngredientEntity?>(null) }
+    var activeTab by remember { mutableIntStateOf(0) } // 0: Ingredients, 1: Method & Steps
+    val completedSteps = remember { mutableStateMapOf<Int, Boolean>() }
+    var selectedBatches by remember { mutableIntStateOf(1) }
+
+    // Parse instructions into steps, with smart defaults if empty
+    val recipeSteps = remember(recipe?.instructions, recipe?.name) {
+        val raw = recipe?.instructions?.trim().orEmpty()
+        if (raw.isNotBlank()) {
+            raw.lines().filter { it.isNotBlank() }
+        } else {
+            listOf(
+                "Preheat the oven to 175°C (350°F) and prepare baking pans or cupcake liners.",
+                "In a large mixing bowl, whisk together the dry ingredients until evenly distributed.",
+                "In a separate bowl, cream the butter and sugar until light and fluffy (approx 3-4 minutes).",
+                "Gradually add eggs one at a time, followed by milk and vanilla extract.",
+                "Combine wet and dry ingredients gently, folding until just incorporated. Do not overmix.",
+                "Portion batter evenly into pans and bake according to recipe time until a skewer comes out clean.",
+                "Cool in pans for 10 minutes, then transfer to a wire rack to cool completely before decorating."
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -671,169 +956,407 @@ fun RecipeIngredientsScreen(
                 shadowElevation = 2.dp,
                 modifier = Modifier.statusBarsPadding()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                            Text(
+                                text = recipe?.name ?: "Recipe Details",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkText
+                            )
                         }
-                        Text(
-                            text = "Recipe Ingredients",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DarkText
-                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = BatchPinkLight
+                        ) {
+                            Text(
+                                text = "${ingredients.size} items",
+                                color = BatchPink,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
 
+                    // Slim Refined Segmented Tabs
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = BatchPinkLight
+                        color = BackgroundLight,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 10.dp)
                     ) {
-                        Text(
-                            text = "${ingredients.size} items",
-                            color = BatchPink,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val tabs = listOf(
+                                "Ingredients (${ingredients.size})",
+                                "Method & Steps (${recipeSteps.size})"
+                            )
+                            tabs.forEachIndexed { index, title ->
+                                val isSelected = activeTab == index
+                                Surface(
+                                    shape = RoundedCornerShape(9.dp),
+                                    color = if (isSelected) BatchPink else Color.Transparent,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { activeTab = index }
+                                        .testTag("tab_recipe_ingredients_$index")
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 7.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = title,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else DarkText
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
         bottomBar = {
-            Surface(
-                color = Color.White,
-                shadowElevation = 8.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Total Ingredients Cost", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                        Text(
-                            text = "R${String.format("%.2f", if (totalCost > 0) totalCost else 34.01)}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = BatchPink
-                        )
-                    }
+            if (activeTab == 0) {
+                Surface(
+                    color = Color.White,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.navigationBarsPadding()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (selectedBatches == 1) "Total Ingredients Cost" else "Total Cost ($selectedBatches Batches)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkText
+                            )
+                            Text(
+                                text = "R${String.format("%.2f", totalCost * selectedBatches)}",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = BatchPink
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Button(
-                        onClick = onNavigateToCosting,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("btn_proceed_to_costing")
-                    ) {
-                        Text("View Recipe Costing", color = Color.White, fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = onNavigateToCosting,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("btn_proceed_to_costing")
+                        ) {
+                            Text("View Recipe Costing", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(BackgroundLight)
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${recipe?.servings ?: 16} Servings (${recipe?.batchSize ?: 124} units)",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = LightText
-                    )
-                    Text(
-                        text = "Tap any ingredient to edit cost",
-                        fontSize = 11.sp,
-                        color = BatchPink,
-                        fontWeight = FontWeight.Medium
-                    )
+        if (activeTab == 0) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BackgroundLight)
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+            ) {
+                // Batch Selector (1, 2, 3, 4)
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = SurfaceWhite,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Batches", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                val baseServings = recipe?.servings ?: 16
+                                Text("${baseServings * selectedBatches} Servings", fontSize = 11.sp, color = LightText)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(1, 2, 3, 4).forEach { b ->
+                                    val isSelected = selectedBatches == b
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) BatchPink else BackgroundLight,
+                                        modifier = Modifier
+                                            .clickable { selectedBatches = b }
+                                            .testTag("batch_chip_$b")
+                                    ) {
+                                        Text(
+                                            text = "$b",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Color.White else DarkText,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
 
-            items(ingredients) { ing ->
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { editingIngredient = ing }
-                        .testTag("card_ingredient_${ing.id}")
-                ) {
+                item {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(BatchPinkLight),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Kitchen, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                        Text(
+                            text = "${recipe?.servings?.times(selectedBatches) ?: (16 * selectedBatches)} Servings (${recipe?.batchSize?.times(selectedBatches) ?: (124 * selectedBatches)} units)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = LightText
+                        )
+                        Text(
+                            text = "Tap ingredient to edit",
+                            fontSize = 11.sp,
+                            color = BatchPink,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                items(ingredients) { ing ->
+                    val scaledQuantity = ing.quantity * selectedBatches
+                    val scaledCost = ing.cost * selectedBatches
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = CardBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clickable { editingIngredient = ing }
+                            .testTag("card_ingredient_${ing.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(BatchPinkLight),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.Kitchen, contentDescription = null, tint = BatchPink, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(text = ing.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                    Text(
+                                        text = if (scaledQuantity == scaledQuantity.toInt().toDouble())
+                                            "${scaledQuantity.toInt()} ${ing.unit}"
+                                        else
+                                            "${String.format("%.1f", scaledQuantity)} ${ing.unit}",
+                                        fontSize = 11.sp,
+                                        color = LightText
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(text = ing.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                                Text(
-                                    text = if (ing.quantity == ing.quantity.toInt().toDouble())
-                                        "${ing.quantity.toInt()} ${ing.unit}"
-                                    else
-                                        "${ing.quantity} ${ing.unit}",
-                                    fontSize = 12.sp,
-                                    color = LightText
-                                )
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "R${String.format("%.2f", scaledCost)}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DarkText
+                                    )
+                                    Text(
+                                        text = "Edit Cost",
+                                        fontSize = 10.sp,
+                                        color = BatchPink,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Outlined.Edit, contentDescription = "Edit Cost", tint = BatchPink, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { ingredientToDelete = ing },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .testTag("btn_delete_ingredient_${ing.id}")
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Delete,
+                                        contentDescription = "Remove Ingredient",
+                                        tint = Color(0xFFD32F2F),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
+                    }
+                }
+            }
+        } else {
+            // Method & Steps tab
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BackgroundLight)
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+            ) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = BatchPinkLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.Checklist, contentDescription = null, tint = BatchPink, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Interactive Baking Steps", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkText)
+                                Text("Check off steps as you bake in the kitchen", fontSize = 11.sp, color = MediumText)
+                            }
+                        }
+                    }
+                }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(horizontalAlignment = Alignment.End) {
+                itemsIndexed(recipeSteps) { index, step ->
+                    val isChecked = completedSteps[index] == true
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isChecked) Color(0xFFF1F8E9) else Color.White
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isChecked) MintGreen else BorderLight
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                completedSteps[index] = !isChecked
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { completedSteps[index] = it },
+                                colors = CheckboxDefaults.colors(checkedColor = MintGreen)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "R${String.format("%.2f", ing.cost)}",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = DarkText
-                                )
-                                Text(
-                                    text = "Edit Cost",
+                                    text = "Step ${index + 1}",
                                     fontSize = 11.sp,
-                                    color = BatchPink,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isChecked) MintGreen else BatchPink
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = step,
+                                    fontSize = 13.sp,
+                                    color = if (isChecked) LightText else DarkText,
+                                    lineHeight = 18.sp,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        textDecoration = if (isChecked) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                                    )
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit Cost", tint = BatchPink, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
         }
+    }
+
+    if (ingredientToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { ingredientToDelete = null },
+            icon = {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Remove Ingredient?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Text(
+                    "Are you sure you want to remove \"${ingredientToDelete?.name}\" from this recipe?",
+                    color = MediumText,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = ingredientToDelete
+                        ingredientToDelete = null
+                        toDelete?.let { onDeleteIngredient(it.id) }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.testTag("btn_confirm_delete_recipe_ingredient")
+                ) {
+                    Text("Remove", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { ingredientToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (editingIngredient != null) {
@@ -842,6 +1365,10 @@ fun RecipeIngredientsScreen(
             onDismiss = { editingIngredient = null },
             onSave = { cost, qty ->
                 onUpdateIngredientCost(editingIngredient!!.id, cost, qty)
+            },
+            onDelete = {
+                onDeleteIngredient(editingIngredient!!.id)
+                editingIngredient = null
             }
         )
     }
@@ -855,7 +1382,7 @@ fun RecipeCostingScreen(
     onCalculatePricing: () -> Unit,
     onUpdatePricing: (id: Long, labour: Double, overheads: Double, packaging: Double, utilities: Double, profitMargin: Double, customSellingPrice: Double) -> Unit = { _, _, _, _, _, _, _ -> }
 ) {
-    val ingCost = if (ingredientsCost > 0) ingredientsCost else 34.01
+    val ingCost = ingredientsCost
     val labour = recipe?.labourCost ?: 15.00
     val overheads = recipe?.overheadsCost ?: 50.00
     val packaging = recipe?.packagingCost ?: 5.00
@@ -1070,7 +1597,7 @@ private fun CostingRow(
 @Composable
 fun PricingCalculatorScreen(
     recipe: RecipeEntity?,
-    ingredientsCost: Double = 34.01,
+    ingredientsCost: Double = 0.0,
     onBack: () -> Unit,
     onSavePricing: (Double) -> Unit,
     onViewAnalysis: () -> Unit,
@@ -1079,7 +1606,7 @@ fun PricingCalculatorScreen(
     var isPerItem by remember { mutableStateOf(true) }
     var showEditCostsDialog by remember { mutableStateOf(false) }
 
-    val ingCost = if (ingredientsCost > 0) ingredientsCost else 34.01
+    val ingCost = ingredientsCost
     val labour = recipe?.labourCost ?: 15.00
     val overheads = recipe?.overheadsCost ?: 50.00
     val packaging = recipe?.packagingCost ?: 5.00
@@ -1638,6 +2165,20 @@ fun CreateEditRecipeScreen(
         packagingCost: Double,
         profitMargin: Double,
         ingredients: List<RecipeIngredientEntity>
+    ) -> Unit)? = null,
+    onSaveWithPhoto: ((
+        name: String,
+        category: String,
+        description: String,
+        servings: Int,
+        batchSize: Int,
+        labourCost: Double,
+        overheadsCost: Double,
+        packagingCost: Double,
+        utilitiesCost: Double,
+        profitMargin: Double,
+        ingredients: List<RecipeIngredientEntity>,
+        photoUri: String
     ) -> Unit)? = null
 ) {
     var name by remember { mutableStateOf("") }
@@ -1645,6 +2186,13 @@ fun CreateEditRecipeScreen(
     var description by remember { mutableStateOf("") }
     var servings by remember { mutableIntStateOf(16) }
     var batchSize by remember { mutableIntStateOf(124) }
+    var selectedPhotoUri by remember { mutableStateOf("") }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { selectedPhotoUri = it.toString() }
+    }
 
     var laborHoursText by remember { mutableStateOf("1.5") }
     var laborRatePerHourText by remember { mutableStateOf("120.00") }
@@ -1702,7 +2250,13 @@ fun CreateEditRecipeScreen(
                     TextButton(
                         onClick = {
                             if (name.isNotBlank()) {
-                                if (onSaveDetailed != null) {
+                                if (onSaveWithPhoto != null) {
+                                    onSaveWithPhoto(
+                                        name.trim(), category, description.trim(), servings, batchSize,
+                                        calculatedLabour, 0.0, parsedPackaging, 0.0, parsedMargin,
+                                        ingredientsList, selectedPhotoUri
+                                    )
+                                } else if (onSaveDetailed != null) {
                                     onSaveDetailed(
                                         name.trim(), category, description.trim(), servings, batchSize,
                                         parsedHours, parsedRate, parsedPackaging, parsedMargin, ingredientsList
@@ -1732,24 +2286,78 @@ fun CreateEditRecipeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
         ) {
-            // Photo Upload Placeholder
+            // Photo Upload
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = BatchPinkContainer,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.3f)),
+                    color = BatchPinkContainer.copy(alpha = 0.6f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.4f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(110.dp)
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                        .testTag("btn_upload_recipe_photo")
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Outlined.PhotoCamera, contentDescription = null, tint = BatchPink, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Add recipe photo", color = BatchPink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    if (selectedPhotoUri.isNotBlank()) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = selectedPhotoUri,
+                                contentDescription = "Recipe Photo Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.Black.copy(alpha = 0.65f),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Filled.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Change Photo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            IconButton(
+                                onClick = { selectedPhotoUri = "" },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                            ) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove Photo", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(BatchPink.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, tint = BatchPink, modifier = Modifier.size(24.dp))
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Add Recipe Photo", color = BatchPink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Tap to select an image from gallery", color = LightText, fontSize = 11.sp)
+                        }
                     }
                 }
             }
@@ -1986,12 +2594,14 @@ fun CreateEditRecipeScreen(
                     shape = RoundedCornerShape(12.dp),
                     color = CardBackground,
                     border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1999,18 +2609,18 @@ fun CreateEditRecipeScreen(
                             Surface(
                                 shape = CircleShape,
                                 color = BatchPinkContainer,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.Cookie, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Outlined.Cookie, contentDescription = null, tint = BatchPink, modifier = Modifier.size(16.dp))
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text(text = ing.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Text(text = ing.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
                                 Text(
                                     text = "${UnitUtils.formatQuantity(ing.quantity, ing.unit)} • Cost: R${String.format("%.2f", ing.cost)}",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = MediumText
                                 )
                             }
@@ -2018,7 +2628,7 @@ fun CreateEditRecipeScreen(
 
                         IconButton(
                             onClick = { ingredientsList = ingredientsList.filterIndexed { i, _ -> i != idx } },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Remove", tint = LightText, modifier = Modifier.size(18.dp))
                         }
@@ -2286,7 +2896,7 @@ fun AddRecipeIngredientDialog(
 @Composable
 fun EditRecipePricingDialog(
     recipe: RecipeEntity,
-    ingredientsCost: Double = 34.01,
+    ingredientsCost: Double = 0.0,
     onDismiss: () -> Unit,
     onSave: (labour: Double, overheads: Double, packaging: Double, utilities: Double, profitMargin: Double, customSellingPrice: Double) -> Unit,
     onSaveDetailedPricing: ((laborHours: Double, laborRatePerHour: Double, packaging: Double, profitMargin: Double, customSellingPrice: Double) -> Unit)? = null
@@ -2545,11 +3155,13 @@ fun EditRecipePricingDialog(
 fun EditIngredientCostDialog(
     ingredient: RecipeIngredientEntity,
     onDismiss: () -> Unit,
-    onSave: (cost: Double, quantity: Double) -> Unit
+    onSave: (cost: Double, quantity: Double) -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     var costText by remember { mutableStateOf(String.format("%.2f", ingredient.cost)) }
     var quantityText by remember { mutableStateOf(if (ingredient.quantity == ingredient.quantity.toInt().toDouble()) ingredient.quantity.toInt().toString() else ingredient.quantity.toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2637,10 +3249,52 @@ fun EditIngredientCostDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onDelete != null) {
+                    TextButton(
+                        onClick = { showDeleteConfirm = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F)),
+                        modifier = Modifier.testTag("btn_delete_recipe_ingredient_dialog")
+                    ) {
+                        Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Remove")
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = {
+                Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(32.dp))
+            },
+            title = { Text("Remove Ingredient?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = { Text("Are you sure you want to remove \"${ingredient.name}\" from this recipe?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete?.invoke()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Remove", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Keep")
+                }
+            }
+        )
+    }
 }
 

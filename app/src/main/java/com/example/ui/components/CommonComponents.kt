@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,12 +24,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.*
 
 @Composable
@@ -129,34 +133,100 @@ private fun NavItem(
 }
 
 @Composable
-fun BatchBossBrandLogo(
+fun BatchBossEmblem(
     modifier: Modifier = Modifier,
     size: Int = 36
+) {
+    Box(
+        modifier = modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(Color.White),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_batchboss_emblem),
+            contentDescription = "BatchBoss Emblem",
+            modifier = Modifier.size(size.dp),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
+fun BatchBossBrandLogo(
+    modifier: Modifier = Modifier,
+    size: Int = 36,
+    showVersionBadge: Boolean = false
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
-        Box(
-            modifier = Modifier
-                .size(size.dp)
-                .clip(CircleShape)
-                .background(BatchPinkContainer),
-            contentAlignment = Alignment.Center
+        BatchBossEmblem(size = size)
+        Spacer(modifier = Modifier.width(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Batch",
+                fontSize = (size * 0.58).sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = DarkText
+            )
+            Text(
+                text = "Boss",
+                fontSize = (size * 0.58).sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = BatchPink
+            )
+            if (showVersionBadge) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = BatchPinkLight,
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, BatchPink.copy(alpha = 0.35f))
+                ) {
+                    Text(
+                        text = "v7",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BatchPink,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BatchBossFullLogo(
+    modifier: Modifier = Modifier,
+    size: Int = 200,
+    showCardBackground: Boolean = false
+) {
+    if (showCardBackground) {
+        Surface(
+            modifier = modifier,
+            shape = RoundedCornerShape(24.dp),
+            color = Color.White,
+            shadowElevation = 2.dp
         ) {
-            Icon(
-                imageVector = Icons.Filled.Cake,
-                contentDescription = "BatchBoss Logo",
-                tint = BatchPink,
-                modifier = Modifier.size((size * 0.65).dp)
+            Image(
+                painter = painterResource(id = R.drawable.img_batchboss_logo),
+                contentDescription = "BatchBoss Logo - Cost Price Profit",
+                modifier = Modifier
+                    .size(size.dp)
+                    .padding(12.dp),
+                contentScale = ContentScale.Fit
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = "BatchBoss",
-            fontSize = (size * 0.6).sp,
-            fontWeight = FontWeight.Bold,
-            color = DarkText
+    } else {
+        Image(
+            painter = painterResource(id = R.drawable.img_batchboss_logo),
+            contentDescription = "BatchBoss Logo - Cost Price Profit",
+            modifier = modifier
+                .size(size.dp),
+            contentScale = ContentScale.Fit
         )
     }
 }

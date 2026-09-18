@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -30,22 +33,31 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.Screen
 import com.example.ui.components.BatchBossBrandLogo
+import com.example.ui.components.BatchBossEmblem
+import com.example.ui.components.BatchBossFullLogo
 import com.example.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SplashScreen(
+    isLoggedIn: Boolean = false,
     onNavigateToSignUp: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {},
     onNavigateToHome: () -> Unit = {},
-    onNavigateNext: () -> Unit = onNavigateToHome
+    onNavigateNext: () -> Unit = {}
 ) {
     var progress by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(Unit) {
-        val stepTime = 25L
+    LaunchedEffect(isLoggedIn) {
+        val stepTime = 20L
         for (i in 1..100) {
             kotlinx.coroutines.delay(stepTime)
             progress = i / 100f
+        }
+        if (isLoggedIn) {
+            onNavigateToHome()
         }
     }
 
@@ -65,56 +77,12 @@ fun SplashScreen(
                 .fillMaxWidth()
                 .padding(32.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(104.dp)
-                    .clip(CircleShape)
-                    .background(BatchPinkContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Cake,
-                    contentDescription = "BatchBoss Logo",
-                    tint = BatchPink,
-                    modifier = Modifier.size(60.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "BatchBoss",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                color = DarkText
+            BatchBossFullLogo(
+                size = 280,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = BatchPinkLight
-            ) {
-                Text(
-                    text = "Bakery Costing & Pricing Suite",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BatchPink,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "Cost it. Price it. Profit.\nBake with complete confidence.",
-                fontSize = 15.sp,
-                color = MediumText,
-                textAlign = TextAlign.Center,
-                lineHeight = 22.sp
-            )
-
-            Spacer(modifier = Modifier.height(44.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             LinearProgressIndicator(
                 progress = { progress },
@@ -129,7 +97,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = if (progress < 1f) "Preparing your bakery kitchen..." else "Ready to bake!",
+                text = if (progress < 1f) "Preparing your bakery kitchen..." else if (isLoggedIn) "Welcome back! Entering kitchen..." else "Sign in to your bakery account",
                 fontSize = 13.sp,
                 color = LightText
             )
@@ -168,15 +136,30 @@ fun SplashScreen(
                 Text("Log In to Account", color = BatchPink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Direct Open / Demo CTA
-            TextButton(
-                onClick = onNavigateToHome,
-                modifier = Modifier.testTag("btn_enter_app")
+            // Professional security tag - demo button removed completely
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
-                Text("Explore Bakery Demo", color = LightText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = LightText, modifier = Modifier.size(13.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Professional Bakery Operating System • v7.0",
+                    color = LightText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved. BatchBoss™",
+                color = LightText.copy(alpha = 0.85f),
+                fontSize = 10.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
         }
     }
 }
@@ -395,7 +378,7 @@ fun LoginScreen(
     onBack: (() -> Unit)? = null
 ) {
     var loginMode by remember { mutableStateOf("Owner") } // "Owner" or "Staff PIN"
-    var emailOrPhone by remember { mutableStateOf("tyne@batchboss.com") }
+    var emailOrPhone by remember { mutableStateOf("baker@batchboss.co.za") }
     var password by remember { mutableStateOf("password123") }
     var staffPin by remember { mutableStateOf("1234") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -530,7 +513,7 @@ fun LoginScreen(
                 value = emailOrPhone,
                 onValueChange = { emailOrPhone = it; errorMessage = null },
                 label = { Text("Email or Mobile Number") },
-                placeholder = { Text("tyne@batchboss.com or +27 82...") },
+                placeholder = { Text("baker@batchboss.co.za or +27 82...") },
                 leadingIcon = {
                     Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LightText)
                 },
@@ -739,7 +722,10 @@ fun LoginScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             OutlinedButton(
-                onClick = onLoginSuccess,
+                onClick = {
+                    onLoginWithDetails?.invoke("tyne.jenkins@gmail.com", selectedBranch)
+                    onLoginSuccess()
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
@@ -752,7 +738,10 @@ fun LoginScreen(
             }
 
             OutlinedButton(
-                onClick = onLoginSuccess,
+                onClick = {
+                    onLoginWithDetails?.invoke("baker.apple@batchboss.com", selectedBranch)
+                    onLoginSuccess()
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
@@ -792,7 +781,7 @@ fun CreateAccountScreen(
 ) {
     var fullName by remember { mutableStateOf("") }
     var bakeryName by remember { mutableStateOf("") }
-    var specialty by remember { mutableStateOf("Cakes & Cupcakes") }
+    var selectedSpecialties by remember { mutableStateOf(setOf("Cakes & Cupcakes")) }
     var phone by remember { mutableStateOf("") }
     var city by remember { mutableStateOf("Cape Town") }
     var operatingModel by remember { mutableStateOf("Home Kitchen") }
@@ -804,7 +793,6 @@ fun CreateAccountScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var agreedToTerms by remember { mutableStateOf(true) }
-    var newsletterOptIn by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val passwordStrength = remember(password) {
@@ -874,7 +862,7 @@ fun CreateAccountScreen(
             value = fullName,
             onValueChange = { fullName = it; errorMessage = null },
             label = { Text("Baker / Owner Full Name *") },
-            placeholder = { Text("e.g. Tyne Jenkins") },
+            placeholder = { Text("Full Name") },
             leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_fullname"),
             shape = RoundedCornerShape(14.dp),
@@ -888,7 +876,7 @@ fun CreateAccountScreen(
             value = bakeryName,
             onValueChange = { bakeryName = it; errorMessage = null },
             label = { Text("Bakery / Business Name *") },
-            placeholder = { Text("e.g. Tyne's Artisan Bakery") },
+            placeholder = { Text("Bakery Name") },
             leadingIcon = { Icon(Icons.Outlined.Storefront, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_bakeryname"),
             shape = RoundedCornerShape(14.dp),
@@ -900,7 +888,7 @@ fun CreateAccountScreen(
         // Bakery Specialty Focus
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = "Bakery Specialty Focus",
+                text = "Bakery Specialty Focus (Select all that apply)",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = MediumText,
@@ -912,12 +900,18 @@ fun CreateAccountScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 specialties.take(3).forEach { spec ->
-                    val isSelected = specialty == spec
+                    val isSelected = selectedSpecialties.contains(spec)
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = if (isSelected) BatchPinkLight else BackgroundLight,
                         border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) BatchPink else BorderLight),
-                        modifier = Modifier.weight(1f).clickable { specialty = spec }
+                        modifier = Modifier.weight(1f).clickable {
+                            selectedSpecialties = if (isSelected) {
+                                if (selectedSpecialties.size > 1) selectedSpecialties - spec else selectedSpecialties
+                            } else {
+                                selectedSpecialties + spec
+                            }
+                        }
                     ) {
                         Text(
                             text = spec,
@@ -936,12 +930,18 @@ fun CreateAccountScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 specialties.drop(3).forEach { spec ->
-                    val isSelected = specialty == spec
+                    val isSelected = selectedSpecialties.contains(spec)
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = if (isSelected) BatchPinkLight else BackgroundLight,
                         border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) BatchPink else BorderLight),
-                        modifier = Modifier.weight(1f).clickable { specialty = spec }
+                        modifier = Modifier.weight(1f).clickable {
+                            selectedSpecialties = if (isSelected) {
+                                if (selectedSpecialties.size > 1) selectedSpecialties - spec else selectedSpecialties
+                            } else {
+                                selectedSpecialties + spec
+                            }
+                        }
                     ) {
                         Text(
                             text = spec,
@@ -1074,7 +1074,7 @@ fun CreateAccountScreen(
             value = email,
             onValueChange = { email = it; errorMessage = null },
             label = { Text("Email Address *") },
-            placeholder = { Text("tyne@batchboss.com") },
+            placeholder = { Text("baker@batchboss.co.za") },
             leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_email"),
             shape = RoundedCornerShape(14.dp),
@@ -1198,20 +1198,6 @@ fun CreateAccountScreen(
             )
         }
 
-        // Newsletter Checkbox
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = newsletterOptIn,
-                onCheckedChange = { newsletterOptIn = it },
-                colors = CheckboxDefaults.colors(checkedColor = BatchPink)
-            )
-            Text(
-                text = "Send me weekly bakery costing & margin tips",
-                fontSize = 12.sp,
-                color = MediumText
-            )
-        }
-
         Spacer(modifier = Modifier.height(20.dp))
 
         Button(
@@ -1226,10 +1212,11 @@ fun CreateAccountScreen(
                     !agreedToTerms -> errorMessage = "Please agree to the Terms of Service"
                     else -> {
                         errorMessage = null
+                        val specialtiesString = if (selectedSpecialties.isEmpty()) "Cakes & Cupcakes" else selectedSpecialties.joinToString(", ")
                         onAccountCreatedWithData?.invoke(
                             fullName.trim(),
                             bakeryName.trim(),
-                            specialty,
+                            specialtiesString,
                             phone.trim(),
                             city.trim(),
                             operatingModel,
@@ -1265,7 +1252,19 @@ fun CreateAccountScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedButton(
-            onClick = onAccountCreated,
+            onClick = {
+                onAccountCreatedWithData?.invoke(
+                    "Master Baker",
+                    "Artisan Bakery Studio",
+                    "Cakes & Cupcakes",
+                    "+27 82 555 1234",
+                    "Cape Town",
+                    "Home Kitchen",
+                    "ZAR (R)",
+                    "baker@batchboss.co.za"
+                )
+                onAccountCreated()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -1401,5 +1400,426 @@ fun ForgotPasswordScreen(
                 .clickable(onClick = onNavigateBack)
                 .padding(8.dp)
         )
+    }
+}
+
+@Composable
+fun WelcomeEmailScreen(
+    fullName: String,
+    email: String,
+    bakeryName: String,
+    city: String = "Cape Town",
+    operatingModel: String = "Home Kitchen",
+    currency: String = "ZAR (R)",
+    onProceedToHome: () -> Unit
+) {
+    val context = LocalContext.current
+    val currentDate = remember {
+        SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date())
+    }
+
+    val bakerFirstName = fullName.substringBefore(" ").ifBlank { "Baker" }
+    val displayBakery = bakeryName.ifBlank { "Your Bakery Studio" }
+
+    Scaffold(
+        topBar = {
+            Surface(
+                color = SurfaceWhite,
+                shadowElevation = 2.dp,
+                modifier = Modifier.statusBarsPadding()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onProceedToHome) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = DarkText)
+                        }
+                        Column {
+                            Text(
+                                text = "Welcome to The Batch Boss",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkText
+                            )
+                            Text(
+                                text = "Official Welcome Letter & Guidelines",
+                                fontSize = 12.sp,
+                                color = MediumText
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MintGreen.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MintGreen)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delivered", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MintGreen)
+                        }
+                    }
+                }
+            }
+        },
+        bottomBar = {
+            Surface(
+                color = SurfaceWhite,
+                shadowElevation = 6.dp,
+                modifier = Modifier.navigationBarsPadding()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onProceedToHome,
+                        colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("btn_enter_kitchen")
+                    ) {
+                        Icon(Icons.Filled.Storefront, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Enter Bakery Kitchen & Cost Recipes", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:$email")
+                                putExtra(Intent.EXTRA_SUBJECT, "Welcome to BatchBoss! 🧁 Bakery Starter Guide")
+                                putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    """
+                                    Hi $bakerFirstName,
+
+                                    Welcome to BatchBoss! We're excited to have $displayBakery join our platform.
+
+                                    Bakery Profile:
+                                    - Bakery: $displayBakery
+                                    - Baker: $fullName
+                                    - City: $city
+                                    - Setup: $operatingModel
+                                    - Currency: $currency
+
+                                    Your 3 Quick-Start Steps:
+                                    1. Add your bulk ingredients with package prices.
+                                    2. Cost your signature recipe down to the gram.
+                                    3. Set your target margin (60-70%) and quote with total confidence!
+
+                                    The Batch Boss kitchen team
+                                    welcome@batchboss.co.za • www.thebatchboss.co.za
+                                    """.trimIndent()
+                                )
+                            }
+                            try {
+                                context.startActivity(Intent.createChooser(emailIntent, "Open in Email App"))
+                            } catch (e: Exception) {
+                                // Fallback
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, BatchPink),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_open_mail_app")
+                    ) {
+                        Icon(Icons.Outlined.Email, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Open in Email App / Send Copy", color = BatchPink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundLight)
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Simulated Email Container
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = CardBackground,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    // Header Envelope Metadata
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(BatchPinkLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Cake, contentDescription = null, tint = BatchPink, modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "The Batch Boss Team",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkText
+                            )
+                            Text(
+                                text = "welcome@batchboss.co.za",
+                                fontSize = 12.sp,
+                                color = LightText
+                            )
+                        }
+                        Text(
+                            text = currentDate,
+                            fontSize = 11.sp,
+                            color = LightText
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = DividerColor)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Email Addressing details
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row {
+                            Text("To: ", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MediumText)
+                            Text("$fullName <$email>", fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.Medium)
+                        }
+                        Row {
+                            Text("Subject: ", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MediumText)
+                            Text("Welcome to BatchBoss! 🧁 Let's master your bakery margins", fontSize = 12.sp, color = BatchPink, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = DividerColor)
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Letter Salutation
+                    Text(
+                        text = "Hi $bakerFirstName,",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkText
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Welcome to the BatchBoss family! We are thrilled to officially partner with $displayBakery as your bakery costing and kitchen operations engine.",
+                        fontSize = 14.sp,
+                        lineHeight = 22.sp,
+                        color = DarkText
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Baking delicious treats is an art of passion and precision — but running a sustainable bakery shouldn't be guesswork. BatchBoss was built by bakers to give you 100% clarity over your bulk ingredients, batch production costs, labor expenses, and profit margins.",
+                        fontSize = 14.sp,
+                        lineHeight = 22.sp,
+                        color = MediumText
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // 3-Step Quick Start Blueprint
+                    Text(
+                        text = "Your 3 Quick Steps to Bakery Success",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkText
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Step 1
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BackgroundLight,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(BatchPink),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("1", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Record Your Pantry Ingredients", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Enter your purchase package prices for flours, sugars, chocolates, and packaging. BatchBoss automatically converts packages to exact cost-per-gram.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = MediumText
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Step 2
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BackgroundLight,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(BatchPink),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("2", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Cost Your Signature Recipe", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Add ingredient quantities and prep labor hours. BatchBoss will calculate your true batch production cost and per-unit cost down to the cent.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = MediumText
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Step 3
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BackgroundLight,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(BatchPink),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("3", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Set Profitable Selling Prices", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Select your target profit margin (we recommend 60%–70% for custom artisan bakes). Generate invoices and quotes with total confidence.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = MediumText
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Registered Bakery Details Card
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BatchPinkLight,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Bakery Profile Summary", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Bakery Name:", fontSize = 12.sp, color = MediumText)
+                                Text(displayBakery, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Head Baker:", fontSize = 12.sp, color = MediumText)
+                                Text(fullName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Kitchen Setup:", fontSize = 12.sp, color = MediumText)
+                                Text(operatingModel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Location:", fontSize = 12.sp, color = MediumText)
+                                Text(city, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Currency:", fontSize = 12.sp, color = MediumText)
+                                Text(currency, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Sign-off
+                    Text(
+                        text = "We are here cheering you on for every single bake. If you ever have questions or want tips on recipe costing, don't hesitate to reach out to our team.",
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MediumText
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "The Batch Boss kitchen team",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BatchPink
+                    )
+                    Text(
+                        text = "welcome@batchboss.co.za • www.thebatchboss.co.za",
+                        fontSize = 12.sp,
+                        color = LightText
+                    )
+                }
+            }
+        }
     }
 }

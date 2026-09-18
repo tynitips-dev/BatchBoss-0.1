@@ -39,12 +39,14 @@ fun InventoryListScreen(
     onAddNewStockItem: (String, Double, Double, Double, String) -> Unit,
     onDeleteStockItem: (Long) -> Unit,
     onUpdateStockPriceDetailed: ((Long, Double, Double, Double, Double, Double) -> Unit)? = null,
-    onAddNewStockItemDetailed: ((String, Double, Double, Double, Double, Double, String, String) -> Unit)? = null
+    onAddNewStockItemDetailed: ((String, Double, Double, Double, Double, Double, String, String) -> Unit)? = null,
+    onScanBarcode: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     var searchQuery by remember { mutableStateOf("") }
     var showPurchaseDialog by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<InventoryItemEntity?>(null) }
+    var itemToDelete by remember { mutableStateOf<InventoryItemEntity?>(null) }
     var showAddItemDialog by remember { mutableStateOf(false) }
 
     val displayedItems = remember(allInventory, lowStockItems, selectedTab, searchQuery) {
@@ -91,6 +93,19 @@ fun InventoryListScreen(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onScanBarcode,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(BatchPinkLight)
+                                .testTag("btn_scan_barcode_top")
+                        ) {
+                            Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan Barcode", tint = BatchPink, modifier = Modifier.size(20.dp))
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
                         IconButton(
                             onClick = { showAddItemDialog = true },
                             modifier = Modifier
@@ -156,8 +171,8 @@ fun InventoryListScreen(
                 .background(BackgroundLight)
                 .padding(innerPadding)
                 .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
         ) {
             // Valuation and Metrics Cards
             item {
@@ -202,32 +217,99 @@ fun InventoryListScreen(
                 }
             }
 
-            // Tabs (All Stock / Low Stock / In Stock)
+            // Slim Refined Tabs (All Items / Low Stock / In Stock)
             item {
-                Row(
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val tabs = listOf(
+                            Triple(0, "All Items", allInventory.size),
+                            Triple(1, "Low Stock", lowStockItems.size),
+                            Triple(2, "In Stock", (allInventory.size - lowStockItems.size).coerceAtLeast(0))
+                        )
+                        tabs.forEach { (index, title, count) ->
+                            val isSelected = selectedTab == index
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSelected) BatchPink else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { selectedTab = index }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = title,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        color = if (isSelected) Color.White else DarkText
+                                    )
+                                    if (index == 1 && count > 0) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(if (isSelected) Color.White else WarmAmber)
+                                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = "$count",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) BatchPink else Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Quick Barcode Ingredient Scanner
+            item {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.35f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(BorderLight)
-                        .padding(3.dp)
+                        .clickable(onClick = onScanBarcode)
+                        .testTag("card_scan_barcode_quick")
                 ) {
-                    val tabs = listOf("All Items", "Low Stock (${lowStockItems.size})", "In Stock")
-                    tabs.forEachIndexed { index, title ->
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
+                                .size(40.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (selectedTab == index) BatchPink else Color.Transparent)
-                                .clickable { selectedTab = index }
-                                .padding(vertical = 8.dp),
+                                .background(BatchPinkLight),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = title,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selectedTab == index) Color.White else DarkText
-                            )
+                            Icon(Icons.Outlined.QrCodeScanner, contentDescription = null, tint = BatchPink, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Barcode Ingredient Scanner", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = DarkText)
+                            Text("Scan package barcodes to auto-fetch pantry ingredients & costs", fontSize = 11.sp, color = MediumText)
+                        }
+                        Surface(shape = RoundedCornerShape(8.dp), color = BatchPink) {
+                            Text("Scan", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                         }
                     }
                 }
@@ -331,10 +413,46 @@ fun InventoryListScreen(
                 StockItemCard(
                     item = item,
                     onEditClick = { editingItem = item },
-                    onToggleAlert = { onToggleAlert(item.id) }
+                    onToggleAlert = { onToggleAlert(item.id) },
+                    onDeleteClick = { itemToDelete = item }
                 )
             }
         }
+    }
+
+    // Confirmation Dialog: Delete Stock Item
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            icon = {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Delete Ingredient?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = { Text("Are you sure you want to delete \"${itemToDelete?.name}\" from your inventory?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = itemToDelete
+                        itemToDelete = null
+                        toDelete?.let { onDeleteStockItem(it.id) }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.testTag("btn_confirm_delete_ingredient")
+                ) {
+                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Dialog: Edit Stock & Price
@@ -439,19 +557,20 @@ fun InventoryListScreen(
 fun StockItemCard(
     item: InventoryItemEntity,
     onEditClick: () -> Unit,
-    onToggleAlert: () -> Unit
+    onToggleAlert: () -> Unit,
+    onDeleteClick: (() -> Unit)? = null
 ) {
     val totalItemValue = item.currentStock * item.unitPrice
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(10.dp),
         color = CardBackground,
         border = androidx.compose.foundation.BorderStroke(1.dp, if (item.isLowStock) BatchPinkLight else BorderLight),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("card_stock_item_${item.id}")
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -460,8 +579,8 @@ fun StockItemCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .background(if (item.isLowStock) AmberLight else MintLight),
                         contentAlignment = Alignment.Center
                     ) {
@@ -469,11 +588,11 @@ fun StockItemCard(
                             imageVector = Icons.Filled.Kitchen,
                             contentDescription = null,
                             tint = if (item.isLowStock) WarmAmber else MintGreen,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -483,21 +602,6 @@ fun StockItemCard(
                                 fontWeight = FontWeight.Bold,
                                 color = DarkText
                             )
-                            if (item.category.isNotBlank() && item.category != "General") {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = BatchPinkLight
-                                ) {
-                                    Text(
-                                        text = item.category,
-                                        fontSize = 10.sp,
-                                        color = BatchPink,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -570,9 +674,9 @@ fun StockItemCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider(color = BorderLight)
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Pricing and Valuation Row with Direct Edit Button
             Row(
@@ -598,19 +702,38 @@ fun StockItemCard(
                     )
                 }
 
-                // Edit Price Button
-                OutlinedButton(
-                    onClick = onEditClick,
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier
-                        .height(34.dp)
-                        .testTag("btn_edit_price_${item.id}")
-                ) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = BatchPink, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Edit Price", color = BatchPink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onDeleteClick != null) {
+                        IconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("btn_delete_stock_item_${item.id}")
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = "Delete Ingredient",
+                                tint = Color(0xFFD32F2F),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+
+                    // Edit Price Button
+                    OutlinedButton(
+                        onClick = onEditClick,
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("btn_edit_price_${item.id}")
+                    ) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null, tint = BatchPink, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Edit Price", color = BatchPink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -637,6 +760,7 @@ fun EditStockPriceDialog(
     var currentStockText by remember { mutableStateOf(if (item.currentStock == item.currentStock.toInt().toDouble()) item.currentStock.toInt().toString() else item.currentStock.toString()) }
     var minStockText by remember { mutableStateOf(if (item.minStock == item.minStock.toInt().toDouble()) item.minStock.toInt().toString() else item.minStock.toString()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val parsedPkgPrice = packagePriceText.toDoubleOrNull() ?: 0.0
     val parsedGrams = gramsPerUnitText.toDoubleOrNull() ?: 0.0
@@ -822,11 +946,50 @@ fun EditStockPriceDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { showDeleteConfirm = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.testTag("btn_delete_from_dialog_${item.id}")
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete")
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = {
+                Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(32.dp))
+            },
+            title = { Text("Delete Ingredient?", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = { Text("Are you sure you want to permanently delete \"${item.name}\" from your inventory?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete(item.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Keep Item")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -923,19 +1086,6 @@ fun AddStockItemDialog(
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
                 )
-
-                // Category selection
-                Text("Category", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(categories.size) { idx ->
-                        val cat = categories[idx]
-                        FilterChip(
-                            selected = category == cat,
-                            onClick = { category = cat },
-                            label = { Text(cat, fontSize = 11.sp) }
-                        )
-                    }
-                }
 
                 // Unit selection chips
                 Text("Unit of Measurement", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)

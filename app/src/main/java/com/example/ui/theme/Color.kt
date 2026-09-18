@@ -11,6 +11,7 @@ val BatchPinkContainer = Color(0xFFFFF0F3)
 val CoralOrange = Color(0xFFFF6B4A)
 val WarmAmber = Color(0xFFF59E0B)
 val AmberLight = Color(0xFFFEF3C7)
+val GoldYellow = Color(0xFFFFB300)
 
 val MintGreen = Color(0xFF10B981)
 val MintLight = Color(0xFFD1FAE5)
@@ -29,6 +30,8 @@ val MutedText = Color(0xFFA1A1AA)
 
 val SurfaceWhite = Color(0xFFFFFFFF)
 val BackgroundLight = Color(0xFFF9FAFB)
+val SoftBackground = BackgroundLight
+val DarkTextMuted = LightText
 val CardBackground = Color(0xFFFFFFFF)
 val BorderLight = Color(0xFFE4E4E7)
 val DividerColor = Color(0xFFF4F4F5)

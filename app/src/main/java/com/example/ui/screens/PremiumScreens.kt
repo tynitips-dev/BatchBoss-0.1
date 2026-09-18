@@ -32,7 +32,9 @@ fun PremiumSubscriptionScreen(
     isPremium: Boolean,
     onBack: () -> Unit,
     onUpgrade: (plan: String) -> Unit,
-    onCancelSubscription: () -> Unit
+    onCancelSubscription: () -> Unit,
+    onOpenAiScanner: () -> Unit = {},
+    onOpenBarcodeScanner: () -> Unit = {}
 ) {
     var selectedPlan by remember { mutableStateOf("annual") } // "monthly" or "annual"
 
@@ -150,6 +152,22 @@ fun PremiumSubscriptionScreen(
             ) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     FeatureRowItem(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "AI Recipe Photo & Image Scanner",
+                        subtitle = "Snap a photo of your recipe card, book, or screenshot. AI automatically extracts all ingredients, measurements, and baking steps into your recipe book.",
+                        iconBg = BatchPinkLight,
+                        iconTint = BatchPink
+                    )
+                    HorizontalDivider(color = DividerColor)
+                    FeatureRowItem(
+                        icon = Icons.Outlined.QrCodeScanner,
+                        title = "Barcode Ingredient Scanner",
+                        subtitle = "Scan grocery barcode packaging to fetch ingredient weights, units, package prices, and instantly log to your pantry stock.",
+                        iconBg = MintLight,
+                        iconTint = MintGreen
+                    )
+                    HorizontalDivider(color = DividerColor)
+                    FeatureRowItem(
                         icon = Icons.Outlined.AllInclusive,
                         title = "Add More Than 5 Recipes",
                         subtitle = "Free plan limited to 5 recipes. Premium unlocks unlimited recipe costing, bulk scaling & ingredient sync.",
@@ -180,6 +198,63 @@ fun PremiumSubscriptionScreen(
                         iconBg = AmberLight,
                         iconTint = WarmAmber
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Quick Launch Pro Scanners
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Bolt, contentDescription = null, tint = BatchPink, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "QUICK LAUNCH SCAN TOOLS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BatchPink,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onOpenAiScanner,
+                        colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .testTag("btn_launch_ai_recipe_scanner")
+                    ) {
+                        Icon(Icons.Filled.AddAPhoto, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Take / Upload Recipe Photo (AI)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = onOpenBarcodeScanner,
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MintGreen),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MintGreen),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .testTag("btn_launch_barcode_scanner")
+                    ) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = null, tint = MintGreen, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Scan Ingredient Barcode", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
                 }
             }
 

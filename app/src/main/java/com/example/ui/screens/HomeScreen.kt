@@ -25,9 +25,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.local.InventoryItemEntity
+import com.example.data.local.InvoiceEntity
 import com.example.data.local.RecipeEntity
+import com.example.data.local.UserAccountEntity
 import com.example.ui.components.BatchBossBrandLogo
 import com.example.ui.components.ProfitSparkline
 import com.example.ui.theme.*
@@ -37,6 +40,9 @@ import com.example.ui.theme.*
 fun HomeScreen(
     recipes: List<RecipeEntity>,
     lowStockItems: List<InventoryItemEntity>,
+    invoices: List<InvoiceEntity> = emptyList(),
+    userAccount: UserAccountEntity? = null,
+    customersCount: Int = 0,
     unreadNotificationsCount: Int,
     timeFrame: String,
     onTimeFrameChanged: (String) -> Unit,
@@ -45,9 +51,34 @@ fun HomeScreen(
     onOpenLowStock: () -> Unit,
     onOpenRecipesList: () -> Unit,
     onRecipeClick: (Long) -> Unit,
-    onOpenTools: () -> Unit
+    onOpenTools: () -> Unit,
+    onOpenCustomers: () -> Unit = {},
+    onOpenInvoices: () -> Unit = {},
+    onOpenScanner: () -> Unit = {}
 ) {
     var showTimeFrameMenu by remember { mutableStateOf(false) }
+
+    // Dynamic metrics calculated purely from actual data
+    val userName = userAccount?.firstName?.ifBlank { userAccount?.fullName }?.takeIf { it.isNotBlank() } ?: "Baker"
+    val totalRevenue = invoices.sumOf { it.amount }
+    val paidInvoices = invoices.filter { it.status.equals("Paid", ignoreCase = true) }
+    val paidRevenue = paidInvoices.sumOf { it.amount }
+    val totalOrdersCount = invoices.size
+    val avgOrder = if (totalOrdersCount > 0) totalRevenue / totalOrdersCount else 0.0
+
+    val averageRecipeMargin = if (recipes.isNotEmpty()) {
+        recipes.map { it.profitMarginPercent }.average()
+    } else 0.0
+
+    val estimatedProfit = if (totalRevenue > 0.0 && averageRecipeMargin > 0.0) {
+        totalRevenue * (averageRecipeMargin / 100.0)
+    } else if (totalRevenue > 0.0) {
+        totalRevenue * 0.30
+    } else 0.0
+
+    val profitDisplay = if (estimatedProfit > 0.0) "R${String.format("%.2f", estimatedProfit)}" else "R0.00"
+    val revenueDisplay = if (totalRevenue > 0.0) "R${String.format("%.2f", totalRevenue)}" else "R0.00"
+    val avgOrderDisplay = if (avgOrder > 0.0) "R${String.format("%.2f", avgOrder)}" else "R0.00"
 
     LazyColumn(
         modifier = Modifier
@@ -139,12 +170,12 @@ fun HomeScreen(
         item {
             Column {
                 Text(
-                    text = "Good morning,",
+                    text = "Good day,",
                     fontSize = 14.sp,
                     color = LightText
                 )
                 Text(
-                    text = "Tyne 👋",
+                    text = "$userName 👋",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = DarkText
@@ -179,7 +210,7 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Today's Profit",
+                                text = "Estimated Profit ($timeFrame)",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.White.copy(alpha = 0.9f)
@@ -232,7 +263,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         Text(
-                            text = "R2 450.00",
+                            text = profitDisplay,
                             fontSize = 34.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White,
@@ -255,14 +286,14 @@ fun HomeScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        Icons.Filled.ArrowUpward,
+                                        if (estimatedProfit > 0) Icons.Filled.TrendingUp else Icons.Filled.Info,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "18% vs yesterday",
+                                        text = if (estimatedProfit > 0) "${paidInvoices.size} paid invoices" else "Based on active orders & margins",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White
@@ -283,7 +314,75 @@ fun HomeScreen(
             }
         }
 
-        // 4. Sales Summary Grid (Revenue, Profit, Orders, Avg Order)
+        // Quick Hub Shortcuts
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenCustomers)
+                        .testTag("btn_home_customers")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Outlined.People, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Customers", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenInvoices)
+                        .testTag("btn_home_invoices")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Outlined.Receipt, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Invoices", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenScanner)
+                        .testTag("btn_home_scanner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("AI Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                    }
+                }
+            }
+        }
+
+        // 4. Sales Summary Grid (Revenue, Profit, Orders, Customers)
         item {
             Column {
                 Text(
@@ -301,16 +400,16 @@ fun HomeScreen(
                 ) {
                     MetricCard(
                         title = "Revenue",
-                        value = "R8 650",
-                        trend = "↑ 15%",
-                        isPositive = true,
+                        value = revenueDisplay,
+                        trend = if (totalRevenue > 0) "${invoices.size} recorded" else "R0.00 base",
+                        isPositive = totalRevenue > 0,
                         modifier = Modifier.weight(1f)
                     )
                     MetricCard(
-                        title = "Profit",
-                        value = "R2 450",
-                        trend = "↑ 18%",
-                        isPositive = true,
+                        title = "Est. Profit",
+                        value = profitDisplay,
+                        trend = if (estimatedProfit > 0) "Dynamic margin" else "R0.00 base",
+                        isPositive = estimatedProfit > 0,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -322,17 +421,17 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     MetricCard(
-                        title = "Orders",
-                        value = "24",
-                        trend = "↑ 9%",
-                        isPositive = true,
+                        title = "Orders / Invoices",
+                        value = totalOrdersCount.toString(),
+                        trend = if (totalOrdersCount > 0) "$paidRevenue paid" else "0 orders",
+                        isPositive = totalOrdersCount > 0,
                         modifier = Modifier.weight(1f)
                     )
                     MetricCard(
-                        title = "Avg. Order",
-                        value = "R360",
-                        trend = "↑ 12%",
-                        isPositive = true,
+                        title = "Customers",
+                        value = customersCount.toString(),
+                        trend = if (customersCount > 0) "$customersCount active" else "0 registered",
+                        isPositive = customersCount > 0,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -366,11 +465,39 @@ fun HomeScreen(
         }
 
         // Recent recipe cards (3 items)
-        items(recipes.take(3)) { recipe ->
-            RecentRecipeCard(
-                recipe = recipe,
-                onClick = { onRecipeClick(recipe.id) }
-            )
+        if (recipes.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = CardBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenRecipesList)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Outlined.MenuBook, contentDescription = null, tint = LightText, modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("No recipes created yet", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Text(
+                            text = "Add your recipes to automatically track ingredient costs and profit margins",
+                            fontSize = 12.sp,
+                            color = LightText,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(recipes.take(3)) { recipe ->
+                RecentRecipeCard(
+                    recipe = recipe,
+                    onClick = { onRecipeClick(recipe.id) }
+                )
+            }
         }
 
         // 6. Low Stock Alerts Header & Chips
@@ -399,18 +526,61 @@ fun HomeScreen(
             }
         }
 
-        item {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(lowStockItems) { item ->
-                    LowStockChip(
-                        name = item.name,
-                        detail = "Low (${item.currentStock.toInt()}${item.unit} left)",
-                        onClick = onOpenLowStock
-                    )
+        if (lowStockItems.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MintLight,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Inventory healthy! No items below minimum threshold.",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = DarkText
+                        )
+                    }
                 }
+            }
+        } else {
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(lowStockItems) { item ->
+                        LowStockChip(
+                            name = item.name,
+                            detail = "Low (${item.currentStock.toInt()}${item.unit} left)",
+                            onClick = onOpenLowStock
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bottom Copyright
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved. BatchBoss™",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MediumText,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
         }
     }
@@ -470,14 +640,23 @@ private fun RecentRecipeCard(
                     .background(BatchPinkContainer),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(
-                        id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
-                    ),
-                    contentDescription = recipe.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (recipe.photoUri.isNotBlank()) {
+                    AsyncImage(
+                        model = recipe.photoUri,
+                        contentDescription = recipe.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(
+                            id = if (recipe.category == "Cupcakes") R.drawable.img_cupcake_hero else R.drawable.img_bakery_recipes
+                        ),
+                        contentDescription = recipe.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(14.dp))

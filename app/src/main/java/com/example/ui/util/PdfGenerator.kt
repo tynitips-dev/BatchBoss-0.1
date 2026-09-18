@@ -2,6 +2,8 @@ package com.example.ui.util
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -11,6 +13,7 @@ import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.example.R
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.QuoteEntity
 import com.example.data.local.UserProfileEntity
@@ -43,7 +46,7 @@ object PdfGenerator {
         val page = document.startPage(pageInfo)
         val canvas = page.canvas
 
-        drawInvoiceContent(canvas, invoice, biz)
+        drawInvoiceContent(context, canvas, invoice, biz)
 
         document.finishPage(page)
 
@@ -63,7 +66,7 @@ object PdfGenerator {
         val page = document.startPage(pageInfo)
         val canvas = page.canvas
 
-        drawQuoteContent(canvas, quote, biz)
+        drawQuoteContent(context, canvas, quote, biz)
 
         document.finishPage(page)
 
@@ -76,25 +79,39 @@ object PdfGenerator {
         return file
     }
 
-    private fun drawInvoiceContent(canvas: Canvas, invoice: InvoiceEntity, biz: UserProfileEntity) {
+    private fun drawInvoiceContent(context: Context, canvas: Canvas, invoice: InvoiceEntity, biz: UserProfileEntity) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // Top Accent Bar
         paint.color = COLOR_PRIMARY
         canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 10f, paint)
 
+        // Logo Emblem
+        val logoBmp: Bitmap? = try {
+            BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
+        } catch (e: Exception) {
+            null
+        }
+
+        var textStartX = MARGIN_LEFT
+        if (logoBmp != null) {
+            val logoSize = 42f
+            canvas.drawBitmap(logoBmp, null, RectF(MARGIN_LEFT, 26f, MARGIN_LEFT + logoSize, 26f + logoSize), paint)
+            textStartX += logoSize + 12f
+        }
+
         // Bakery Name / Business Header
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 20f
-        canvas.drawText(biz.bakeryName.ifBlank { "Artisan Bakery" }, MARGIN_LEFT, 50f, paint)
+        canvas.drawText(biz.bakeryName.ifBlank { "Artisan Bakery" }, textStartX, 44f, paint)
 
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         paint.textSize = 10f
         paint.color = COLOR_MUTED
-        var currentY = 65f
+        var currentY = 58f
         if (biz.address.isNotBlank()) {
-            canvas.drawText(biz.address, MARGIN_LEFT, currentY, paint)
+            canvas.drawText(biz.address, textStartX, currentY, paint)
             currentY += 14f
         }
         val contactLine = listOfNotNull(
@@ -102,11 +119,11 @@ object PdfGenerator {
             biz.email.takeIf { it.isNotBlank() }?.let { "Email: $it" }
         ).joinToString("  •  ")
         if (contactLine.isNotBlank()) {
-            canvas.drawText(contactLine, MARGIN_LEFT, currentY, paint)
+            canvas.drawText(contactLine, textStartX, currentY, paint)
             currentY += 14f
         }
         if (biz.vatNumber.isNotBlank()) {
-            canvas.drawText("VAT/Tax Reg: ${biz.vatNumber}", MARGIN_LEFT, currentY, paint)
+            canvas.drawText("VAT/Tax Reg: ${biz.vatNumber}", textStartX, currentY, paint)
             currentY += 14f
         }
 
@@ -168,41 +185,90 @@ object PdfGenerator {
         paint.color = Color.WHITE
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 10f
-        canvas.drawText("DESCRIPTION / SERVICE", MARGIN_LEFT + 12f, tableTop + 16f, paint)
+        canvas.drawText("ITEM DESCRIPTION", MARGIN_LEFT + 12f, tableTop + 16f, paint)
+        canvas.drawText("QTY", MARGIN_LEFT + 250f, tableTop + 16f, paint)
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("TOTAL AMOUNT", MARGIN_RIGHT - 12f, tableTop + 16f, paint)
+        canvas.drawText("UNIT PRICE", MARGIN_RIGHT - 110f, tableTop + 16f, paint)
+        canvas.drawText("LINE TOTAL", MARGIN_RIGHT - 12f, tableTop + 16f, paint)
         paint.textAlign = Paint.Align.LEFT
 
-        // Table Row (Invoice item)
-        val rowTop = tableTop + 28f
-        paint.color = Color.WHITE
-        val rowRect = RectF(MARGIN_LEFT, rowTop, MARGIN_RIGHT, rowTop + 50f)
-        paint.style = Paint.Style.STROKE
-        paint.color = COLOR_BORDER
-        canvas.drawRoundRect(rowRect, 4f, 4f, paint)
-        paint.style = Paint.Style.FILL
+        currentY = tableTop + 28f
+        val lineItems = invoice.items
 
-        paint.color = COLOR_DARK
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.textSize = 12f
-        canvas.drawText(invoice.orderDescription, MARGIN_LEFT + 12f, rowTop + 24f, paint)
+        if (lineItems.isNotEmpty()) {
+            for (item in lineItems) {
+                val rowHeight = if (item.description.isNotBlank()) 42f else 32f
+                val rowRect = RectF(MARGIN_LEFT, currentY, MARGIN_RIGHT, currentY + rowHeight)
+                paint.style = Paint.Style.STROKE
+                paint.color = COLOR_BORDER
+                canvas.drawRoundRect(rowRect, 4f, 4f, paint)
+                paint.style = Paint.Style.FILL
 
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        paint.color = COLOR_MUTED
-        paint.textSize = 10f
-        canvas.drawText("Artisan Baked Goods & Catering Service", MARGIN_LEFT + 12f, rowTop + 38f, paint)
+                paint.color = COLOR_DARK
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                paint.textSize = 11f
+                canvas.drawText(item.itemName, MARGIN_LEFT + 12f, currentY + 18f, paint)
 
-        val priceStr = formatZar(invoice.amount)
-        paint.color = COLOR_PRIMARY
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.textSize = 13f
-        paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(priceStr, MARGIN_RIGHT - 12f, rowTop + 30f, paint)
-        paint.textAlign = Paint.Align.LEFT
+                if (item.description.isNotBlank()) {
+                    paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                    paint.color = COLOR_MUTED
+                    paint.textSize = 9f
+                    canvas.drawText(item.description, MARGIN_LEFT + 12f, currentY + 32f, paint)
+                }
 
-        // Total Summary Card
-        val summaryTop = rowTop + 65f
-        val summaryRect = RectF(MARGIN_RIGHT - 220f, summaryTop, MARGIN_RIGHT, summaryTop + 55f)
+                // Qty & Unit
+                paint.color = COLOR_DARK
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                paint.textSize = 10f
+                val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
+                canvas.drawText("$qtyStr ${item.unit}", MARGIN_LEFT + 250f, currentY + 18f, paint)
+
+                // Unit Price
+                paint.textAlign = Paint.Align.RIGHT
+                paint.color = COLOR_MUTED
+                canvas.drawText(formatZar(item.unitPrice), MARGIN_RIGHT - 110f, currentY + 18f, paint)
+
+                // Line Total
+                paint.color = COLOR_PRIMARY
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                paint.textSize = 11f
+                canvas.drawText(formatZar(item.lineTotal), MARGIN_RIGHT - 12f, currentY + 18f, paint)
+                paint.textAlign = Paint.Align.LEFT
+
+                currentY += rowHeight + 4f
+            }
+        } else {
+            // Fallback single row
+            val rowRect = RectF(MARGIN_LEFT, currentY, MARGIN_RIGHT, currentY + 50f)
+            paint.style = Paint.Style.STROKE
+            paint.color = COLOR_BORDER
+            canvas.drawRoundRect(rowRect, 4f, 4f, paint)
+            paint.style = Paint.Style.FILL
+
+            paint.color = COLOR_DARK
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = 12f
+            canvas.drawText(invoice.orderDescription, MARGIN_LEFT + 12f, currentY + 24f, paint)
+
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            paint.color = COLOR_MUTED
+            paint.textSize = 10f
+            canvas.drawText("Artisan Baked Goods & Catering Service", MARGIN_LEFT + 12f, currentY + 38f, paint)
+
+            val priceStr = formatZar(invoice.amount)
+            paint.color = COLOR_PRIMARY
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = 13f
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(priceStr, MARGIN_RIGHT - 12f, currentY + 30f, paint)
+            paint.textAlign = Paint.Align.LEFT
+            currentY += 54f
+        }
+
+        // Summary Card with Subtotal, Discount, VAT, Total
+        val summaryTop = currentY + 10f
+        val summaryHeight = if (invoice.discountAmount > 0 || invoice.taxAmount > 0) 80f else 55f
+        val summaryRect = RectF(MARGIN_RIGHT - 240f, summaryTop, MARGIN_RIGHT, summaryTop + summaryHeight)
         paint.color = COLOR_LIGHT_BG
         canvas.drawRoundRect(summaryRect, 8f, 8f, paint)
         paint.style = Paint.Style.STROKE
@@ -210,20 +276,50 @@ object PdfGenerator {
         canvas.drawRoundRect(summaryRect, 8f, 8f, paint)
         paint.style = Paint.Style.FILL
 
+        var sumLineY = summaryTop + 22f
+        if (invoice.discountAmount > 0 || invoice.taxAmount > 0) {
+            paint.color = COLOR_MUTED
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            paint.textSize = 10f
+            canvas.drawText("Subtotal:", MARGIN_RIGHT - 226f, sumLineY, paint)
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(formatZar(invoice.subtotal.takeIf { it > 0 } ?: invoice.amount), MARGIN_RIGHT - 14f, sumLineY, paint)
+            paint.textAlign = Paint.Align.LEFT
+            sumLineY += 16f
+
+            if (invoice.discountAmount > 0) {
+                paint.color = COLOR_MUTED
+                canvas.drawText("Discount:", MARGIN_RIGHT - 226f, sumLineY, paint)
+                paint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("-${formatZar(invoice.discountAmount)}", MARGIN_RIGHT - 14f, sumLineY, paint)
+                paint.textAlign = Paint.Align.LEFT
+                sumLineY += 16f
+            }
+
+            if (invoice.taxAmount > 0) {
+                paint.color = COLOR_MUTED
+                canvas.drawText("VAT (${invoice.taxRatePercent.toInt()}%):", MARGIN_RIGHT - 226f, sumLineY, paint)
+                paint.textAlign = Paint.Align.RIGHT
+                canvas.drawText(formatZar(invoice.taxAmount), MARGIN_RIGHT - 14f, sumLineY, paint)
+                paint.textAlign = Paint.Align.LEFT
+                sumLineY += 16f
+            }
+        }
+
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 11f
-        canvas.drawText("TOTAL DUE:", MARGIN_RIGHT - 206f, summaryTop + 32f, paint)
+        canvas.drawText("TOTAL DUE:", MARGIN_RIGHT - 226f, sumLineY, paint)
 
         paint.color = COLOR_PRIMARY
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.textSize = 16f
+        paint.textSize = 15f
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(priceStr, MARGIN_RIGHT - 14f, summaryTop + 34f, paint)
+        canvas.drawText(formatZar(invoice.amount), MARGIN_RIGHT - 14f, sumLineY + 2f, paint)
         paint.textAlign = Paint.Align.LEFT
 
         // Banking Details Box
-        val bankTop = summaryTop + 75f
+        val bankTop = summaryTop + summaryHeight + 20f
         val bankRect = RectF(MARGIN_LEFT, bankTop, MARGIN_RIGHT, bankTop + 105f)
         paint.color = Color.WHITE
         paint.style = Paint.Style.FILL
@@ -252,28 +348,43 @@ object PdfGenerator {
         paint.textAlign = Paint.Align.CENTER
         canvas.drawText("Thank you for your business! Please email proof of payment.", PAGE_WIDTH / 2f, 790f, paint)
         paint.textSize = 8f
-        canvas.drawText("Generated by BatchBoss Bakery Suite", PAGE_WIDTH / 2f, 806f, paint)
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        canvas.drawText("Powered by BatchBoss Bakery Suite  •  Smart Costing for Every Baker", PAGE_WIDTH / 2f, 806f, paint)
     }
 
-    private fun drawQuoteContent(canvas: Canvas, quote: QuoteEntity, biz: UserProfileEntity) {
+    private fun drawQuoteContent(context: Context, canvas: Canvas, quote: QuoteEntity, biz: UserProfileEntity) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // Top Accent Bar
         paint.color = COLOR_AMBER
         canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 10f, paint)
 
+        // Logo Emblem
+        val logoBmp: Bitmap? = try {
+            BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
+        } catch (e: Exception) {
+            null
+        }
+
+        var textStartX = MARGIN_LEFT
+        if (logoBmp != null) {
+            val logoSize = 42f
+            canvas.drawBitmap(logoBmp, null, RectF(MARGIN_LEFT, 26f, MARGIN_LEFT + logoSize, 26f + logoSize), paint)
+            textStartX += logoSize + 12f
+        }
+
         // Bakery Name / Business Header
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 20f
-        canvas.drawText(biz.bakeryName.ifBlank { "Artisan Bakery" }, MARGIN_LEFT, 50f, paint)
+        canvas.drawText(biz.bakeryName.ifBlank { "Artisan Bakery" }, textStartX, 44f, paint)
 
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         paint.textSize = 10f
         paint.color = COLOR_MUTED
-        var currentY = 65f
+        var currentY = 58f
         if (biz.address.isNotBlank()) {
-            canvas.drawText(biz.address, MARGIN_LEFT, currentY, paint)
+            canvas.drawText(biz.address, textStartX, currentY, paint)
             currentY += 14f
         }
         val contactLine = listOfNotNull(
@@ -281,7 +392,7 @@ object PdfGenerator {
             biz.email.takeIf { it.isNotBlank() }?.let { "Email: $it" }
         ).joinToString("  •  ")
         if (contactLine.isNotBlank()) {
-            canvas.drawText(contactLine, MARGIN_LEFT, currentY, paint)
+            canvas.drawText(contactLine, textStartX, currentY, paint)
             currentY += 14f
         }
 
@@ -346,40 +457,90 @@ object PdfGenerator {
         paint.color = Color.WHITE
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 10f
-        canvas.drawText("DESCRIPTION / BESPOKE ITEM", MARGIN_LEFT + 12f, tableTop + 16f, paint)
+        canvas.drawText("ITEM DESCRIPTION", MARGIN_LEFT + 12f, tableTop + 16f, paint)
+        canvas.drawText("QTY", MARGIN_LEFT + 250f, tableTop + 16f, paint)
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("QUOTED TOTAL", MARGIN_RIGHT - 12f, tableTop + 16f, paint)
+        canvas.drawText("UNIT PRICE", MARGIN_RIGHT - 110f, tableTop + 16f, paint)
+        canvas.drawText("LINE TOTAL", MARGIN_RIGHT - 12f, tableTop + 16f, paint)
         paint.textAlign = Paint.Align.LEFT
 
-        // Row
-        val rowTop = tableTop + 28f
-        val rowRect = RectF(MARGIN_LEFT, rowTop, MARGIN_RIGHT, rowTop + 60f)
-        paint.style = Paint.Style.STROKE
-        paint.color = COLOR_BORDER
-        canvas.drawRoundRect(rowRect, 4f, 4f, paint)
-        paint.style = Paint.Style.FILL
+        var currentQuoteY = tableTop + 28f
+        val qItems = quote.items
 
-        paint.color = COLOR_DARK
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.textSize = 12f
-        canvas.drawText(quote.recipeOrItemName, MARGIN_LEFT + 12f, rowTop + 24f, paint)
+        if (qItems.isNotEmpty()) {
+            for (item in qItems) {
+                val rowHeight = if (item.description.isNotBlank()) 42f else 32f
+                val rowRect = RectF(MARGIN_LEFT, currentQuoteY, MARGIN_RIGHT, currentQuoteY + rowHeight)
+                paint.style = Paint.Style.STROKE
+                paint.color = COLOR_BORDER
+                canvas.drawRoundRect(rowRect, 4f, 4f, paint)
+                paint.style = Paint.Style.FILL
 
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        paint.color = COLOR_MUTED
-        paint.textSize = 10f
-        canvas.drawText("Includes custom ingredient preparation, baking & decoration labor", MARGIN_LEFT + 12f, rowTop + 40f, paint)
+                paint.color = COLOR_DARK
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                paint.textSize = 11f
+                canvas.drawText(item.itemName, MARGIN_LEFT + 12f, currentQuoteY + 18f, paint)
 
-        val priceStr = formatZar(quote.quotedPrice)
-        paint.color = COLOR_AMBER
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.textSize = 13f
-        paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(priceStr, MARGIN_RIGHT - 12f, rowTop + 32f, paint)
-        paint.textAlign = Paint.Align.LEFT
+                if (item.description.isNotBlank()) {
+                    paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                    paint.color = COLOR_MUTED
+                    paint.textSize = 9f
+                    canvas.drawText(item.description, MARGIN_LEFT + 12f, currentQuoteY + 32f, paint)
+                }
+
+                // Qty & Unit
+                paint.color = COLOR_DARK
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                paint.textSize = 10f
+                val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
+                canvas.drawText("$qtyStr ${item.unit}", MARGIN_LEFT + 250f, currentQuoteY + 18f, paint)
+
+                // Unit Price
+                paint.textAlign = Paint.Align.RIGHT
+                paint.color = COLOR_MUTED
+                canvas.drawText(formatZar(item.unitPrice), MARGIN_RIGHT - 110f, currentQuoteY + 18f, paint)
+
+                // Line Total
+                paint.color = COLOR_AMBER
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                paint.textSize = 11f
+                canvas.drawText(formatZar(item.lineTotal), MARGIN_RIGHT - 12f, currentQuoteY + 18f, paint)
+                paint.textAlign = Paint.Align.LEFT
+
+                currentQuoteY += rowHeight + 4f
+            }
+        } else {
+            // Fallback single row
+            val rowRect = RectF(MARGIN_LEFT, currentQuoteY, MARGIN_RIGHT, currentQuoteY + 60f)
+            paint.style = Paint.Style.STROKE
+            paint.color = COLOR_BORDER
+            canvas.drawRoundRect(rowRect, 4f, 4f, paint)
+            paint.style = Paint.Style.FILL
+
+            paint.color = COLOR_DARK
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = 12f
+            canvas.drawText(quote.recipeOrItemName, MARGIN_LEFT + 12f, currentQuoteY + 24f, paint)
+
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            paint.color = COLOR_MUTED
+            paint.textSize = 10f
+            canvas.drawText("Includes custom ingredient preparation, baking & decoration labor", MARGIN_LEFT + 12f, currentQuoteY + 40f, paint)
+
+            val priceStr = formatZar(quote.quotedPrice)
+            paint.color = COLOR_AMBER
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = 13f
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(priceStr, MARGIN_RIGHT - 12f, currentQuoteY + 32f, paint)
+            paint.textAlign = Paint.Align.LEFT
+            currentQuoteY += 64f
+        }
 
         // Deposit & Grand Total Box
-        val totalTop = rowTop + 75f
-        val totalRect = RectF(MARGIN_RIGHT - 240f, totalTop, MARGIN_RIGHT, totalTop + 65f)
+        val totalTop = currentQuoteY + 10f
+        val summaryHeight = if (quote.discountAmount > 0 || quote.taxAmount > 0) 90f else 65f
+        val totalRect = RectF(MARGIN_RIGHT - 240f, totalTop, MARGIN_RIGHT, totalTop + summaryHeight)
         paint.color = Color.rgb(254, 249, 238)
         canvas.drawRoundRect(totalRect, 8f, 8f, paint)
         paint.style = Paint.Style.STROKE
@@ -387,31 +548,62 @@ object PdfGenerator {
         canvas.drawRoundRect(totalRect, 8f, 8f, paint)
         paint.style = Paint.Style.FILL
 
+        var qSumY = totalTop + 22f
+        if (quote.discountAmount > 0 || quote.taxAmount > 0) {
+            paint.color = COLOR_MUTED
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            paint.textSize = 10f
+            canvas.drawText("Subtotal:", MARGIN_RIGHT - 226f, qSumY, paint)
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(formatZar(quote.subtotal.takeIf { it > 0 } ?: quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
+            paint.textAlign = Paint.Align.LEFT
+            qSumY += 15f
+
+            if (quote.discountAmount > 0) {
+                paint.color = COLOR_MUTED
+                canvas.drawText("Discount:", MARGIN_RIGHT - 226f, qSumY, paint)
+                paint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("-${formatZar(quote.discountAmount)}", MARGIN_RIGHT - 14f, qSumY, paint)
+                paint.textAlign = Paint.Align.LEFT
+                qSumY += 15f
+            }
+
+            if (quote.taxAmount > 0) {
+                paint.color = COLOR_MUTED
+                canvas.drawText("VAT (${quote.taxRatePercent.toInt()}%):", MARGIN_RIGHT - 226f, qSumY, paint)
+                paint.textAlign = Paint.Align.RIGHT
+                canvas.drawText(formatZar(quote.taxAmount), MARGIN_RIGHT - 14f, qSumY, paint)
+                paint.textAlign = Paint.Align.LEFT
+                qSumY += 15f
+            }
+        }
+
         val deposit50 = quote.quotedPrice * 0.5
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 11f
-        canvas.drawText("TOTAL QUOTED:", MARGIN_RIGHT - 226f, totalTop + 26f, paint)
+        val docLabel = if (quote.docType.equals("Estimate", ignoreCase = true)) "ESTIMATE TOTAL:" else "TOTAL QUOTED:"
+        canvas.drawText(docLabel, MARGIN_RIGHT - 226f, qSumY, paint)
 
         paint.color = COLOR_AMBER
         paint.textSize = 14f
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(priceStr, MARGIN_RIGHT - 14f, totalTop + 26f, paint)
+        canvas.drawText(formatZar(quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
 
         paint.color = COLOR_MUTED
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         paint.textSize = 10f
         paint.textAlign = Paint.Align.LEFT
-        canvas.drawText("50% Deposit to Confirm:", MARGIN_RIGHT - 226f, totalTop + 48f, paint)
+        canvas.drawText("50% Deposit to Confirm:", MARGIN_RIGHT - 226f, qSumY + 20f, paint)
 
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(formatZar(deposit50), MARGIN_RIGHT - 14f, totalTop + 48f, paint)
+        canvas.drawText(formatZar(deposit50), MARGIN_RIGHT - 14f, qSumY + 20f, paint)
         paint.textAlign = Paint.Align.LEFT
 
         // Terms & Banking Box
-        val termsTop = totalTop + 85f
+        val termsTop = totalTop + summaryHeight + 20f
         val termsRect = RectF(MARGIN_LEFT, termsTop, MARGIN_RIGHT, termsTop + 115f)
         paint.color = Color.WHITE
         paint.style = Paint.Style.FILL
@@ -441,7 +633,8 @@ object PdfGenerator {
         paint.textAlign = Paint.Align.CENTER
         canvas.drawText("We look forward to creating something delicious for your event!", PAGE_WIDTH / 2f, 790f, paint)
         paint.textSize = 8f
-        canvas.drawText("Generated by BatchBoss Bakery Suite", PAGE_WIDTH / 2f, 806f, paint)
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        canvas.drawText("Powered by BatchBoss Bakery Suite  •  Smart Costing for Every Baker", PAGE_WIDTH / 2f, 806f, paint)
     }
 
     private fun formatZar(amount: Double): String {
