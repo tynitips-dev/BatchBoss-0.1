@@ -38,11 +38,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.local.InventoryItemEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
+import com.example.data.remote.AiProductPricingService
 import com.example.ui.components.ProfitDonutChart
 import com.example.ui.theme.*
 import com.example.util.UnitUtils
+import kotlinx.coroutines.launch
 
 @Composable
 fun RecipesListScreen(
@@ -919,14 +922,17 @@ fun RecipeDetailScreen(
 fun RecipeIngredientsScreen(
     recipe: RecipeEntity?,
     ingredients: List<RecipeIngredientEntity>,
+    inventoryItems: List<InventoryItemEntity> = emptyList(),
     onBack: () -> Unit,
     onNavigateToCosting: () -> Unit,
     onUpdateIngredientCost: (id: Long, cost: Double, quantity: Double) -> Unit = { _, _, _ -> },
-    onDeleteIngredient: (id: Long) -> Unit = {}
+    onDeleteIngredient: (id: Long) -> Unit = {},
+    onAddIngredient: ((name: String, quantity: Double, unit: String, cost: Double) -> Unit)? = null
 ) {
     val totalCost = ingredients.sumOf { it.cost }
     var editingIngredient by remember { mutableStateOf<RecipeIngredientEntity?>(null) }
     var ingredientToDelete by remember { mutableStateOf<RecipeIngredientEntity?>(null) }
+    var showAddIngredientDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableIntStateOf(0) } // 0: Ingredients, 1: Method & Steps
     val completedSteps = remember { mutableStateMapOf<Int, Boolean>() }
     var selectedBatches by remember { mutableIntStateOf(1) }
@@ -976,17 +982,37 @@ fun RecipeIngredientsScreen(
                             )
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = BatchPinkLight
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "${ingredients.size} items",
-                                color = BatchPink,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
+                            FilledTonalButton(
+                                onClick = { showAddIngredientDialog = true },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = BatchPinkContainer,
+                                    contentColor = BatchPink
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.height(34.dp).testTag("btn_add_recipe_ingredient_header")
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = BatchPinkLight
+                            ) {
+                                Text(
+                                    text = "${ingredients.size} items",
+                                    color = BatchPink,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
 
@@ -1372,6 +1398,17 @@ fun RecipeIngredientsScreen(
             }
         )
     }
+
+    if (showAddIngredientDialog) {
+        AddRecipeIngredientDialog(
+            inventoryItems = inventoryItems,
+            onDismiss = { showAddIngredientDialog = false },
+            onAdd = { ingName, qty, unit, cost ->
+                onAddIngredient?.invoke(ingName, qty, unit, cost)
+                showAddIngredientDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -1502,7 +1539,7 @@ fun RecipeCostingScreen(
             CostingRow(
                 icon = Icons.Outlined.Store,
                 label = "Overheads",
-                value = "R0.00 (Zero Overheads)",
+                value = "R${String.format("%.2f", overheads)}",
                 onClick = { showEditPricingDialog = true }
             )
             CostingRow(
@@ -2141,6 +2178,7 @@ private fun DonutLegendRow(color: Color, label: String, percent: String) {
 @Composable
 fun CreateEditRecipeScreen(
     onBack: () -> Unit,
+    inventoryItems: List<InventoryItemEntity> = emptyList(),
     onSave: (
         name: String,
         category: String,
@@ -2196,6 +2234,8 @@ fun CreateEditRecipeScreen(
 
     var laborHoursText by remember { mutableStateOf("1.5") }
     var laborRatePerHourText by remember { mutableStateOf("120.00") }
+    var overheadsCostText by remember { mutableStateOf("15.00") }
+    var utilitiesCostText by remember { mutableStateOf("10.00") }
     var packagingCostText by remember { mutableStateOf("5.00") }
     var profitMarginText by remember { mutableStateOf("40.0") }
     var showAddIngredientDialog by remember { mutableStateOf(false) }
@@ -2203,11 +2243,12 @@ fun CreateEditRecipeScreen(
     var ingredientsList by remember {
         mutableStateOf(
             listOf(
-                RecipeIngredientEntity(recipeId = 0, name = "Cake Flour", quantity = 180.0, unit = "g", cost = 3.96),
-                RecipeIngredientEntity(recipeId = 0, name = "Castor Sugar", quantity = 250.0, unit = "g", cost = 6.00),
-                RecipeIngredientEntity(recipeId = 0, name = "Unsalted Butter", quantity = 120.0, unit = "g", cost = 16.80),
-                RecipeIngredientEntity(recipeId = 0, name = "Vanilla Extract", quantity = 2.0, unit = "tsp", cost = 3.50),
-                RecipeIngredientEntity(recipeId = 0, name = "Baking Powder", quantity = 1.0, unit = "tble", cost = 1.20)
+                RecipeIngredientEntity(recipeId = 0, name = "Flour", quantity = 250.0, unit = "g", cost = 3.50),
+                RecipeIngredientEntity(recipeId = 0, name = "Sugar", quantity = 200.0, unit = "g", cost = 3.85),
+                RecipeIngredientEntity(recipeId = 0, name = "Chocolate", quantity = 100.0, unit = "g", cost = 21.00),
+                RecipeIngredientEntity(recipeId = 0, name = "Eggs", quantity = 2.0, unit = "unit", cost = 4.54),
+                RecipeIngredientEntity(recipeId = 0, name = "Baking Soda", quantity = 5.0, unit = "g", cost = 0.45),
+                RecipeIngredientEntity(recipeId = 0, name = "Salt", quantity = 2.0, unit = "g", cost = 0.05)
             )
         )
     }
@@ -2215,10 +2256,12 @@ fun CreateEditRecipeScreen(
     val parsedHours = laborHoursText.toDoubleOrNull() ?: 1.5
     val parsedRate = laborRatePerHourText.toDoubleOrNull() ?: 120.0
     val calculatedLabour = parsedHours * parsedRate
+    val parsedOverheads = overheadsCostText.toDoubleOrNull() ?: 15.0
+    val parsedUtilities = utilitiesCostText.toDoubleOrNull() ?: 10.0
     val parsedPackaging = packagingCostText.toDoubleOrNull() ?: 5.0
     val parsedMargin = profitMarginText.toDoubleOrNull() ?: 40.0
     val totalIngredientsCost = ingredientsList.sumOf { it.cost }
-    val totalBatchCost = totalIngredientsCost + calculatedLabour + parsedPackaging
+    val totalBatchCost = totalIngredientsCost + calculatedLabour + parsedOverheads + parsedPackaging + parsedUtilities
     val costPerItem = totalBatchCost / (if (batchSize > 0) batchSize else 1)
 
     Scaffold(
@@ -2253,7 +2296,7 @@ fun CreateEditRecipeScreen(
                                 if (onSaveWithPhoto != null) {
                                     onSaveWithPhoto(
                                         name.trim(), category, description.trim(), servings, batchSize,
-                                        calculatedLabour, 0.0, parsedPackaging, 0.0, parsedMargin,
+                                        calculatedLabour, parsedOverheads, parsedPackaging, parsedUtilities, parsedMargin,
                                         ingredientsList, selectedPhotoUri
                                     )
                                 } else if (onSaveDetailed != null) {
@@ -2264,7 +2307,7 @@ fun CreateEditRecipeScreen(
                                 } else {
                                     onSave(
                                         name.trim(), category, description.trim(), servings, batchSize,
-                                        calculatedLabour, 0.0, parsedPackaging, 0.0, parsedMargin, ingredientsList
+                                        calculatedLabour, parsedOverheads, parsedPackaging, parsedUtilities, parsedMargin, ingredientsList
                                     )
                                 }
                             }
@@ -2470,23 +2513,23 @@ fun CreateEditRecipeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Operations & Labor", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("Operations, Overheads & Labor", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = MintLight
+                                color = BatchPinkLight
                             ) {
                                 Text(
-                                    text = "No Overheads Policy",
+                                    text = "Fully Editable",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MintGreen,
+                                    color = BatchPink,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
 
                         Text(
-                            text = "Operations cost labor is calculated strictly per hour with zero overhead charges.",
+                            text = "Configure labor rates, overheads (rent, equipment, licenses), and utilities (electricity, water) for complete batch costing.",
                             fontSize = 11.sp,
                             color = MediumText
                         )
@@ -2529,6 +2572,33 @@ fun CreateEditRecipeScreen(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BatchPink
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = overheadsCostText,
+                                onValueChange = { overheadsCostText = it },
+                                label = { Text("Overheads Cost") },
+                                prefix = { Text("R ") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1f).testTag("input_recipe_overheads"),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = utilitiesCostText,
+                                onValueChange = { utilitiesCostText = it },
+                                label = { Text("Utilities Cost") },
+                                prefix = { Text("R ") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1f).testTag("input_recipe_utilities"),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
                             )
                         }
 
@@ -2670,8 +2740,12 @@ fun CreateEditRecipeScreen(
                             Text("R${String.format("%.2f", calculatedLabour)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Overheads (Zero Policy):", fontSize = 12.sp, color = DarkText)
-                            Text("R0.00", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MintGreen)
+                            Text("Overheads Cost:", fontSize = 12.sp, color = DarkText)
+                            Text("R${String.format("%.2f", parsedOverheads)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Utilities Cost:", fontSize = 12.sp, color = DarkText)
+                            Text("R${String.format("%.2f", parsedUtilities)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Packaging Cost:", fontSize = 12.sp, color = DarkText)
@@ -2694,6 +2768,7 @@ fun CreateEditRecipeScreen(
 
     if (showAddIngredientDialog) {
         AddRecipeIngredientDialog(
+            inventoryItems = inventoryItems,
             onDismiss = { showAddIngredientDialog = false },
             onAdd = { ingName, qty, unit, cost ->
                 ingredientsList = ingredientsList + RecipeIngredientEntity(
@@ -2711,34 +2786,37 @@ fun CreateEditRecipeScreen(
 
 @Composable
 fun AddRecipeIngredientDialog(
+    inventoryItems: List<InventoryItemEntity> = emptyList(),
     onDismiss: () -> Unit,
     onAdd: (name: String, quantity: Double, unit: String, cost: Double) -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("") }
     var selectedUnit by remember { mutableStateOf("g") }
     var costText by remember { mutableStateOf("") }
+    var unitPricePerBaseUnit by remember { mutableDoubleStateOf(0.0) }
+    var isEstimatingPrice by remember { mutableStateOf(false) }
+    var priceNote by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val presetIngredients = listOf(
-        "Cake Flour" to "g",
-        "Castor Sugar" to "g",
-        "Unsalted Butter" to "g",
-        "Vanilla Extract" to "tsp",
-        "Baking Powder" to "tsp",
-        "Large Eggs" to "unit",
-        "Cocoa Powder" to "g",
-        "Whole Milk" to "ml",
-        "Salt" to "pinch",
-        "Cinnamon" to "tsp",
-        "Icing Sugar" to "g"
+    // Filtered to ONLY the products requested by the user:
+    // baking soda, flour, chocolate, bicarbonate of soda, salt, eggs
+    val ingredientPresets = listOf(
+        "Flour" to "g",
+        "Sugar" to "g",
+        "Chocolate" to "g",
+        "Baking Soda" to "g",
+        "Bicarbonate of Soda" to "g",
+        "Salt" to "g",
+        "Eggs" to "unit"
     )
 
     val supportedUnits = listOf("g", "kg", "ml", "tsp", "tble", "cup", "unit")
 
-    fun updateEstimatedCost(n: String, q: Double, u: String) {
-        val rate = UnitUtils.getEstimatedRatePerGram(n)
-        val estimated = UnitUtils.calculateCost(q, u, rate)
+    fun updateCost(q: Double, u: String, rate: Double? = null) {
+        val activeRate = rate ?: if (unitPricePerBaseUnit > 0) unitPricePerBaseUnit else UnitUtils.getEstimatedRatePerGram(name)
+        val estimated = UnitUtils.calculateCost(q, u, activeRate)
         costText = String.format("%.2f", estimated)
     }
 
@@ -2762,17 +2840,69 @@ fun AddRecipeIngredientDialog(
                     Text(errorMessage!!, color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
-                // Quick presets
-                Text("Quick Presets", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                // 1. Pick from Existing Inventory Items if available
+                if (inventoryItems.isNotEmpty()) {
+                    Text(
+                        "Pick from Your Stock / Ingredients Tab",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DarkText
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(inventoryItems) { item ->
+                            val isSelected = name.equals(item.name, ignoreCase = true)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    name = item.name
+                                    selectedUnit = if (item.unit.isNotBlank()) item.unit else "g"
+                                    unitPricePerBaseUnit = item.unitPrice
+                                    priceNote = "Using Inventory Price: R${String.format("%.4f", item.unitPrice)}/${item.unit}"
+                                    val q = quantityText.toDoubleOrNull() ?: 0.0
+                                    if (q > 0) updateCost(q, selectedUnit, item.unitPrice)
+                                },
+                                label = {
+                                    Text(
+                                        text = "${item.name} (R${String.format("%.2f", item.unitPrice)}/${item.unit})",
+                                        fontSize = 11.sp
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Inventory2,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(13.dp),
+                                        tint = if (isSelected) BatchPink else MediumText
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // 2. Standard Filtered Presets (Flour, Sugar, Chocolate, Baking Soda, Bicarbonate of Soda, Salt, Eggs)
+                Text("Standard Products (Filtered)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(presetIngredients) { (presetName, defUnit) ->
+                    items(ingredientPresets) { (presetName, defUnit) ->
                         FilterChip(
                             selected = name == presetName,
                             onClick = {
                                 name = presetName
                                 selectedUnit = defUnit
+                                val rate = UnitUtils.getEstimatedRatePerGram(presetName)
+                                unitPricePerBaseUnit = rate
+                                priceNote = when (presetName) {
+                                    "Flour" -> "Checkers Cake Flour: R35.00 for 2.5kg (~R0.014/g)"
+                                    "Sugar" -> "Checkers White Sugar: R38.50 for 2kg (~R0.019/g)"
+                                    "Chocolate" -> "Checkers Baking Chocolate: R42.00 for 200g (~R0.21/g)"
+                                    "Baking Soda" -> "Checkers Baking Soda: R18.00 for 200g (~R0.09/g)"
+                                    "Bicarbonate of Soda" -> "Checkers Bicarbonate of Soda: R16.50 for 200g (~R0.0825/g)"
+                                    "Salt" -> "Checkers Table Salt: R12.00 for 500g (~R0.024/g)"
+                                    "Eggs" -> "Checkers Farm Fresh Eggs: R68.00 for 30-pack (~R2.27/egg)"
+                                    else -> null
+                                }
                                 val q = quantityText.toDoubleOrNull() ?: 0.0
-                                if (q > 0) updateEstimatedCost(presetName, q, defUnit)
+                                if (q > 0) updateCost(q, defUnit, rate)
                             },
                             label = { Text(presetName, fontSize = 11.sp) }
                         )
@@ -2785,17 +2915,72 @@ fun AddRecipeIngredientDialog(
                         name = it
                         errorMessage = null
                         val q = quantityText.toDoubleOrNull() ?: 0.0
-                        if (q > 0) updateEstimatedCost(it, q, selectedUnit)
+                        if (q > 0) updateCost(q, selectedUnit)
                     },
                     label = { Text("Ingredient Name") },
-                    placeholder = { Text("e.g. Vanilla Extract or Cake Flour") },
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("e.g. Flour, Sugar, Chocolate, Eggs") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_recipe_ingredient_name"),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
                 )
 
-                // Unit selection chips (g, kg, ml, tsp, tble, etc.)
-                Text("Unit (g, kg, ml, tsp, tble, etc.)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                // 3. AI Estimate Price Button (Checkers Benchmark)
+                OutlinedButton(
+                    onClick = {
+                        if (name.isBlank()) {
+                            errorMessage = "Please enter or select an ingredient name first"
+                            return@OutlinedButton
+                        }
+                        coroutineScope.launch {
+                            isEstimatingPrice = true
+                            try {
+                                val estimate = AiProductPricingService.estimateProductPrice(name, "Checkers")
+                                unitPricePerBaseUnit = estimate.unitPricePerBaseGram
+                                priceNote = "Checkers Estimate: ${estimate.brand} - R${String.format("%.2f", estimate.packagePriceZar)} for ${estimate.packageSize}${estimate.packageUnit} (${estimate.note})"
+                                val q = quantityText.toDoubleOrNull() ?: 0.0
+                                if (q > 0) {
+                                    updateCost(q, selectedUnit, estimate.unitPricePerBaseGram)
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = "Price lookup error: ${e.message}"
+                            } finally {
+                                isEstimatingPrice = false
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink),
+                    modifier = Modifier.fillMaxWidth().testTag("btn_estimate_ingredient_price_ai")
+                ) {
+                    if (isEstimatingPrice) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = BatchPink, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Looking up Checkers Pricing...", fontSize = 12.sp, color = BatchPink)
+                    } else {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = BatchPink, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Estimate Price with Checkers AI", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                    }
+                }
+
+                if (priceNote != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MintGreen.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = priceNote!!,
+                            color = MintGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                // Unit selection chips (g, kg, ml, tsp, tble, cup, unit)
+                Text("Unit", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(supportedUnits) { u ->
                         FilterChip(
@@ -2803,7 +2988,7 @@ fun AddRecipeIngredientDialog(
                             onClick = {
                                 selectedUnit = u
                                 val q = quantityText.toDoubleOrNull() ?: 0.0
-                                if (name.isNotBlank() && q > 0) updateEstimatedCost(name, q, u)
+                                if (name.isNotBlank() && q > 0) updateCost(q, u)
                             },
                             label = { Text(u, fontSize = 11.sp, fontWeight = if (selectedUnit == u) FontWeight.Bold else FontWeight.Normal) }
                         )
@@ -2820,12 +3005,12 @@ fun AddRecipeIngredientDialog(
                             quantityText = it
                             errorMessage = null
                             val q = it.toDoubleOrNull() ?: 0.0
-                            if (name.isNotBlank() && q > 0) updateEstimatedCost(name, q, selectedUnit)
+                            if (name.isNotBlank() && q > 0) updateCost(q, selectedUnit)
                         },
                         label = { Text("Quantity") },
                         suffix = { Text(selectedUnit, color = MediumText, fontSize = 11.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).testTag("input_recipe_ingredient_qty"),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
@@ -2839,7 +3024,7 @@ fun AddRecipeIngredientDialog(
                         label = { Text("Cost") },
                         prefix = { Text("R ", color = BatchPink, fontWeight = FontWeight.Bold) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).testTag("input_recipe_ingredient_cost"),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
@@ -2880,7 +3065,8 @@ fun AddRecipeIngredientDialog(
                         else -> onAdd(name.trim(), q, selectedUnit, c)
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = BatchPink)
+                colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                modifier = Modifier.testTag("btn_confirm_add_ingredient")
             ) {
                 Text("Add to Recipe")
             }
@@ -2907,6 +3093,12 @@ fun EditRecipePricingDialog(
     var laborRatePerHourText by remember {
         mutableStateOf(if (recipe.laborRatePerHour > 0) String.format("%.2f", recipe.laborRatePerHour) else "120.00")
     }
+    var overheadsText by remember {
+        mutableStateOf(if (recipe.overheadsCost > 0) String.format("%.2f", recipe.overheadsCost) else "50.00")
+    }
+    var utilitiesText by remember {
+        mutableStateOf(if (recipe.utilitiesCost > 0) String.format("%.2f", recipe.utilitiesCost) else "10.00")
+    }
     var packagingText by remember { mutableStateOf(String.format("%.2f", recipe.packagingCost)) }
     var profitMarginText by remember { mutableStateOf(String.format("%.1f", recipe.profitMarginPercent)) }
 
@@ -2914,10 +3106,12 @@ fun EditRecipePricingDialog(
     val parsedHours = laborHoursText.toDoubleOrNull() ?: 0.0
     val parsedRate = laborRatePerHourText.toDoubleOrNull() ?: 0.0
     val calculatedLabour = parsedHours * parsedRate
+    val parsedOverheads = overheadsText.toDoubleOrNull() ?: 0.0
+    val parsedUtilities = utilitiesText.toDoubleOrNull() ?: 0.0
     val parsedPackaging = packagingText.toDoubleOrNull() ?: 0.0
     val parsedMargin = profitMarginText.toDoubleOrNull() ?: 40.0
 
-    val totalCost = ingredientsCost + calculatedLabour + parsedPackaging
+    val totalCost = ingredientsCost + calculatedLabour + parsedOverheads + parsedPackaging + parsedUtilities
     val costPerItem = totalCost / batchSize
 
     var sellingPriceText by remember {
@@ -2956,28 +3150,6 @@ fun EditRecipePricingDialog(
                     Text(errorMessage!!, color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
-                // Zero Overheads policy banner
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MintLight
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Operations labor is billed per hour • Zero Overheads (R0.00)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MintGreen
-                        )
-                    }
-                }
-
                 // Operations & Labor (Hours & Rate per hour)
                 Text("Operations & Labor (Per Hour)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3011,6 +3183,36 @@ fun EditRecipePricingDialog(
                 ) {
                     Text("Calculated Labor Cost:", fontSize = 12.sp, color = DarkText)
                     Text("R${String.format("%.2f", calculatedLabour)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                }
+
+                // Overheads & Utilities (Fully Editable)
+                Text("Overheads & Utilities", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = overheadsText,
+                        onValueChange = { overheadsText = it; errorMessage = null },
+                        label = { Text("Overheads") },
+                        prefix = { Text("R ") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_edit_recipe_overheads"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = utilitiesText,
+                        onValueChange = { utilitiesText = it; errorMessage = null },
+                        label = { Text("Utilities") },
+                        prefix = { Text("R ") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_edit_recipe_utilities"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
                 }
 
                 // Packaging Cost
@@ -3088,7 +3290,15 @@ fun EditRecipePricingDialog(
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Overheads:", fontSize = 12.sp, color = DarkText)
-                            Text("R0.00 (Zero Overheads)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MintGreen)
+                            Text("R${String.format("%.2f", parsedOverheads)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Utilities:", fontSize = 12.sp, color = DarkText)
+                            Text("R${String.format("%.2f", parsedUtilities)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Packaging:", fontSize = 12.sp, color = DarkText)
+                            Text("R${String.format("%.2f", parsedPackaging)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Total Batch Cost:", fontSize = 12.sp, color = DarkText)
@@ -3119,20 +3329,20 @@ fun EditRecipePricingDialog(
             Button(
                 onClick = {
                     val pk = packagingText.toDoubleOrNull()
+                    val ov = overheadsText.toDoubleOrNull()
+                    val ut = utilitiesText.toDoubleOrNull()
                     val m = profitMarginText.toDoubleOrNull()
                     val sp = sellingPriceText.toDoubleOrNull()
                     when {
                         parsedHours < 0 -> errorMessage = "Please enter valid labor hours"
                         parsedRate < 0 -> errorMessage = "Please enter valid hourly rate"
+                        ov == null || ov < 0 -> errorMessage = "Please enter valid overheads cost"
+                        ut == null || ut < 0 -> errorMessage = "Please enter valid utilities cost"
                         pk == null || pk < 0 -> errorMessage = "Please enter valid packaging cost"
                         m == null || m <= 0 -> errorMessage = "Please enter valid profit margin"
                         sp == null || sp <= 0 -> errorMessage = "Please enter valid selling price"
                         else -> {
-                            if (onSaveDetailedPricing != null) {
-                                onSaveDetailedPricing(parsedHours, parsedRate, pk, m, sp)
-                            } else {
-                                onSave(calculatedLabour, 0.0, pk, 0.0, m, sp)
-                            }
+                            onSave(calculatedLabour, ov, pk, ut, m, sp)
                             onDismiss()
                         }
                     }

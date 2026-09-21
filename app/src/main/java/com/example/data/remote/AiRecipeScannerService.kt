@@ -183,7 +183,10 @@ object AiRecipeScannerService {
         }
     }
 
-    suspend fun scanRecipeImage(bitmap: Bitmap): Result<ParsedRecipeResult> = withContext(Dispatchers.IO) {
+    suspend fun scanRecipeImage(
+        bitmap: Bitmap,
+        preferredUnit: String = "grams"
+    ): Result<ParsedRecipeResult> = withContext(Dispatchers.IO) {
         // Step 1: Run on-device ML Kit OCR to read all raw text from the image
         val ocrRawText = recognizeTextOnDevice(bitmap)
         Log.d(TAG, "Extracted OCR text length: ${ocrRawText.length}")
@@ -195,6 +198,12 @@ object AiRecipeScannerService {
             ""
         }
 
+        val unitInstruction = if (preferredUnit.equals("cups", ignoreCase = true)) {
+            "MANDATORY UNIT FORMAT: The user requested CUPS & SPOONS. Extract and format dry and liquid ingredient quantities in cups (e.g. 2.0 cup, 1.5 cup, 0.5 cup) or tsp/tbsp for small leaveners/spices, and unit for eggs."
+        } else {
+            "MANDATORY UNIT FORMAT: The user requested GRAMS (metric weight). Extract and format dry ingredients in grams (g) and liquids in ml, and unit for eggs."
+        }
+
         if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
             try {
                 val base64Image = bitmapToBase64(bitmap)
@@ -202,6 +211,7 @@ object AiRecipeScannerService {
 
                 val promptText = """
                     You are an expert master baker. Analyze this photograph of a recipe (handwritten card, cookbook page, magazine clipping, or digital screen).
+                    $unitInstruction
                     Extract all recipe details into strict JSON format with NO markdown formatting:
                     {
                       "name": "Exact title of the recipe",
@@ -210,14 +220,14 @@ object AiRecipeScannerService {
                       "servings": 12,
                       "batchSize": 1,
                       "ingredients": [
-                        { "name": "Ingredient name", "quantity": 250.0, "unit": "g", "cost": 15.00 }
+                        { "name": "Ingredient name", "quantity": 250.0, "unit": "${if (preferredUnit.equals("cups", ignoreCase = true)) "cup" else "g"}", "cost": 15.00 }
                       ],
                       "steps": [
                         "Step 1 instruction",
                         "Step 2 instruction"
                       ]
                     }
-                    Ensure quantity is a number, unit is standard (g, kg, ml, tsp, tbsp, cup, unit), and cost is an estimated ingredient cost in South African Rands (ZAR).
+                    Ensure quantity is a number, unit matches the preferred system, and cost is an estimated ingredient cost in South African Rands (ZAR).
                 """.trimIndent()
 
                 val requestJson = JSONObject().apply {
@@ -264,7 +274,18 @@ object AiRecipeScannerService {
 
                         val parsed = parseRecipeJson(cleanJsonStr, ocrRawText)
                         if (parsed != null && parsed.ingredients.isNotEmpty()) {
-                            return@withContext Result.success(parsed)
+                            val convertedIngredients = if (preferredUnit.equals("cups", ignoreCase = true)) {
+                                parsed.ingredients.map { ing ->
+                                    val (q, u) = com.example.util.UnitUtils.convertToCups(ing.quantity, ing.unit, ing.name)
+                                    ing.copy(quantity = q, unit = u)
+                                }
+                            } else {
+                                parsed.ingredients.map { ing ->
+                                    val (q, u) = com.example.util.UnitUtils.convertToGrams(ing.quantity, ing.unit, ing.name)
+                                    ing.copy(quantity = q, unit = u)
+                                }
+                            }
+                            return@withContext Result.success(parsed.copy(ingredients = convertedIngredients))
                         }
                     }
                 }
@@ -275,23 +296,36 @@ object AiRecipeScannerService {
 
         // Step 3: On-Device Recipe Parser from ML Kit OCR Text
         if (ocrRawText.isNotBlank()) {
-            val parsedFromOcr = RecipeTextParser.parseRecipeFromOcrText(ocrRawText)
+            val parsedFromOcr = RecipeTextParser.parseRecipeFromOcrText(ocrRawText, preferredUnit)
             if (parsedFromOcr != null) {
                 return@withContext Result.success(parsedFromOcr)
             }
         }
 
         // If the image was completely blank or unreadable, give a helpful fallback
-        val fallback = SAMPLE_RECIPES[0].copy(
+        val baseSample = SAMPLE_RECIPES[0]
+        val formattedFallbackIngs = if (preferredUnit.equals("cups", ignoreCase = true)) {
+            baseSample.ingredients.map {
+                val (q, u) = com.example.util.UnitUtils.convertToCups(it.quantity, it.unit, it.name)
+                it.copy(quantity = q, unit = u)
+            }
+        } else {
+            baseSample.ingredients.map {
+                val (q, u) = com.example.util.UnitUtils.convertToGrams(it.quantity, it.unit, it.name)
+                it.copy(quantity = q, unit = u)
+            }
+        }
+        val fallback = baseSample.copy(
             name = "Captured Recipe (Review & Edit)",
             description = "Captured from photo. Please verify ingredients and quantities.",
-            rawExtractedText = ocrRawText
+            rawExtractedText = ocrRawText,
+            ingredients = formattedFallbackIngs
         )
         Result.success(fallback)
     }
 
-    fun parseRecipeFromText(text: String): ParsedRecipeResult {
-        val parsed = RecipeTextParser.parseRecipeFromOcrText(text)
+    fun parseRecipeFromText(text: String, preferredUnit: String = "grams"): ParsedRecipeResult {
+        val parsed = RecipeTextParser.parseRecipeFromOcrText(text, preferredUnit)
         return parsed ?: SAMPLE_RECIPES[0].copy(
             name = "Custom Recipe",
             description = "Recipe parsed from text entry.",
@@ -414,7 +448,7 @@ object RecipeTextParser {
         "honey" to 0.150
     )
 
-    fun parseRecipeFromOcrText(rawText: String): ParsedRecipeResult? {
+    fun parseRecipeFromOcrText(rawText: String, preferredUnit: String = "grams"): ParsedRecipeResult? {
         val lines = rawText.lines()
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -439,7 +473,7 @@ object RecipeTextParser {
         // 6. Parse Steps
         val parsedSteps = stepLines.mapNotNull { parseStepLine(it) }
 
-        val finalIngredients = if (parsedIngredients.isNotEmpty()) {
+        val rawIngredients = if (parsedIngredients.isNotEmpty()) {
             parsedIngredients
         } else if (ingredientLines.isNotEmpty()) {
             ingredientLines.map { line ->
@@ -453,6 +487,18 @@ object RecipeTextParser {
             }
         } else {
             DEFAULT_INGREDIENTS
+        }
+
+        val finalIngredients = if (preferredUnit.equals("cups", ignoreCase = true)) {
+            rawIngredients.map { ing ->
+                val (q, u) = com.example.util.UnitUtils.convertToCups(ing.quantity, ing.unit, ing.name)
+                ing.copy(quantity = q, unit = u)
+            }
+        } else {
+            rawIngredients.map { ing ->
+                val (q, u) = com.example.util.UnitUtils.convertToGrams(ing.quantity, ing.unit, ing.name)
+                ing.copy(quantity = q, unit = u)
+            }
         }
 
         val finalSteps = if (parsedSteps.isNotEmpty()) {

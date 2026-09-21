@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.RecipeIngredientEntity
@@ -108,26 +110,40 @@ fun AiRecipeScannerScreen(
     var pastedRecipeText by remember { mutableStateOf("") }
     var showRawTextSheet by remember { mutableStateOf(false) }
 
+    // Unit preference: "grams" or "cups" - chosen when photo is taken or preset
+    var preferredUnitChoice by remember { mutableStateOf("grams") }
+    var pendingPhotoForScan by remember { mutableStateOf<Bitmap?>(null) }
+    var showUnitChoiceDialog by remember { mutableStateOf(false) }
+
+    fun executeScanWithUnit(bmp: Bitmap, unit: String) {
+        preferredUnitChoice = unit
+        isAnalyzing = true
+        coroutineScope.launch {
+            val scanResult = AiRecipeScannerService.scanRecipeImage(bmp, preferredUnit = unit)
+            scanResult.onSuccess { parsed ->
+                applyParsedRecipe(parsed, bmp)
+                Toast.makeText(context, "Recipe '${parsed.name}' extracted in ${if (unit == "cups") "cups" else "grams"}!", Toast.LENGTH_SHORT).show()
+            }.onFailure { err ->
+                isAnalyzing = false
+                Toast.makeText(context, "Scanning error: ${err.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     // Full-resolution camera launcher using FileProvider
     val fullResCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         val uri = tempPhotoUri
         if (success && uri != null) {
-            isAnalyzing = true
             coroutineScope.launch {
                 val bmp = AiRecipeScannerService.loadBitmapFromUri(context, uri)
                 if (bmp != null) {
-                    val scanResult = AiRecipeScannerService.scanRecipeImage(bmp)
-                    scanResult.onSuccess { parsed ->
-                        applyParsedRecipe(parsed, bmp)
-                        Toast.makeText(context, "Recipe '${parsed.name}' extracted successfully!", Toast.LENGTH_SHORT).show()
-                    }.onFailure { err ->
-                        isAnalyzing = false
-                        Toast.makeText(context, "Scanning error: ${err.message}", Toast.LENGTH_LONG).show()
-                    }
+                    capturedBitmap = bmp
+                    pendingPhotoForScan = bmp
+                    // Prompt user immediately upon photo capture to choose cups or grams
+                    showUnitChoiceDialog = true
                 } else {
-                    isAnalyzing = false
                     Toast.makeText(context, "Could not load captured photo.", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -140,17 +156,9 @@ fun AiRecipeScannerScreen(
     ) { bmp ->
         if (bmp != null) {
             capturedBitmap = bmp
-            isAnalyzing = true
-            coroutineScope.launch {
-                val scanResult = AiRecipeScannerService.scanRecipeImage(bmp)
-                scanResult.onSuccess { parsed ->
-                    applyParsedRecipe(parsed, bmp)
-                    Toast.makeText(context, "Recipe '${parsed.name}' extracted successfully!", Toast.LENGTH_SHORT).show()
-                }.onFailure { err ->
-                    isAnalyzing = false
-                    Toast.makeText(context, "Scanning error: ${err.message}", Toast.LENGTH_LONG).show()
-                }
-            }
+            pendingPhotoForScan = bmp
+            // Prompt user immediately upon photo capture to choose cups or grams
+            showUnitChoiceDialog = true
         }
     }
 
@@ -185,20 +193,14 @@ fun AiRecipeScannerScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            isAnalyzing = true
             coroutineScope.launch {
                 val bmp = AiRecipeScannerService.loadBitmapFromUri(context, uri)
                 if (bmp != null) {
-                    val scanResult = AiRecipeScannerService.scanRecipeImage(bmp)
-                    scanResult.onSuccess { parsed ->
-                        applyParsedRecipe(parsed, bmp)
-                        Toast.makeText(context, "Recipe '${parsed.name}' extracted from photo!", Toast.LENGTH_SHORT).show()
-                    }.onFailure { err ->
-                        isAnalyzing = false
-                        Toast.makeText(context, "Error extracting recipe: ${err.message}", Toast.LENGTH_LONG).show()
-                    }
+                    capturedBitmap = bmp
+                    pendingPhotoForScan = bmp
+                    // Prompt user immediately upon selecting photo to choose cups or grams
+                    showUnitChoiceDialog = true
                 } else {
-                    isAnalyzing = false
                     Toast.makeText(context, "Could not load selected photo.", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -318,6 +320,64 @@ fun AiRecipeScannerScreen(
                         fontWeight = FontWeight.Bold,
                         color = DarkText
                     )
+
+                    // Recipe Measurement Unit Preference
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = BatchPinkContainer.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Ingredient Measurement Units", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = BatchPinkLight
+                                ) {
+                                    Text(
+                                        text = if (preferredUnitChoice == "cups") "CUPS SELECTED" else "GRAMS SELECTED",
+                                        color = BatchPink,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Choose whether scanned recipe quantities should be extracted in Grams (metric) or Cups (volume). When a photo is taken, you will also be prompted to confirm.",
+                                fontSize = 11.sp,
+                                color = MediumText
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = preferredUnitChoice == "grams",
+                                    onClick = { preferredUnitChoice = "grams" },
+                                    label = { Text("Grams (g / ml / kg)", fontSize = 12.sp, fontWeight = if (preferredUnitChoice == "grams") FontWeight.Bold else FontWeight.Normal) },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Scale, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    },
+                                    modifier = Modifier.weight(1f).testTag("chip_unit_grams")
+                                )
+                                FilterChip(
+                                    selected = preferredUnitChoice == "cups",
+                                    onClick = { preferredUnitChoice = "cups" },
+                                    label = { Text("Cups & Spoons", fontSize = 12.sp, fontWeight = if (preferredUnitChoice == "cups") FontWeight.Bold else FontWeight.Normal) },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.LocalCafe, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    },
+                                    modifier = Modifier.weight(1f).testTag("chip_unit_cups")
+                                )
+                            }
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -490,41 +550,75 @@ fun AiRecipeScannerScreen(
                     modifier = Modifier.fillMaxWidth().testTag("card_ai_parsed_recipe_container")
                 ) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // Header with status
+                        // Header with status and unit badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MintGreen.copy(alpha = 0.15f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MintGreen.copy(alpha = 0.15f)
                                 ) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "AI EXTRACTION COMPLETE",
+                                            color = MintGreen,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = BatchPinkLight
+                                ) {
                                     Text(
-                                        text = "AI EXTRACTION COMPLETE",
-                                        color = MintGreen,
+                                        text = if (preferredUnitChoice == "cups") "CUPS" else "GRAMS",
+                                        color = BatchPink,
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                                     )
                                 }
                             }
 
-                            if (capturedBitmap != null) {
-                                Image(
-                                    bitmap = capturedBitmap!!.asImageBitmap(),
-                                    contentDescription = "Captured Recipe",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .border(1.dp, BorderLight, RoundedCornerShape(10.dp))
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (capturedBitmap != null) {
+                                    TextButton(
+                                        onClick = {
+                                            val newUnit = if (preferredUnitChoice == "cups") "grams" else "cups"
+                                            executeScanWithUnit(capturedBitmap!!, newUnit)
+                                        },
+                                        modifier = Modifier.testTag("btn_rescan_switch_unit")
+                                    ) {
+                                        Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp), tint = BatchPink)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = if (preferredUnitChoice == "cups") "Use Grams" else "Use Cups",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BatchPink
+                                        )
+                                    }
+
+                                    Image(
+                                        bitmap = capturedBitmap!!.asImageBitmap(),
+                                        contentDescription = "Captured Recipe",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .border(1.dp, BorderLight, RoundedCornerShape(10.dp))
+                                    )
+                                }
                             }
                         }
 
@@ -1025,10 +1119,10 @@ fun AiRecipeScannerScreen(
                             isAnalyzing = true
                             showTextInputDialog = false
                             coroutineScope.launch {
-                                val parsed = AiRecipeScannerService.parseRecipeFromText(pastedRecipeText)
+                                val parsed = AiRecipeScannerService.parseRecipeFromText(pastedRecipeText, preferredUnit = preferredUnitChoice)
                                 applyParsedRecipe(parsed, null)
                                 isAnalyzing = false
-                                Toast.makeText(context, "Parsed '${parsed.name}' successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Parsed '${parsed.name}' successfully in $preferredUnitChoice!", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
@@ -1040,6 +1134,140 @@ fun AiRecipeScannerScreen(
             dismissButton = {
                 TextButton(onClick = { showTextInputDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Measurement Unit Choice Dialog (shown immediately when a photo is taken)
+    if (showUnitChoiceDialog && pendingPhotoForScan != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showUnitChoiceDialog = false
+                val bmp = pendingPhotoForScan
+                if (bmp != null) {
+                    executeScanWithUnit(bmp, preferredUnitChoice)
+                }
+            },
+            icon = {
+                Surface(
+                    shape = CircleShape,
+                    color = BatchPinkLight,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Scale,
+                            contentDescription = null,
+                            tint = BatchPink,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+            },
+            title = {
+                Text(
+                    text = "Choose Recipe Units",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "A photo has been taken! Please choose whether you want this recipe's ingredients extracted in Cups or Grams:",
+                        fontSize = 13.sp,
+                        color = DarkText,
+                        lineHeight = 18.sp
+                    )
+
+                    // Option 1: Grams (metric)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (preferredUnitChoice == "grams") BatchPinkLight else CardBackground,
+                        border = BorderStroke(
+                            width = if (preferredUnitChoice == "grams") 2.dp else 1.dp,
+                            color = if (preferredUnitChoice == "grams") BatchPink else BorderLight
+                        ),
+                        onClick = { preferredUnitChoice = "grams" },
+                        modifier = Modifier.fillMaxWidth().testTag("option_unit_grams")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = preferredUnitChoice == "grams",
+                                onClick = { preferredUnitChoice = "grams" },
+                                colors = RadioButtonDefaults.colors(selectedColor = BatchPink)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("Grams (g / ml)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkText)
+                                Text("Metric weight. Standard for professional baking and exact inventory costing.", fontSize = 11.sp, color = MediumText)
+                            }
+                        }
+                    }
+
+                    // Option 2: Cups (volume)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (preferredUnitChoice == "cups") BatchPinkLight else CardBackground,
+                        border = BorderStroke(
+                            width = if (preferredUnitChoice == "cups") 2.dp else 1.dp,
+                            color = if (preferredUnitChoice == "cups") BatchPink else BorderLight
+                        ),
+                        onClick = { preferredUnitChoice = "cups" },
+                        modifier = Modifier.fillMaxWidth().testTag("option_unit_cups")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = preferredUnitChoice == "cups",
+                                onClick = { preferredUnitChoice = "cups" },
+                                colors = RadioButtonDefaults.colors(selectedColor = BatchPink)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("Cups & Spoons", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkText)
+                                Text("Traditional volume units. Extracts in cups, tablespoons, and teaspoons.", fontSize = 11.sp, color = MediumText)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUnitChoiceDialog = false
+                        val bmp = pendingPhotoForScan
+                        if (bmp != null) {
+                            executeScanWithUnit(bmp, preferredUnitChoice)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                    modifier = Modifier.testTag("btn_confirm_unit_choice")
+                ) {
+                    Text(
+                        text = if (preferredUnitChoice == "cups") "Extract in Cups" else "Extract in Grams",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showUnitChoiceDialog = false
+                        val bmp = pendingPhotoForScan
+                        if (bmp != null) {
+                            executeScanWithUnit(bmp, preferredUnitChoice)
+                        }
+                    }
+                ) {
+                    Text("Skip")
                 }
             }
         )

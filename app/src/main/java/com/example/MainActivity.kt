@@ -24,16 +24,56 @@ import com.example.ui.screens.*
 import com.example.ui.theme.BatchBossTheme
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.ProductPriceHistoryEntity
+import com.example.data.model.Recipe
+import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FirebaseFirestore
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize Firestore and write a new recipe
+        initializeFirestoreAndWriteRecipe()
+
         setContent {
             BatchBossTheme {
                 BatchBossApp()
             }
+        }
+    }
+
+    private fun initializeFirestoreAndWriteRecipe() {
+        try {
+            if (FirebaseApp.getApps(this).isNotEmpty()) {
+                val db = FirebaseFirestore.getInstance()
+                val newRecipe = Recipe(
+                    title = "Artisan Sourdough Loaf",
+                    prepTimeMinutes = 120,
+                    ingredients = listOf(
+                        "500g Bread Flour",
+                        "350g Water",
+                        "100g Sourdough Starter",
+                        "10g Sea Salt"
+                    ),
+                    instructions = "Mix, autolyse 30m, stretch and fold 4 times over 2h, cold retard 12h, bake at 230°C for 40m."
+                )
+
+                db.collection("recipes")
+                    .add(newRecipe)
+                    .addOnSuccessListener { documentReference ->
+                        Log.d("MainActivity", "Firestore recipe written successfully with ID: ${documentReference.id}")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.w("MainActivity", "Error adding recipe document to Firestore", e)
+                    }
+            } else {
+                Log.i("MainActivity", "FirebaseApp not configured yet; ready for google-services.json.")
+            }
+        } catch (e: Throwable) {
+            Log.w("MainActivity", "Firestore initialization notice: ${e.message}")
         }
     }
 }
@@ -119,7 +159,7 @@ fun BatchBossApp(
             is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AddSupplier,
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
-            is Screen.AccountDataDeletion, is Screen.MasterBackend -> viewModel.navigateTo(Screen.QuickActions)
+            is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
             is Screen.Notifications, is Screen.Tasks, is Screen.LowStock -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
@@ -556,7 +596,8 @@ fun BatchBossApp(
                         onOpenProductsServices = { viewModel.navigateTo(Screen.ProductsServicesList) },
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
-                        onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) }
+                        onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) },
+                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) }
                     )
                 }
 
@@ -959,6 +1000,22 @@ fun BatchBossApp(
                             viewModel.adminPurgeUserQuotes(uid) {
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar("Quotes purged for user.")
+                                }
+                            }
+                        }
+                    )
+                }
+
+                is Screen.FirebaseSync -> {
+                    FirebaseSyncScreen(
+                        recipes = recipes,
+                        ingredients = selectedRecipeIngredients,
+                        inventory = allInventory,
+                        onBack = { viewModel.navigateTo(Screen.QuickActions) },
+                        onRestoreData = { resRecipes, resIngs, resInv ->
+                            viewModel.restoreCloudData(resRecipes, resIngs, resInv) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes and ${resInv.size} items from Firestore!")
                                 }
                             }
                         }

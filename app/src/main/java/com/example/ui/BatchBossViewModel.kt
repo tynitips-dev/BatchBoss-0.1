@@ -52,6 +52,7 @@ sealed class Screen {
     data object AboutBatchBoss : Screen()
     data object AccountDataDeletion : Screen()
     data object MasterBackend : Screen()
+    data object FirebaseSync : Screen()
     data class BakingSupplyStoreDetail(val storeId: Long) : Screen()
     data class WelcomeEmail(
         val fullName: String,
@@ -250,7 +251,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             is Screen.RecipesList -> _selectedTab.value = 1
             is Screen.InventoryList, is Screen.LowStock -> _selectedTab.value = 2
             is Screen.SuppliersList -> _selectedTab.value = 3
-            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.MasterBackend -> _selectedTab.value = 4
+            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> _selectedTab.value = 4
             is Screen.RecipeDetail -> {
                 _selectedRecipeId.value = screen.recipeId
                 _selectedTab.value = 1
@@ -1469,6 +1470,28 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     fun adminPurgeUserQuotes(userId: Long, onComplete: () -> Unit) {
         viewModelScope.launch {
             repository.purgeAllQuotes(userId)
+            onComplete()
+        }
+    }
+
+    fun restoreCloudData(
+        recipes: List<com.example.data.local.RecipeEntity>,
+        ingredients: List<com.example.data.local.RecipeIngredientEntity>,
+        inventory: List<com.example.data.local.InventoryItemEntity>,
+        onComplete: () -> Unit
+    ) {
+        viewModelScope.launch {
+            val uid = _currentUserId.value
+            for (r in recipes) {
+                val newRecipeId = repository.insertRecipe(r.copy(id = 0, userId = uid))
+                val matchingIngs = ingredients.filter { it.recipeId == r.id }
+                for (ing in matchingIngs) {
+                    repository.insertIngredient(ing.copy(id = 0, recipeId = newRecipeId, userId = uid))
+                }
+            }
+            for (item in inventory) {
+                repository.insertInventoryItem(item.copy(id = 0, userId = uid))
+            }
             onComplete()
         }
     }

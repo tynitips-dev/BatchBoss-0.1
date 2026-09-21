@@ -26,7 +26,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.InventoryItemEntity
+import com.example.data.remote.AiProductPricingService
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun InventoryListScreen(
@@ -1007,19 +1009,20 @@ fun AddStockItemDialog(
     var minStockText by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("g") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    var isEstimatingPrice by remember { mutableStateOf(false) }
+    var priceNote by remember { mutableStateOf<String?>(null) }
 
     val categories = listOf("Flour & Grains", "Sugars", "Dairy & Butter", "Eggs", "Chocolates", "Extracts & Flavors", "Leaveners", "Packaging", "Other")
+    // Only the products: baking soda, flour, chocolate, bicarbonate of soda, salt, eggs
     val ingredientPresets = listOf(
-        "Cake Flour" to ("Flour & Grains" to "g"),
-        "Castor Sugar" to ("Sugars" to "g"),
-        "Unsalted Butter" to ("Dairy & Butter" to "g"),
-        "Large Eggs" to ("Eggs" to "unit"),
-        "Cocoa Powder" to ("Chocolates" to "g"),
-        "Dark Chocolate 70%" to ("Chocolates" to "g"),
-        "Vanilla Extract" to ("Extracts & Flavors" to "ml"),
-        "Baking Powder" to ("Leaveners" to "g"),
-        "Whole Milk" to ("Dairy & Butter" to "ml"),
-        "Cupcake Box (6-pack)" to ("Packaging" to "unit")
+        "Flour" to ("Flour & Grains" to "g"),
+        "Sugar" to ("Sugars" to "g"),
+        "Chocolate" to ("Chocolates" to "g"),
+        "Baking Soda" to ("Leaveners" to "g"),
+        "Bicarbonate of Soda" to ("Leaveners" to "g"),
+        "Salt" to ("Other" to "g"),
+        "Eggs" to ("Eggs" to "unit")
     )
     val commonUnits = listOf("g", "kg", "ml", "L", "unit", "bottle")
 
@@ -1047,8 +1050,8 @@ fun AddStockItemDialog(
                     Text(text = errorMessage!!, color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
-                // Quick Presets
-                Text("Ingredient Options & Presets", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                // Quick Presets - Only the 7 key products
+                Text("Ingredient Presets (Filtered)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(ingredientPresets.size) { idx ->
                         val (presetName, meta) = ingredientPresets[idx]
@@ -1058,18 +1061,50 @@ fun AddStockItemDialog(
                                 name = presetName
                                 category = meta.first
                                 unit = meta.second
-                                if (presetName == "Large Eggs") {
-                                    packagePriceText = "68.00"
-                                    gramsPerUnitText = "30"
-                                    unitPriceText = String.format("%.2f", 68.0 / 30.0)
-                                } else if (presetName == "Cake Flour") {
-                                    packagePriceText = "55.00"
-                                    gramsPerUnitText = "2500"
-                                    unitPriceText = String.format("%.4f", 55.0 / 2500.0)
-                                } else if (presetName == "Castor Sugar") {
-                                    packagePriceText = "48.00"
-                                    gramsPerUnitText = "2000"
-                                    unitPriceText = String.format("%.4f", 48.0 / 2000.0)
+                                when (presetName) {
+                                    "Flour" -> {
+                                        // Checkers Cake Flour 2.5kg for R35.00
+                                        packagePriceText = "35.00"
+                                        gramsPerUnitText = "2500"
+                                        unitPriceText = String.format("%.4f", 35.0 / 2500.0)
+                                        priceNote = "Checkers Retail Benchmark: R35.00 for 2.5kg (R0.014/g)"
+                                    }
+                                    "Sugar" -> {
+                                        packagePriceText = "38.50"
+                                        gramsPerUnitText = "2000"
+                                        unitPriceText = String.format("%.4f", 38.5 / 2000.0)
+                                        priceNote = "Checkers Retail Benchmark: R38.50 for 2kg (R0.019/g)"
+                                    }
+                                    "Chocolate" -> {
+                                        packagePriceText = "42.00"
+                                        gramsPerUnitText = "200"
+                                        unitPriceText = String.format("%.4f", 42.0 / 200.0)
+                                        priceNote = "Checkers Retail Benchmark: R42.00 for 200g (R0.21/g)"
+                                    }
+                                    "Baking Soda" -> {
+                                        packagePriceText = "18.00"
+                                        gramsPerUnitText = "200"
+                                        unitPriceText = String.format("%.4f", 18.0 / 200.0)
+                                        priceNote = "Checkers Retail Benchmark: R18.00 for 200g (R0.09/g)"
+                                    }
+                                    "Bicarbonate of Soda" -> {
+                                        packagePriceText = "16.50"
+                                        gramsPerUnitText = "200"
+                                        unitPriceText = String.format("%.4f", 16.5 / 200.0)
+                                        priceNote = "Checkers Retail Benchmark: R16.50 for 200g (R0.0825/g)"
+                                    }
+                                    "Salt" -> {
+                                        packagePriceText = "12.00"
+                                        gramsPerUnitText = "500"
+                                        unitPriceText = String.format("%.4f", 12.0 / 500.0)
+                                        priceNote = "Checkers Retail Benchmark: R12.00 for 500g (R0.024/g)"
+                                    }
+                                    "Eggs" -> {
+                                        packagePriceText = "68.00"
+                                        gramsPerUnitText = "30"
+                                        unitPriceText = String.format("%.2f", 68.0 / 30.0)
+                                        priceNote = "Checkers Retail Benchmark: R68.00 for 30 eggs (R2.27/egg)"
+                                    }
                                 }
                             },
                             label = { Text(presetName, fontSize = 11.sp) }
@@ -1081,11 +1116,70 @@ fun AddStockItemDialog(
                     value = name,
                     onValueChange = { name = it; errorMessage = null },
                     label = { Text("Ingredient / Item Name") },
-                    placeholder = { Text("e.g. Dark Chocolate Callets") },
+                    placeholder = { Text("e.g. Flour, Sugar, Chocolate, Eggs") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true
                 )
+
+                // Checkers AI Price Estimate Button
+                OutlinedButton(
+                    onClick = {
+                        if (name.isBlank()) {
+                            errorMessage = "Please enter or pick an ingredient name first"
+                            return@OutlinedButton
+                        }
+                        coroutineScope.launch {
+                            isEstimatingPrice = true
+                            try {
+                                val estimate = AiProductPricingService.estimateProductPrice(name, "Checkers")
+                                packagePriceText = String.format("%.2f", estimate.packagePriceZar)
+                                gramsPerUnitText = if (estimate.packageSize == estimate.packageSize.toInt().toDouble()) {
+                                    estimate.packageSize.toInt().toString()
+                                } else {
+                                    String.format("%.1f", estimate.packageSize)
+                                }
+                                unit = estimate.packageUnit
+                                unitPriceText = String.format("%.4f", estimate.unitPricePerBaseGram)
+                                priceNote = "Checkers Price: ${estimate.brand} - R${String.format("%.2f", estimate.packagePriceZar)} for ${estimate.packageSize}${estimate.packageUnit} (${estimate.note})"
+                            } catch (e: Exception) {
+                                errorMessage = "Could not estimate price: ${e.message}"
+                            } finally {
+                                isEstimatingPrice = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BatchPink)
+                ) {
+                    if (isEstimatingPrice) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BatchPink)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Fetching Checkers AI Price...", fontSize = 12.sp)
+                    } else {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = BatchPink)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Estimate Price with Checkers AI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (priceNote != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MintLight,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MintGreen, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = priceNote!!, fontSize = 11.sp, color = MintGreen, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
 
                 // Unit selection chips
                 Text("Unit of Measurement", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
