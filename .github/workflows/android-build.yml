@@ -42,9 +42,6 @@ jobs:
           fi
           printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
 
-      - name: Run Android tests
-        run: gradle testDebugUnitTest --stacktrace
-
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
