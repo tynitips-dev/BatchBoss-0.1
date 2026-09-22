@@ -24,19 +24,12 @@ import com.example.ui.screens.*
 import com.example.ui.theme.BatchBossTheme
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.ProductPriceHistoryEntity
-import com.example.data.model.Recipe
-import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.FirebaseFirestore
-import android.util.Log
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Initialize Firestore and write a new recipe
-        initializeFirestoreAndWriteRecipe()
 
         setContent {
             BatchBossTheme {
@@ -45,37 +38,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeFirestoreAndWriteRecipe() {
-        try {
-            if (FirebaseApp.getApps(this).isNotEmpty()) {
-                val db = FirebaseFirestore.getInstance()
-                val newRecipe = Recipe(
-                    title = "Artisan Sourdough Loaf",
-                    prepTimeMinutes = 120,
-                    ingredients = listOf(
-                        "500g Bread Flour",
-                        "350g Water",
-                        "100g Sourdough Starter",
-                        "10g Sea Salt"
-                    ),
-                    instructions = "Mix, autolyse 30m, stretch and fold 4 times over 2h, cold retard 12h, bake at 230°C for 40m."
-                )
-
-                db.collection("recipes")
-                    .add(newRecipe)
-                    .addOnSuccessListener { documentReference ->
-                        Log.d("MainActivity", "Firestore recipe written successfully with ID: ${documentReference.id}")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("MainActivity", "Error adding recipe document to Firestore", e)
-                    }
-            } else {
-                Log.i("MainActivity", "FirebaseApp not configured yet; ready for google-services.json.")
-            }
-        } catch (e: Throwable) {
-            Log.w("MainActivity", "Firestore initialization notice: ${e.message}")
-        }
-    }
 }
 
 @Composable
@@ -209,9 +171,10 @@ fun BatchBossApp(
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onLoginWithDetails = { emailOrPhone, branch ->
-                            viewModel.loginUser(emailOrPhone) { success, msg ->
+                        onLoginWithDetails = { email, password, branch ->
+                            viewModel.loginUser(email, password, branch) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                if (success) viewModel.navigateTo(Screen.Home)
                             }
                         }
                     )
@@ -225,30 +188,34 @@ fun BatchBossApp(
                         },
                         onNavigateToLogin = { viewModel.navigateTo(Screen.Login) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email ->
+                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email, password ->
                             viewModel.createAccountWithDetails(
                                 firstName = fullName.substringBefore(" "),
                                 surname = fullName.substringAfter(" ", ""),
                                 email = email,
-                                password = "",
+                                password = password,
                                 bakeryName = bakeryName,
                                 phone = phone,
                                 city = city,
                                 operatingModel = operatingModel,
                                 currency = currency,
                                 specialty = specialty
-                            ) {
-                                coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
-                                viewModel.navigateTo(
-                                    Screen.WelcomeEmail(
-                                        fullName = fullName,
-                                        email = email,
-                                        bakeryName = bakeryName,
-                                        city = city,
-                                        operatingModel = operatingModel,
-                                        currency = currency
+                            ) { accountId ->
+                                if (accountId < 1) {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Account creation failed. Check the email, password and Firebase connection.") }
+                                } else {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
+                                    viewModel.navigateTo(
+                                        Screen.WelcomeEmail(
+                                            fullName = fullName,
+                                            email = email,
+                                            bakeryName = bakeryName,
+                                            city = city,
+                                            operatingModel = operatingModel,
+                                            currency = currency
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     )

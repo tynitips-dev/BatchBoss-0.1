@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.room.migration.Migration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,11 +67,21 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "batchboss_database"
                 )
+                .addMigrations(MIGRATION_10_11)
                 .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_accounts ADD COLUMN bakeryId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customers ADD COLUMN bakeryId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE recipes ADD COLUMN bakeryId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN bakeryId TEXT NOT NULL DEFAULT 'bakery_1'")
             }
         }
 
