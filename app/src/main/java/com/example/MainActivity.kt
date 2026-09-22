@@ -1011,12 +1011,18 @@ fun BatchBossApp(
                         recipes = recipes,
                         ingredients = selectedRecipeIngredients,
                         inventory = allInventory,
+                        userProfile = userProfile,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
                         onRestoreData = { resRecipes, resIngs, resInv ->
                             viewModel.restoreCloudData(resRecipes, resIngs, resInv) {
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes and ${resInv.size} items from Firestore!")
                                 }
+                            }
+                        },
+                        onSyncWebBackend = { onResult ->
+                            viewModel.syncWithWebBackend { success, msg ->
+                                onResult(success, msg)
                             }
                         }
                     )

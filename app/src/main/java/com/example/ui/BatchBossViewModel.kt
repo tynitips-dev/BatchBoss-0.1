@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
+import com.example.data.remote.FirebaseService
+import com.example.data.remote.WebSyncService
 import com.example.data.repository.AppRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -474,11 +476,18 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         accountNumber: String,
         branchCode: String,
         vatNumber: String,
-        defaultHourlyRate: Double = 120.0
+        defaultHourlyRate: Double = 120.0,
+        bakeryId: String = ""
     ) {
         viewModelScope.launch {
             val current = userProfile.value ?: UserProfileEntity()
+            val finalBakeryId = bakeryId.ifBlank {
+                current.bakeryId.ifBlank {
+                    generateBakeryId(_currentUserId.value, bakeryName)
+                }
+            }
             val updated = current.copy(
+                bakeryId = finalBakeryId,
                 logoUri = logoUri,
                 bakeryName = bakeryName,
                 phone = phone,
@@ -491,6 +500,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 defaultHourlyRate = defaultHourlyRate
             )
             repository.saveUserProfile(updated)
+            try {
+                WebSyncService.syncProfile(finalBakeryId, updated)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -548,28 +560,34 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         photoUri: String = ""
     ) {
         viewModelScope.launch {
-            val recipeId = repository.insertRecipe(
-                RecipeEntity(
-                    userId = _currentUserId.value,
-                    name = name,
-                    category = category,
-                    description = description,
-                    servings = servings,
-                    batchSize = batchSize,
-                    difficulty = "Medium",
-                    rating = 5.0,
-                    reviewCount = 1,
-                    imageResName = "cupcake",
-                    labourCost = labourCost,
-                    overheadsCost = overheadsCost,
-                    packagingCost = packagingCost,
-                    utilitiesCost = utilitiesCost,
-                    profitMarginPercent = profitMargin,
-                    instructions = instructions,
-                    photoUri = photoUri
-                )
+            val uid = _currentUserId.value
+            val currentProfile = userProfile.value
+            val bId = currentProfile?.bakeryId?.ifBlank {
+                generateBakeryId(uid, currentProfile.bakeryName)
+            } ?: generateBakeryId(uid, "artisan")
+
+            val newRecipe = RecipeEntity(
+                userId = uid,
+                bakeryId = bId,
+                name = name,
+                category = category,
+                description = description,
+                servings = servings,
+                batchSize = batchSize,
+                difficulty = "Medium",
+                rating = 5.0,
+                reviewCount = 1,
+                imageResName = "cupcake",
+                labourCost = labourCost,
+                overheadsCost = overheadsCost,
+                packagingCost = packagingCost,
+                utilitiesCost = utilitiesCost,
+                profitMarginPercent = profitMargin,
+                instructions = instructions,
+                photoUri = photoUri
             )
-            val updatedIngredients = ingredients.map { it.copy(recipeId = recipeId, userId = _currentUserId.value) }
+            val recipeId = repository.insertRecipe(newRecipe)
+            val updatedIngredients = ingredients.map { it.copy(recipeId = recipeId, userId = uid) }
             repository.saveIngredients(recipeId, updatedIngredients)
 
             // Auto-sync extracted ingredients into inventory pantry
@@ -577,7 +595,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 if (ing.name.isNotBlank()) {
                     repository.insertInventoryItem(
                         InventoryItemEntity(
-                            userId = _currentUserId.value,
+                            userId = uid,
                             name = ing.name,
                             currentStock = maxOf(ing.quantity * 2, 500.0),
                             minStock = maxOf(ing.quantity, 200.0),
@@ -591,6 +609,11 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
             }
+
+            // Sync newly created recipe to web backend
+            try {
+                WebSyncService.syncRecipe(bId, newRecipe.copy(id = recipeId), updatedIngredients)
+            } catch (_: Throwable) {}
 
             navigateTo(Screen.RecipeDetail(recipeId))
         }
@@ -750,12 +773,22 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         city: String,
         operatingModel: String,
         currency: String,
-        email: String
+        email: String,
+        bakeryId: String = ""
     ) {
         viewModelScope.launch {
             val currentPlan = if (_isPremiumUser.value) "Pro Monthly" else "Free"
-            val profile = UserProfileEntity(
+            val uid = _currentUserId.value
+            val existing = userProfile.value
+            val finalBakeryId = bakeryId.ifBlank {
+                existing?.bakeryId?.ifBlank {
+                    generateBakeryId(uid, bakeryName)
+                } ?: generateBakeryId(uid, bakeryName)
+            }
+            val profile = (existing ?: UserProfileEntity()).copy(
                 id = 1,
+                userId = uid,
+                bakeryId = finalBakeryId,
                 fullName = fullName,
                 bakeryName = bakeryName,
                 specialty = specialty,
@@ -768,6 +801,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 subscriptionPlan = currentPlan
             )
             repository.saveUserProfile(profile)
+            try {
+                WebSyncService.syncProfile(finalBakeryId, profile)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -1115,22 +1151,44 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         notes: String = ""
     ) {
         viewModelScope.launch {
-            repository.insertCustomer(
-                CustomerEntity(
-                    userId = _currentUserId.value,
-                    name = name.trim(),
-                    phone = phone.trim(),
-                    email = email.trim(),
-                    address = address.trim(),
-                    notes = notes.trim()
-                )
+            val uid = _currentUserId.value
+            val currentProfile = userProfile.value
+            val bId = currentProfile?.bakeryId?.ifBlank {
+                generateBakeryId(uid, currentProfile.bakeryName)
+            } ?: generateBakeryId(uid, "artisan")
+
+            val customer = CustomerEntity(
+                userId = uid,
+                bakeryId = bId,
+                name = name.trim(),
+                phone = phone.trim(),
+                email = email.trim(),
+                address = address.trim(),
+                notes = notes.trim()
             )
+            val newId = repository.insertCustomer(customer)
+            val savedCustomer = customer.copy(id = newId)
+
+            // Real-time synchronization with website backend
+            try {
+                WebSyncService.syncCustomer(bId, savedCustomer)
+            } catch (_: Throwable) {}
         }
     }
 
     fun updateCustomer(customer: CustomerEntity) {
         viewModelScope.launch {
-            repository.updateCustomer(customer.copy(userId = _currentUserId.value))
+            val currentProfile = userProfile.value
+            val bId = customer.bakeryId.ifBlank {
+                currentProfile?.bakeryId?.ifBlank {
+                    generateBakeryId(_currentUserId.value, currentProfile.bakeryName)
+                } ?: generateBakeryId(_currentUserId.value, "artisan")
+            }
+            val updated = customer.copy(userId = _currentUserId.value, bakeryId = bId)
+            repository.updateCustomer(updated)
+            try {
+                WebSyncService.syncCustomer(bId, updated)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -1156,6 +1214,10 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 _currentUserId.value = user.id
                 _isUserLoggedIn.value = true
                 authPrefs.edit().putLong("active_user_id", user.id).apply()
+                val userBakeryId = user.bakeryId.ifBlank { generateBakeryId(user.id, user.bakeryName) }
+                if (user.bakeryId.isBlank()) {
+                    repository.updateUserAccount(user.copy(bakeryId = userBakeryId))
+                }
                 updateUserProfile(
                     fullName = user.fullName,
                     bakeryName = user.bakeryName,
@@ -1164,7 +1226,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     city = user.city,
                     operatingModel = user.operatingModel,
                     currency = user.currency,
-                    email = user.email
+                    email = user.email,
+                    bakeryId = userBakeryId
                 )
                 repository.recordLoginLog(
                     userId = user.id,
@@ -1181,12 +1244,31 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     cleanInput.ifBlank { "Baker" }
                 }
+                val bakeryName = "$firstName's Bakery"
+                val initialBakeryId = generateBakeryId(0, bakeryName)
                 val newId = repository.insertUserAccount(
                     UserAccountEntity(
+                        bakeryId = initialBakeryId,
                         firstName = firstName,
                         surname = "",
                         email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
-                        bakeryName = "$firstName's Bakery",
+                        bakeryName = bakeryName,
+                        phone = if (cleanInput.contains("@")) "" else cleanInput,
+                        city = "Cape Town",
+                        operatingModel = "Home Kitchen",
+                        currency = "ZAR (R)",
+                        specialty = "Cakes & Pastries"
+                    )
+                )
+                val finalBakeryId = generateBakeryId(newId, bakeryName)
+                repository.updateUserAccount(
+                    UserAccountEntity(
+                        id = newId,
+                        bakeryId = finalBakeryId,
+                        firstName = firstName,
+                        surname = "",
+                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
+                        bakeryName = bakeryName,
                         phone = if (cleanInput.contains("@")) "" else cleanInput,
                         city = "Cape Town",
                         operatingModel = "Home Kitchen",
@@ -1200,18 +1282,19 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 val userEmail = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com"
                 updateUserProfile(
                     fullName = firstName,
-                    bakeryName = "$firstName's Bakery",
+                    bakeryName = bakeryName,
                     specialty = "Cakes & Pastries",
                     phone = if (cleanInput.contains("@")) "" else cleanInput,
                     city = "Cape Town",
                     operatingModel = "Home Kitchen",
                     currency = "ZAR (R)",
-                    email = userEmail
+                    email = userEmail,
+                    bakeryId = finalBakeryId
                 )
                 repository.recordLoginLog(
                     userId = newId,
                     email = userEmail,
-                    bakeryName = "$firstName's Bakery",
+                    bakeryName = bakeryName,
                     action = "REGISTER",
                     branch = branch,
                     notes = "Account auto-provisioned on login"
@@ -1257,12 +1340,15 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             val cleanEmail = email.trim().lowercase()
+            val bName = bakeryName.trim().ifBlank { "$firstName's Bakery" }
+            val initialBakeryId = generateBakeryId(0, bName)
             val user = UserAccountEntity(
+                bakeryId = initialBakeryId,
                 firstName = firstName.trim(),
                 surname = surname.trim(),
                 email = cleanEmail,
                 passwordHash = password,
-                bakeryName = bakeryName.trim(),
+                bakeryName = bName,
                 phone = phone.trim(),
                 city = city.trim(),
                 operatingModel = operatingModel,
@@ -1270,19 +1356,23 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 specialty = specialty
             )
             val newUserId = repository.insertUserAccount(user)
+            val finalBakeryId = generateBakeryId(newUserId, bName)
+            repository.updateUserAccount(user.copy(id = newUserId, bakeryId = finalBakeryId))
+
             _currentUserId.value = newUserId
             _isUserLoggedIn.value = true
             authPrefs.edit().putLong("active_user_id", newUserId).apply()
 
             updateUserProfile(
                 fullName = "$firstName $surname".trim(),
-                bakeryName = bakeryName.trim(),
+                bakeryName = bName,
                 specialty = specialty,
                 phone = phone.trim(),
                 city = city.trim(),
                 operatingModel = operatingModel,
                 currency = currency,
-                email = cleanEmail
+                email = cleanEmail,
+                bakeryId = finalBakeryId
             )
 
             repository.recordLoginLog(
@@ -1493,6 +1583,41 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 repository.insertInventoryItem(item.copy(id = 0, userId = uid))
             }
             onComplete()
+        }
+    }
+
+    fun syncWithWebBackend(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val uid = _currentUserId.value
+            val profile = userProfile.value ?: UserProfileEntity()
+            val bId = profile.bakeryId.ifBlank { generateBakeryId(uid, profile.bakeryName) }
+
+            val customersList = repository.getCustomersByUser(uid).first()
+            val recipesList = repository.getRecipesByUser(uid).first()
+
+            var syncedItems = 0
+            if (WebSyncService.syncProfile(bId, profile)) syncedItems++
+
+            for (cust in customersList) {
+                if (WebSyncService.syncCustomer(bId, cust)) syncedItems++
+            }
+
+            for (rec in recipesList) {
+                val ings = repository.getIngredientsForRecipeOnce(rec.id)
+                if (WebSyncService.syncRecipe(bId, rec, ings)) syncedItems++
+            }
+
+            try {
+                FirebaseService.backupDataToCloud(
+                    recipes = recipesList,
+                    ingredients = emptyList(),
+                    inventory = emptyList(),
+                    customers = customersList,
+                    bakeryId = bId
+                )
+            } catch (_: Throwable) {}
+
+            onComplete(true, "Synchronized with Website for Bakery ID: $bId ($syncedItems entities updated)")
         }
     }
 }

@@ -4,9 +4,20 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+fun generateBakeryId(userId: Long, bakeryName: String): String {
+    val cleanName = bakeryName.trim().lowercase()
+        .replace(Regex("[^a-z0-9]+"), "_")
+        .trim('_')
+        .take(20)
+        .trimEnd('_')
+        .ifBlank { "artisan" }
+    return "bakery_${cleanName}_${if (userId > 0) userId else "1"}"
+}
+
 @Entity(tableName = "user_accounts")
 data class UserAccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bakeryId: String = "",
     val firstName: String = "",
     val surname: String = "",
     val email: String = "",
@@ -33,6 +44,7 @@ data class UserAccountEntity(
 data class CustomerEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val userId: Long = 0,
+    val bakeryId: String = "",
     val name: String,
     val phone: String = "",
     val email: String = "",
@@ -70,6 +82,7 @@ data class OrderEntity(
 data class RecipeEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val userId: Long = 0,
+    val bakeryId: String = "",
     val name: String,
     val category: String,
     val description: String,
@@ -374,6 +387,7 @@ data class QuoteEntity(
 data class UserProfileEntity(
     @PrimaryKey val id: Long = 1,
     val userId: Long = 0,
+    val bakeryId: String = "bakery_1",
     val fullName: String = "",
     val bakeryName: String = "",
     val specialty: String = "Cakes & Pastries",

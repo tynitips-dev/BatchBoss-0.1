@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BatchMaster™ &amp; BatchBoss™ - Account &amp; Data Deletion Portal</title>
+  <title>BatchBoss™ - Bakery Management &amp; Official Web Portal</title>
   <style>
     :root {
       --primary: #E91E63;
       --primary-dark: #C2185B;
       --primary-light: #FCE4EC;
+      --primary-border: #F8BBD0;
       --text-dark: #1E293B;
       --text-muted: #64748B;
       --border: #E2E8F0;
@@ -16,6 +17,8 @@
       --card-bg: #FFFFFF;
       --danger: #DC2626;
       --success: #16A34A;
+      --mint: #10B981;
+      --mint-light: #ECFDF5;
     }
     * {
       box-sizing: border-box;
@@ -27,15 +30,15 @@
       background-color: var(--bg);
       color: var(--text-dark);
       line-height: 1.6;
-      padding: 24px 16px 48px;
+      padding: 24px 16px 60px;
     }
     .container {
-      max-width: 680px;
+      max-width: 860px;
       margin: 0 auto;
     }
     .header {
       text-align: center;
-      margin-bottom: 28px;
+      margin-bottom: 24px;
     }
     .badge {
       display: inline-block;
@@ -43,143 +46,285 @@
       color: var(--primary);
       font-size: 12px;
       font-weight: 700;
-      padding: 4px 12px;
+      padding: 4px 14px;
       border-radius: 9999px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     h1 {
-      font-size: 26px;
+      font-size: 28px;
       font-weight: 800;
       color: var(--text-dark);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .subtitle {
       font-size: 15px;
       color: var(--text-muted);
     }
+
+    /* Tabs Navigation */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      background: #EDF2F7;
+      padding: 6px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .tab-btn.active {
+      background: #FFFFFF;
+      color: var(--primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* Cards */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 24px;
+      padding: 22px;
       margin-bottom: 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     .card h2 {
       font-size: 18px;
       font-weight: 700;
-      margin-bottom: 12px;
       color: var(--text-dark);
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    p, li {
-      font-size: 14px;
-      color: #334155;
+
+    /* Bakery Selector Bar */
+    .bakery-selector-bar {
+      background: linear-gradient(135deg, #FFF1F5 0%, #FFFFFF 100%);
+      border: 1.5px solid var(--primary-border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 20px;
     }
-    ul {
-      margin-left: 20px;
-      margin-top: 8px;
-      margin-bottom: 12px;
+    .selector-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
     }
-    li {
-      margin-bottom: 6px;
-    }
-    .highlight-box {
-      background-color: #FEF2F2;
-      border-left: 4px solid var(--danger);
-      padding: 14px 16px;
-      border-radius: 8px;
-      margin-top: 14px;
-    }
-    .highlight-box p {
-      color: #991B1B;
-      font-size: 13px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-dark);
-      margin-bottom: 6px;
-    }
-    input[type="text"],
-    input[type="email"],
-    select,
-    textarea {
-      width: 100%;
+    .selector-row input {
+      flex: 1;
+      min-width: 200px;
       padding: 10px 14px;
       border: 1.5px solid var(--border);
       border-radius: 8px;
       font-size: 14px;
+      font-family: monospace;
+      font-weight: bold;
+      color: var(--primary-dark);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+    .btn-secondary {
+      background: #FFFFFF;
+      color: var(--text-dark);
+      border: 1px solid var(--border);
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-secondary:hover {
+      background: #F1F5F9;
+    }
+    .quick-pills {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .pill {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-family: monospace;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .pill:hover, .pill.active {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Items Grid & Lists */
+    .item-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      background: #FAFAFA;
+      transition: all 0.15s ease;
+    }
+    .item-card:hover {
+      border-color: var(--primary-border);
+      background: #FFFFFF;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+    .item-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text-dark);
+    }
+    .item-badge {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .item-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .item-desc {
+      font-size: 13px;
+      color: #475569;
+      margin-top: 6px;
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 4px;
+    }
+    input[type="text"], input[type="email"], select, textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
       color: var(--text-dark);
       background: #FFFFFF;
-      transition: border-color 0.2s;
     }
     input:focus, select:focus, textarea:focus {
       outline: none;
       border-color: var(--primary);
     }
-    .checkbox-group {
+    .form-row {
       display: flex;
-      align-items: flex-start;
       gap: 10px;
-      margin-top: 16px;
-      margin-bottom: 20px;
     }
-    .checkbox-group input {
-      margin-top: 4px;
-      accent-color: var(--primary);
-      width: 18px;
-      height: 18px;
+    .form-row > * {
+      flex: 1;
     }
-    .checkbox-group label {
+
+    /* Status indicator */
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: var(--mint-light);
+      color: var(--mint);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--mint);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 30px 16px;
+      color: var(--text-muted);
       font-size: 13px;
-      font-weight: normal;
-      color: #475569;
-      margin-bottom: 0;
-      line-height: 1.4;
     }
-    .btn {
-      display: inline-block;
-      width: 100%;
-      background-color: var(--danger);
-      color: #FFFFFF;
-      font-weight: 700;
-      font-size: 15px;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      text-align: center;
-      transition: background-color 0.2s;
-    }
-    .btn:hover {
-      background-color: #B91C1C;
-    }
-    .success-message {
-      display: none;
-      background-color: #F0FDF4;
-      border: 1px solid #BBF7D0;
-      border-radius: 12px;
-      padding: 20px;
-      text-align: center;
-      margin-top: 16px;
-    }
-    .success-message h3 {
-      color: var(--success);
-      font-size: 18px;
-      margin-bottom: 6px;
-    }
-    .success-message p {
-      color: #166534;
-    }
+
     .footer {
       text-align: center;
       margin-top: 36px;
@@ -192,132 +337,524 @@
       border-radius: 4px;
       font-size: 11px;
     }
-    .contact-link {
-      color: var(--primary);
-      text-decoration: none;
-      font-weight: 600;
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
     }
-    .contact-link:hover {
-      text-decoration: underline;
+    .modal-overlay.open {
+      display: flex;
+    }
+    .modal {
+      background: #FFFFFF;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 500px;
+      padding: 24px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      max-height: 90vh;
+      overflow-y: auto;
     }
   </style>
 </head>
 <body>
 
   <div class="container">
+    <!-- Header -->
     <div class="header">
-      <span class="badge">Google Play Compliance &amp; Privacy</span>
-      <h1>BatchMaster™ &amp; BatchBoss™</h1>
-      <p class="subtitle">Account &amp; Data Deletion Interface • Official Support Portal</p>
+      <span class="badge">Unified Android &amp; Web Platform</span>
+      <h1>BatchBoss™</h1>
+      <p class="subtitle">Artisan Bakery Costing, Production &amp; Client Management Portal</p>
     </div>
 
-    <!-- Overview Card -->
-    <div class="card">
-      <h2>How Data Deletion Works</h2>
-      <p>Under Google Play Developer Policy and international privacy standards (POPIA &amp; GDPR), users have full control over their personal, bakery, and operational data. You can delete your account and all associated data through two direct methods:</p>
+    <!-- Navigation Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabBtnPortal" onclick="switchTab('portal')">
+        🧁 Bakery Live Portal
+      </button>
+      <button class="tab-btn" id="tabBtnDeletion" onclick="switchTab('deletion')">
+        🛡️ Account &amp; Data Deletion
+      </button>
+    </div>
+
+    <!-- TAB 1: BAKERY LIVE PORTAL -->
+    <div id="tabPortal">
       
-      <div style="margin-top: 14px;">
-        <strong>Method 1: Instant In-App Deletion (Immediate)</strong>
-        <p style="margin-top: 4px;">Open the <strong>BatchBoss</strong> app &gt; navigate to <strong>More</strong> &gt; tap <strong>Account &amp; Data Deletion</strong> &gt; tap <strong>Delete My Account &amp; Data Immediately</strong>. Your profile, recipes, ingredients, customers, and invoices are instantly and permanently wiped from your device.</p>
+      <!-- Bakery Selector Card -->
+      <div class="bakery-selector-bar">
+        <div style="font-size: 12px; font-weight: 700; color: var(--primary-dark); margin-bottom: 6px;">
+          SYNCHRONIZED BAKERY IDENTIFIER (shared with Android App)
+        </div>
+        <div class="selector-row">
+          <input type="text" id="bakeryIdInput" placeholder="Enter bakeryId (e.g. bakery_1)" value="bakery_1">
+          <button class="btn-primary" onclick="loadBakeryData()">Connect / Refresh</button>
+          <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="syncStatusLabel">Online &amp; Sync Active</span>
+          </div>
+        </div>
+        <div class="quick-pills">
+          <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Active Bakeries:</span>
+          <span class="pill active" onclick="setBakeryId('bakery_1')">bakery_1</span>
+          <span class="pill" onclick="setBakeryId('bakery_sweet_treats_1')">bakery_sweet_treats_1</span>
+          <span class="pill" onclick="setBakeryId('bakery_cape_artisan_2')">bakery_cape_artisan_2</span>
+        </div>
       </div>
 
-      <div style="margin-top: 14px;">
-        <strong>Method 2: Web Deletion Request Form (Below)</strong>
-        <p style="margin-top: 4px;">Submit the form below or email us directly at <a href="mailto:info@batchboss.co.za?subject=Account%20and%20Data%20Deletion%20Request" class="contact-link">info@batchboss.co.za</a>. Our administrative team processes web requests within <strong>48 hours</strong>.</p>
+      <!-- Stats Overview -->
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-number" id="statRecipes">0</div>
+          <div class="stat-label">Synced Recipes</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" id="statCustomers">0</div>
+          <div class="stat-label">Synced Customers</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" id="statCurrency">ZAR (R)</div>
+          <div class="stat-label">Active Currency</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" style="font-size: 16px; margin-top: 6px;" id="statModel">Home Kitchen</div>
+          <div class="stat-label">Operating Model</div>
+        </div>
+      </div>
+
+      <!-- Bakery Profile Card -->
+      <div class="card">
+        <div class="card-header">
+          <h2>🏪 Bakery Profile &amp; Branding</h2>
+          <span style="font-size: 12px; font-family: monospace; color: var(--primary); font-weight: bold;" id="profileBakeryId">bakery_1</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; font-size: 13px;">
+          <div>
+            <strong style="color: var(--text-muted);">Bakery Name:</strong>
+            <div id="profileBakeryName" style="font-weight: 600; font-size: 15px;">Loading...</div>
+          </div>
+          <div>
+            <strong style="color: var(--text-muted);">Owner / Baker:</strong>
+            <div id="profileFullName" style="font-weight: 600;">—</div>
+          </div>
+          <div>
+            <strong style="color: var(--text-muted);">Contact Email:</strong>
+            <div id="profileEmail">—</div>
+          </div>
+          <div>
+            <strong style="color: var(--text-muted);">Phone / WhatsApp:</strong>
+            <div id="profilePhone">—</div>
+          </div>
+          <div>
+            <strong style="color: var(--text-muted);">City / Location:</strong>
+            <div id="profileCity">—</div>
+          </div>
+          <div>
+            <strong style="color: var(--text-muted);">Specialty:</strong>
+            <div id="profileSpecialty">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Synchronized Customers Card -->
+      <div class="card">
+        <div class="card-header">
+          <h2>👥 Synced Customers</h2>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" onclick="openCustomerModal()">+ Add Customer</button>
+            <button class="btn-secondary" onclick="loadBakeryData()">↻ Refresh</button>
+          </div>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Customers created in the Android app under this <code id="lblCustBakeryId">bakery_1</code> appear here automatically.
+        </p>
+        <div id="customersListContainer">
+          <div class="empty-state">Loading customers...</div>
+        </div>
+      </div>
+
+      <!-- Synchronized Recipes Card -->
+      <div class="card">
+        <div class="card-header">
+          <h2>🎂 Synced Recipes &amp; Costing</h2>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" onclick="openRecipeModal()">+ Add Recipe</button>
+            <button class="btn-secondary" onclick="loadBakeryData()">↻ Refresh</button>
+          </div>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Formulas and costing calculations pushed from the Android app for <code id="lblRecBakeryId">bakery_1</code>.
+        </p>
+        <div id="recipesListContainer">
+          <div class="empty-state">Loading recipes...</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB 2: ACCOUNT & DATA DELETION (Google Play Compliance) -->
+    <div id="tabDeletion" style="display: none;">
+      <!-- Overview Card -->
+      <div class="card">
+        <h2>How Data Deletion Works</h2>
+        <p>Under Google Play Developer Policy and international privacy standards (POPIA &amp; GDPR), users have full control over their personal, bakery, and operational data. You can delete your account and all associated data through two direct methods:</p>
+        
+        <div style="margin-top: 14px;">
+          <strong>Method 1: Instant In-App Deletion (Immediate)</strong>
+          <p style="margin-top: 4px;">Open the <strong>BatchBoss</strong> app &gt; navigate to <strong>More</strong> &gt; tap <strong>Account &amp; Data Deletion</strong> &gt; tap <strong>Delete My Account &amp; Data Immediately</strong>. Your profile, recipes, ingredients, customers, and invoices are instantly and permanently wiped from your device.</p>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <strong>Method 2: Web Deletion Request Form (Below)</strong>
+          <p style="margin-top: 4px;">Submit the form below or email us directly at <a href="mailto:info@batchboss.co.za?subject=Account%20and%20Data%20Deletion%20Request" style="color: var(--primary);">info@batchboss.co.za</a>. Our administrative team processes web requests within <strong>48 hours</strong>.</p>
+        </div>
+      </div>
+
+      <!-- Web Request Form Card -->
+      <div class="card">
+        <h2>Submit Online Deletion Request</h2>
+        <form id="deletionForm" onsubmit="handleFormSubmit(event)">
+          <div class="form-group">
+            <label for="delEmail">Account Email Address *</label>
+            <input type="email" id="delEmail" required placeholder="e.g. baker@mybakery.co.za">
+          </div>
+
+          <div class="form-group">
+            <label for="delBakeryName">Bakery Name (Optional)</label>
+            <input type="text" id="delBakeryName" placeholder="e.g. Sweet Treats Bakery">
+          </div>
+
+          <div class="form-group">
+            <label for="delPhone">Phone / WhatsApp Number</label>
+            <input type="text" id="delPhone" placeholder="+27 78 141 3985">
+          </div>
+
+          <button type="submit" class="btn-primary" style="background-color: var(--danger); width: 100%; padding: 12px; margin-top: 10px;">
+            Submit Account &amp; Data Deletion Request
+          </button>
+        </form>
+
+        <div id="deletionSuccessMsg" style="display: none; background: #F0FDF4; border: 1px solid #BBF7D0; padding: 16px; border-radius: 10px; margin-top: 14px;">
+          <h3 style="color: var(--success); font-size: 16px;">Request Received</h3>
+          <p style="font-size: 13px; color: #166534; margin-top: 4px;">We have logged your deletion request. Associated bakery data will be removed within 48 hours.</p>
+        </div>
       </div>
     </div>
 
-    <!-- Data Scope Card -->
-    <div class="card">
-      <h2>Data Types Subject to Deletion</h2>
-      <p>When you request deletion of your account, the following data categories will be permanently removed:</p>
-      <ul>
-        <li><strong>User Profile:</strong> Name, email address, bakery name, phone number, operating model, location, and authentication credentials.</li>
-        <li><strong>Bakery Recipes &amp; Formulas:</strong> All created recipes, ingredient ratios, batch sizes, cost calculations, and pricing margins.</li>
-        <li><strong>Inventory &amp; Stock:</strong> Ingredient stock levels, unit purchase prices, low-stock thresholds, and custom suppliers.</li>
-        <li><strong>Financial Records:</strong> Quotes, invoices, custom line items, tax settings, and profit calculations.</li>
-        <li><strong>Customer Directory:</strong> Client names, phone numbers, delivery addresses, notes, and order histories.</li>
-        <li><strong>Audit &amp; Login Logs:</strong> Device logs, session records, and task lists.</li>
-      </ul>
-
-      <div class="highlight-box">
-        <p><strong>Notice on Data Retention:</strong> Once deleted, your account and recipes cannot be recovered. Data required to be retained under statutory financial or tax laws (such as issued fiscal tax invoices) will be kept only as strictly mandated by law.</p>
+    <!-- Modal: Add Customer -->
+    <div id="customerModal" class="modal-overlay">
+      <div class="modal">
+        <h3 style="margin-bottom: 14px; color: var(--primary);">Add Customer to Bakery</h3>
+        <form onsubmit="handleCustomerSubmit(event)">
+          <div class="form-group">
+            <label>Customer Full Name *</label>
+            <input type="text" id="custName" required placeholder="e.g. Sarah Jenkins">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Phone / WhatsApp</label>
+              <input type="text" id="custPhone" placeholder="+27 82 111 2233">
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="custEmail" placeholder="sarah@example.com">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Delivery Address</label>
+            <input type="text" id="custAddress" placeholder="14 Sunset Ave, Cape Town">
+          </div>
+          <div class="form-group">
+            <label>Preferences / Order Notes</label>
+            <textarea id="custNotes" rows="2" placeholder="Prefers gluten-free sponge, chocolate frosting"></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn-secondary" onclick="closeCustomerModal()">Cancel</button>
+            <button type="submit" class="btn-primary">Save Customer</button>
+          </div>
+        </form>
       </div>
     </div>
 
-    <!-- Web Request Form Card -->
-    <div class="card">
-      <h2>Submit Online Deletion Request</h2>
-      <form id="deletionForm" onsubmit="handleFormSubmit(event)">
-        <div class="form-group">
-          <label for="email">Account Email Address *</label>
-          <input type="email" id="email" name="email" required placeholder="e.g. baker@mybakery.co.za">
-        </div>
-
-        <div class="form-group">
-          <label for="bakeryName">Bakery Name (Optional)</label>
-          <input type="text" id="bakeryName" name="bakeryName" placeholder="e.g. Sweet Treats Bakery">
-        </div>
-
-        <div class="form-group">
-          <label for="phone">Phone / WhatsApp Number</label>
-          <input type="text" id="phone" name="phone" placeholder="+27 78 141 3985">
-        </div>
-
-        <div class="form-group">
-          <label for="reason">Reason for Deletion (Optional)</label>
-          <select id="reason" name="reason">
-            <option value="closing_bakery">Closing or pausing bakery operations</option>
-            <option value="switching_app">Switching to another system</option>
-            <option value="data_privacy">Privacy concerns / Data removal</option>
-            <option value="no_longer_needed">No longer baking</option>
-            <option value="other">Other reason</option>
-          </select>
-        </div>
-
-        <div class="checkbox-group">
-          <input type="checkbox" id="confirm" required>
-          <label for="confirm">I understand that submitting this request will permanently delete my account, recipes, ingredients, and invoices, and that this action cannot be undone.</label>
-        </div>
-
-        <button type="submit" class="btn">Submit Account &amp; Data Deletion Request</button>
-      </form>
-
-      <div id="successMessage" class="success-message">
-        <h3>Deletion Request Received</h3>
-        <p style="margin-top: 6px;">We have logged your request for account: <strong id="submittedEmail"></strong>.</p>
-        <p style="margin-top: 6px;">Your data deletion will be processed within 48 hours. A confirmation email will be sent upon completion.</p>
+    <!-- Modal: Add Recipe -->
+    <div id="recipeModal" class="modal-overlay">
+      <div class="modal">
+        <h3 style="margin-bottom: 14px; color: var(--primary);">Add Recipe to Bakery</h3>
+        <form onsubmit="handleRecipeSubmit(event)">
+          <div class="form-group">
+            <label>Recipe Name *</label>
+            <input type="text" id="recName" required placeholder="e.g. Red Velvet Dream Cake">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Category</label>
+              <select id="recCategory">
+                <option value="Cakes">Cakes</option>
+                <option value="Cupcakes">Cupcakes</option>
+                <option value="Cookies">Cookies</option>
+                <option value="Pastries">Pastries</option>
+                <option value="Breads">Breads</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Batch Yield (Servings)</label>
+              <input type="text" id="recServings" value="12">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Labour Cost</label>
+              <input type="text" id="recLabour" value="45.00">
+            </div>
+            <div class="form-group">
+              <label>Selling Price</label>
+              <input type="text" id="recPrice" value="350.00">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description / Method Notes</label>
+            <textarea id="recDesc" rows="2" placeholder="Velvety buttermilk sponge with cream cheese frosting."></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn-secondary" onclick="closeRecipeModal()">Cancel</button>
+            <button type="submit" class="btn-primary">Save Recipe</button>
+          </div>
+        </form>
       </div>
     </div>
 
-    <!-- Support Contacts Card -->
-    <div class="card">
-      <h2>Direct Support &amp; Contact</h2>
-      <p>If you have any questions or need assistance regarding your data:</p>
-      <ul style="margin-top: 10px;">
-        <li><strong>Domain:</strong> batchboss.co.za</li>
-        <li><strong>Email:</strong> <a href="mailto:info@batchboss.co.za" class="contact-link">info@batchboss.co.za</a></li>
-        <li><strong>WhatsApp Support:</strong> <a href="https://wa.me/27781413985" class="contact-link">+27 78 141 3985</a></li>
-        <li><strong>Developer:</strong> Tada Innovations (Pty) Ltd</li>
-      </ul>
-    </div>
-
+    <!-- Footer -->
     <div class="footer">
-      <p><strong>&copy; 2026 Tada Innovations (Pty) Ltd. All rights reserved.</strong></p>
-      <p>BatchBoss™ is a trademark of Tada Innovations (Pty) Ltd.</p>
-      <p style="margin-top: 6px;">Google Play Data Safety Compliance URL: <code>https://batchboss.co.za/delete-account</code></p>
+      <p><strong>&copy; 2026 BatchBoss™ by Tada Innovations (Pty) Ltd. All rights reserved.</strong></p>
+      <p style="margin-top: 4px;">Shared Bakery Sync Engine • Google Play Data Safety Compliance URL: <code>/delete-account</code></p>
     </div>
   </div>
 
   <script>
+    let currentBakeryId = 'bakery_1';
+
+    // Parse URL parameter if provided: ?bakeryId=...
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('bakeryId')) {
+      currentBakeryId = urlParams.get('bakeryId').trim().toLowerCase();
+    }
+    document.getElementById('bakeryIdInput').value = currentBakeryId;
+
+    function switchTab(tab) {
+      if (tab === 'portal') {
+        document.getElementById('tabPortal').style.display = 'block';
+        document.getElementById('tabDeletion').style.display = 'none';
+        document.getElementById('tabBtnPortal').classList.add('active');
+        document.getElementById('tabBtnDeletion').classList.remove('active');
+      } else {
+        document.getElementById('tabPortal').style.display = 'none';
+        document.getElementById('tabDeletion').style.display = 'block';
+        document.getElementById('tabBtnPortal').classList.remove('active');
+        document.getElementById('tabBtnDeletion').classList.add('active');
+      }
+    }
+
+    function setBakeryId(id) {
+      currentBakeryId = id;
+      document.getElementById('bakeryIdInput').value = id;
+      document.querySelectorAll('.quick-pills .pill').forEach(p => {
+        if (p.innerText === id) p.classList.add('active');
+        else p.classList.remove('active');
+      });
+      loadBakeryData();
+    }
+
+    async function loadBakeryData() {
+      const inputVal = document.getElementById('bakeryIdInput').value.trim().toLowerCase();
+      if (inputVal) currentBakeryId = inputVal;
+
+      document.getElementById('profileBakeryId').innerText = currentBakeryId;
+      document.getElementById('lblCustBakeryId').innerText = currentBakeryId;
+      document.getElementById('lblRecBakeryId').innerText = currentBakeryId;
+
+      try {
+        const res = await fetch(`/api/bakery/${encodeURIComponent(currentBakeryId)}/all`);
+        if (!res.ok) throw new Error('Network error: ' + res.status);
+        const data = await res.json();
+
+        // Update Profile
+        const prof = data.profile || {};
+        document.getElementById('profileBakeryName').innerText = prof.bakeryName || 'Artisan Bakery';
+        document.getElementById('profileFullName').innerText = prof.fullName || 'Head Baker';
+        document.getElementById('profileEmail').innerText = prof.email || 'orders@bakery.com';
+        document.getElementById('profilePhone').innerText = prof.phone || '+27 82 555 1234';
+        document.getElementById('profileCity').innerText = prof.city || 'Cape Town';
+        document.getElementById('profileSpecialty').innerText = prof.specialty || 'Pastries & Cakes';
+        document.getElementById('statCurrency').innerText = prof.currency || 'ZAR (R)';
+        document.getElementById('statModel').innerText = prof.operatingModel || 'Home Kitchen';
+
+        // Update Stats
+        const recipes = data.recipes || [];
+        const customers = data.customers || [];
+        document.getElementById('statRecipes').innerText = recipes.length;
+        document.getElementById('statCustomers').innerText = customers.length;
+
+        // Render Customers
+        renderCustomers(customers);
+
+        // Render Recipes
+        renderRecipes(recipes, prof.currency || 'ZAR (R)');
+
+      } catch (err) {
+        console.error('Error fetching bakery data:', err);
+      }
+    }
+
+    function renderCustomers(customers) {
+      const container = document.getElementById('customersListContainer');
+      if (!customers || customers.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p style="font-weight: 600;">No customers yet for this bakery.</p>
+            <p style="margin-top: 4px;">Create a customer in the Android app (or tap <strong>+ Add Customer</strong> above) to see it appear live!</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = customers.map(c => `
+        <div class="item-card">
+          <div class="item-top">
+            <div class="item-title">${escapeHtml(c.name || 'Unnamed Customer')}</div>
+            <span class="item-badge">${c.totalOrders ? c.totalOrders + ' Orders' : 'Active Client'}</span>
+          </div>
+          <div class="item-meta">
+            ${c.phone ? '<span>📞 ' + escapeHtml(c.phone) + '</span>' : ''}
+            ${c.email ? '<span>✉️ ' + escapeHtml(c.email) + '</span>' : ''}
+            ${c.address ? '<span>📍 ' + escapeHtml(c.address) + '</span>' : ''}
+          </div>
+          ${c.notes ? '<div class="item-desc"><strong>Notes:</strong> ' + escapeHtml(c.notes) + '</div>' : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderRecipes(recipes, currency) {
+      const container = document.getElementById('recipesListContainer');
+      if (!recipes || recipes.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p style="font-weight: 600;">No recipes yet for this bakery.</p>
+            <p style="margin-top: 4px;">Create a recipe in the Android app (or tap <strong>+ Add Recipe</strong> above) to see it sync live!</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = recipes.map(r => `
+        <div class="item-card">
+          <div class="item-top">
+            <div class="item-title">${escapeHtml(r.name || 'Recipe')}</div>
+            <span class="item-badge">${escapeHtml(r.category || 'Cakes')}</span>
+          </div>
+          <div class="item-meta">
+            <span>Yield: <strong>${r.servings || 12} servings</strong></span>
+            <span>Batch Size: <strong>${r.batchSize || 1}x</strong></span>
+            ${r.customSellingPrice ? '<span>Price: <strong>' + (currency.split(' ')[0] || 'R') + ' ' + Number(r.customSellingPrice).toFixed(2) + '</strong></span>' : ''}
+            ${r.profitMarginPercent ? '<span>Margin: <strong>' + Number(r.profitMarginPercent).toFixed(0) + '%</strong></span>' : ''}
+          </div>
+          ${r.description ? '<div class="item-desc">' + escapeHtml(r.description) + '</div>' : ''}
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Modal Handlers
+    function openCustomerModal() {
+      document.getElementById('customerModal').classList.add('open');
+    }
+    function closeCustomerModal() {
+      document.getElementById('customerModal').classList.remove('open');
+    }
+
+    async function handleCustomerSubmit(e) {
+      e.preventDefault();
+      const customer = {
+        name: document.getElementById('custName').value.trim(),
+        phone: document.getElementById('custPhone').value.trim(),
+        email: document.getElementById('custEmail').value.trim(),
+        address: document.getElementById('custAddress').value.trim(),
+        notes: document.getElementById('custNotes').value.trim(),
+        totalOrders: 1,
+        totalSpend: 0.0
+      };
+
+      try {
+        const res = await fetch(`/api/bakery/${encodeURIComponent(currentBakeryId)}/customers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(customer)
+        });
+        if (res.ok) {
+          closeCustomerModal();
+          e.target.reset();
+          loadBakeryData();
+        } else {
+          alert('Failed to save customer');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function openRecipeModal() {
+      document.getElementById('recipeModal').classList.add('open');
+    }
+    function closeRecipeModal() {
+      document.getElementById('recipeModal').classList.remove('open');
+    }
+
+    async function handleRecipeSubmit(e) {
+      e.preventDefault();
+      const recipe = {
+        name: document.getElementById('recName').value.trim(),
+        category: document.getElementById('recCategory').value,
+        servings: parseInt(document.getElementById('recServings').value) || 12,
+        labourCost: parseFloat(document.getElementById('recLabour').value) || 0,
+        customSellingPrice: parseFloat(document.getElementById('recPrice').value) || 0,
+        description: document.getElementById('recDesc').value.trim()
+      };
+
+      try {
+        const res = await fetch(`/api/bakery/${encodeURIComponent(currentBakeryId)}/recipes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(recipe)
+        });
+        if (res.ok) {
+          closeRecipeModal();
+          e.target.reset();
+          loadBakeryData();
+        } else {
+          alert('Failed to save recipe');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
     function handleFormSubmit(e) {
       e.preventDefault();
-      const email = document.getElementById('email').value;
-      document.getElementById('submittedEmail').innerText = email;
       document.getElementById('deletionForm').style.display = 'none';
-      document.getElementById('successMessage').style.display = 'block';
+      document.getElementById('deletionSuccessMsg').style.display = 'block';
     }
-  </script>
 
+    // Auto-load on page ready
+    loadBakeryData();
+  </script>
 </body>
 </html>

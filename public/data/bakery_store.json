@@ -1,0 +1,151 @@
+{
+  "bakeries": {
+    "bakery_1": {
+      "profile": {
+        "bakeryId": "bakery_1",
+        "bakeryName": "Artisan Sweet Delights",
+        "fullName": "Head Baker",
+        "email": "orders@bakery.com",
+        "phone": "+27 82 555 1234",
+        "city": "Cape Town",
+        "operatingModel": "Artisan Kitchen",
+        "currency": "ZAR (R)",
+        "specialty": "Cakes & Confections"
+      },
+      "recipes": [],
+      "customers": []
+    },
+    "test_bakery": {
+      "profile": {
+        "bakeryId": "test_bakery",
+        "bakeryName": "Test Bakery",
+        "email": "",
+        "phone": "",
+        "currency": "ZAR (R)",
+        "fullName": "Tester"
+      },
+      "recipes": [],
+      "customers": []
+    },
+    "bakery_cape_sweet_treats_1": {
+      "profile": {
+        "bakeryId": "bakery_cape_sweet_treats_1",
+        "bakeryName": "My Bakery",
+        "email": "",
+        "phone": "",
+        "currency": "ZAR (R)"
+      },
+      "recipes": [
+        {
+          "name": "Vanilla Bean Lavender Sponge",
+          "category": "Cakes",
+          "servings": 16,
+          "batchSize": 1,
+          "labourCost": 65,
+          "packagingCost": 35,
+          "utilitiesCost": 15,
+          "profitMarginPercent": 60,
+          "customSellingPrice": 420,
+          "description": "Infused with organic lavender essence and Tahitian vanilla beans.",
+          "ingredients": [
+            {
+              "name": "Cake Flour",
+              "quantity": 500,
+              "unit": "g",
+              "cost": 12.5
+            },
+            {
+              "name": "Caster Sugar",
+              "quantity": 400,
+              "unit": "g",
+              "cost": 9.8
+            },
+            {
+              "name": "Unsalted Butter",
+              "quantity": 250,
+              "unit": "g",
+              "cost": 38
+            },
+            {
+              "name": "Fresh Eggs",
+              "quantity": 4,
+              "unit": "pcs",
+              "cost": 16
+            },
+            {
+              "name": "Lavender Buds",
+              "quantity": 15,
+              "unit": "g",
+              "cost": 14.5
+            }
+          ],
+          "bakeryId": "bakery_cape_sweet_treats_1",
+          "updatedAt": 1790070215755,
+          "id": 1790070215755
+        }
+      ],
+      "customers": [
+        {
+          "name": "Eleanor Vance",
+          "phone": "+27 83 456 7890",
+          "email": "eleanor.vance@gmail.com",
+          "address": "22 Ocean View Drive, Camps Bay",
+          "notes": "Standing order: 2 dozen salted caramel cupcakes every Friday.",
+          "totalOrders": 6,
+          "totalSpend": 1800,
+          "bakeryId": "bakery_cape_sweet_treats_1",
+          "updatedAt": 1790070210494,
+          "id": 1790070210494
+        }
+      ]
+    },
+    "bakery_test_suite_1": {
+      "profile": {
+        "bakeryId": "bakery_test_suite_1",
+        "bakeryName": "My Bakery",
+        "email": "",
+        "phone": "",
+        "currency": "ZAR (R)"
+      },
+      "recipes": [
+        {
+          "id": 8801,
+          "bakeryId": "bakery_test_suite_1",
+          "userId": 101,
+          "name": "Golden Butter Croissant",
+          "category": "Pastries",
+          "description": "Crispy, laminated French style butter croissants.",
+          "servings": 24,
+          "batchSize": 2,
+          "difficulty": "Medium",
+          "rating": 4.8,
+          "labourCost": 50,
+          "overheadsCost": 0,
+          "packagingCost": 20,
+          "utilitiesCost": 15,
+          "profitMarginPercent": 55,
+          "customSellingPrice": 35,
+          "instructions": "",
+          "ingredients": [],
+          "updatedAt": 1790070808867
+        }
+      ],
+      "customers": [
+        {
+          "id": 5501,
+          "bakeryId": "bakery_test_suite_1",
+          "userId": 101,
+          "name": "John Connor",
+          "phone": "+27 82 123 4567",
+          "email": "john@resistance.com",
+          "address": "77 Sanctuary Rd, Cape Town",
+          "notes": "Order: 10 Sourdough loaves every Monday",
+          "totalOrders": 3,
+          "totalSpend": 450,
+          "createdAt": 1790070803299,
+          "updatedAt": 1790070807505
+        }
+      ]
+    }
+  }
+}

@@ -67,6 +67,9 @@ class AppRepository(private val database: AppDatabase) {
     fun getIngredientsForRecipe(recipeId: Long): Flow<List<RecipeIngredientEntity>> =
         ingredientDao.getIngredientsForRecipe(recipeId)
 
+    suspend fun getIngredientsForRecipeOnce(recipeId: Long): List<RecipeIngredientEntity> =
+        ingredientDao.getIngredientsForRecipeOnce(recipeId)
+
     suspend fun updateIngredientCost(id: Long, cost: Double, quantity: Double) =
         ingredientDao.updateIngredientCost(id, cost, quantity)
 

@@ -2,6 +2,7 @@ package com.example.data.remote
 
 import android.util.Log
 import com.example.BatchBossApplication
+import com.example.data.local.CustomerEntity
 import com.example.data.local.InventoryItemEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
@@ -18,13 +19,15 @@ data class FirebaseSyncResult(
     val success: Boolean,
     val message: String,
     val syncedRecipesCount: Int = 0,
-    val syncedInventoryCount: Int = 0
+    val syncedInventoryCount: Int = 0,
+    val syncedCustomersCount: Int = 0
 )
 
 data class CloudBackupData(
     val recipes: List<RecipeEntity> = emptyList(),
     val ingredients: List<RecipeIngredientEntity> = emptyList(),
-    val inventory: List<InventoryItemEntity> = emptyList()
+    val inventory: List<InventoryItemEntity> = emptyList(),
+    val customers: List<CustomerEntity> = emptyList()
 )
 
 data class FirebaseRestoreResult(
@@ -137,12 +140,14 @@ object FirebaseService {
     }
 
     /**
-     * Back up local Room database recipes, ingredients, and inventory items to Cloud Firestore.
+     * Back up local Room database recipes, ingredients, inventory items, and customers to Cloud Firestore.
      */
     suspend fun backupDataToCloud(
         recipes: List<RecipeEntity>,
         ingredients: List<RecipeIngredientEntity>,
-        inventory: List<InventoryItemEntity>
+        inventory: List<InventoryItemEntity>,
+        customers: List<CustomerEntity> = emptyList(),
+        bakeryId: String = ""
     ): FirebaseSyncResult {
         if (!isConfigured) {
             return FirebaseSyncResult(
@@ -156,18 +161,20 @@ object FirebaseService {
             message = "Firestore service is unavailable."
         )
 
-        val uid = getEffectiveUserId()
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
 
         return try {
             val batch = db.batch()
-            val recipesColl = db.collection("bakeries").document(uid).collection("recipes")
-            val inventoryColl = db.collection("bakeries").document(uid).collection("inventory")
+            val recipesColl = db.collection("bakeries").document(targetBakeryId).collection("recipes")
+            val inventoryColl = db.collection("bakeries").document(targetBakeryId).collection("inventory")
+            val customersColl = db.collection("bakeries").document(targetBakeryId).collection("customers")
 
             // Sync recipes
             for (recipe in recipes) {
                 val recipeDoc = recipesColl.document(recipe.id.toString())
                 val recipeData = hashMapOf(
                     "id" to recipe.id,
+                    "bakeryId" to targetBakeryId,
                     "name" to recipe.name,
                     "category" to recipe.category,
                     "description" to recipe.description,
@@ -213,6 +220,7 @@ object FirebaseService {
                 val invDoc = inventoryColl.document(item.id.toString())
                 val invData = hashMapOf(
                     "id" to item.id,
+                    "bakeryId" to targetBakeryId,
                     "name" to item.name,
                     "currentStock" to item.currentStock,
                     "minStock" to item.minStock,
@@ -229,13 +237,33 @@ object FirebaseService {
                 batch.set(invDoc, invData, SetOptions.merge())
             }
 
+            // Sync customers
+            for (cust in customers) {
+                val custDoc = customersColl.document(cust.id.toString())
+                val custData = hashMapOf(
+                    "id" to cust.id,
+                    "bakeryId" to targetBakeryId,
+                    "name" to cust.name,
+                    "phone" to cust.phone,
+                    "email" to cust.email,
+                    "address" to cust.address,
+                    "notes" to cust.notes,
+                    "totalOrders" to cust.totalOrders,
+                    "totalSpend" to cust.totalSpend,
+                    "createdAt" to cust.createdAt,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                batch.set(custDoc, custData, SetOptions.merge())
+            }
+
             batch.commit().awaitTask()
 
             FirebaseSyncResult(
                 success = true,
-                message = "Cloud Backup complete! Successfully uploaded ${recipes.size} recipes and ${inventory.size} inventory items to Firestore.",
+                message = "Cloud Backup complete for bakery '$targetBakeryId'! Uploaded ${recipes.size} recipes, ${customers.size} customers, and ${inventory.size} items to Firestore.",
                 syncedRecipesCount = recipes.size,
-                syncedInventoryCount = inventory.size
+                syncedInventoryCount = inventory.size,
+                syncedCustomersCount = customers.size
             )
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to backup data to Firestore", e)
@@ -247,9 +275,9 @@ object FirebaseService {
     }
 
     /**
-     * Restore recipes and inventory items from Firestore into memory to import into Room.
+     * Restore recipes, inventory items, and customers from Firestore into memory to import into Room.
      */
-    suspend fun restoreDataFromCloud(): FirebaseRestoreResult {
+    suspend fun restoreDataFromCloud(bakeryId: String = ""): FirebaseRestoreResult {
         if (!isConfigured) {
             return FirebaseRestoreResult(
                 success = false,
@@ -262,15 +290,44 @@ object FirebaseService {
             message = "Firestore is currently unavailable."
         )
 
-        val uid = getEffectiveUserId()
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
 
         return try {
-            val recipesColl = db.collection("bakeries").document(uid).collection("recipes").get().awaitTask()
-            val inventoryColl = db.collection("bakeries").document(uid).collection("inventory").get().awaitTask()
+            val recipesColl = db.collection("bakeries").document(targetBakeryId).collection("recipes").get().awaitTask()
+            val inventoryColl = db.collection("bakeries").document(targetBakeryId).collection("inventory").get().awaitTask()
+            val customersColl = db.collection("bakeries").document(targetBakeryId).collection("customers").get().awaitTask()
 
             val restoredRecipes = mutableListOf<RecipeEntity>()
             val restoredIngredients = mutableListOf<RecipeIngredientEntity>()
             val restoredInventory = mutableListOf<InventoryItemEntity>()
+            val restoredCustomers = mutableListOf<CustomerEntity>()
+
+            for (doc in customersColl.documents) {
+                val id = doc.getLong("id") ?: 0L
+                val name = doc.getString("name") ?: "Customer"
+                val phone = doc.getString("phone") ?: ""
+                val email = doc.getString("email") ?: ""
+                val address = doc.getString("address") ?: ""
+                val notes = doc.getString("notes") ?: ""
+                val totalOrders = doc.getLong("totalOrders")?.toInt() ?: 0
+                val totalSpend = doc.getDouble("totalSpend") ?: 0.0
+                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                restoredCustomers.add(
+                    CustomerEntity(
+                        id = id,
+                        bakeryId = targetBakeryId,
+                        name = name,
+                        phone = phone,
+                        email = email,
+                        address = address,
+                        notes = notes,
+                        totalOrders = totalOrders,
+                        totalSpend = totalSpend,
+                        createdAt = createdAt
+                    )
+                )
+            }
 
             for (doc in recipesColl.documents) {
                 val id = doc.getLong("id") ?: 0L
@@ -378,11 +435,12 @@ object FirebaseService {
 
             FirebaseRestoreResult(
                 success = true,
-                message = "Restored ${restoredRecipes.size} recipes and ${restoredInventory.size} inventory items from Firestore.",
+                message = "Restored ${restoredRecipes.size} recipes, ${restoredCustomers.size} customers, and ${restoredInventory.size} inventory items from Firestore.",
                 data = CloudBackupData(
                     recipes = restoredRecipes,
                     ingredients = restoredIngredients,
-                    inventory = restoredInventory
+                    inventory = restoredInventory,
+                    customers = restoredCustomers
                 )
             )
         } catch (e: Throwable) {

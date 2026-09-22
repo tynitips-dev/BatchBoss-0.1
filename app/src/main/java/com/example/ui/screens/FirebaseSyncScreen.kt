@@ -39,8 +39,10 @@ fun FirebaseSyncScreen(
     recipes: List<RecipeEntity>,
     ingredients: List<RecipeIngredientEntity>,
     inventory: List<InventoryItemEntity>,
+    userProfile: com.example.data.local.UserProfileEntity? = null,
     onBack: () -> Unit,
-    onRestoreData: (List<RecipeEntity>, List<RecipeIngredientEntity>, List<InventoryItemEntity>) -> Unit
+    onRestoreData: (List<RecipeEntity>, List<RecipeIngredientEntity>, List<InventoryItemEntity>) -> Unit,
+    onSyncWebBackend: ((onResult: (Boolean, String) -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -51,6 +53,7 @@ fun FirebaseSyncScreen(
 
     val isFirebaseReady = FirebaseService.isConfigured
     val currentUser = FirebaseService.currentUser
+    val currentBakeryId = userProfile?.bakeryId?.ifBlank { "bakery_1" } ?: "bakery_1"
 
     Scaffold(
         topBar = {
@@ -216,6 +219,42 @@ fun FirebaseSyncScreen(
                             }
                         }
 
+                        // Shared Bakery ID Display
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = BatchPinkContainer.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, BatchPink.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("Shared Bakery ID (Android & Website)", fontSize = 10.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = currentBakeryId,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = BatchPink
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Bakery ID", currentBakeryId))
+                                        Toast.makeText(context, "Copied Bakery ID: $currentBakeryId", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.testTag("btn_copy_bakery_id")
+                                ) {
+                                    Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Bakery ID", tint = BatchPink, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+
                         Divider(color = DividerColor)
 
                         // Setup Steps Checklist
@@ -294,7 +333,7 @@ fun FirebaseSyncScreen(
                                 isSyncing = true
                                 syncStatusMessage = null
                                 coroutineScope.launch {
-                                    val result = FirebaseService.backupDataToCloud(recipes, ingredients, inventory)
+                                    val result = FirebaseService.backupDataToCloud(recipes, ingredients, inventory, bakeryId = currentBakeryId)
                                     isSyncing = false
                                     syncSuccess = result.success
                                     syncStatusMessage = result.message
@@ -312,7 +351,7 @@ fun FirebaseSyncScreen(
                             } else {
                                 Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Backup ${recipes.size} Recipes & ${inventory.size} Items to Cloud")
+                                Text("Backup to Cloud ($currentBakeryId)")
                             }
                         }
 
@@ -322,7 +361,7 @@ fun FirebaseSyncScreen(
                                 isSyncing = true
                                 syncStatusMessage = null
                                 coroutineScope.launch {
-                                    val result = FirebaseService.restoreDataFromCloud()
+                                    val result = FirebaseService.restoreDataFromCloud(bakeryId = currentBakeryId)
                                     isSyncing = false
                                     syncSuccess = result.success
                                     syncStatusMessage = result.message
@@ -337,7 +376,30 @@ fun FirebaseSyncScreen(
                         ) {
                             Icon(Icons.Filled.CloudDownload, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Restore Data from Firestore", color = BatchPink)
+                            Text("Restore Data from Firestore ($currentBakeryId)", color = BatchPink)
+                        }
+
+                        // Web Backend Sync Button
+                        if (onSyncWebBackend != null) {
+                            Button(
+                                onClick = {
+                                    isSyncing = true
+                                    syncStatusMessage = null
+                                    onSyncWebBackend { success, msg ->
+                                        isSyncing = false
+                                        syncSuccess = success
+                                        syncStatusMessage = msg
+                                    }
+                                },
+                                enabled = !isSyncing,
+                                colors = ButtonDefaults.buttonColors(containerColor = MintGreen),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("btn_web_sync")
+                            ) {
+                                Icon(Icons.Filled.Language, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Sync Directly to Website ($currentBakeryId)", color = Color.White)
+                            }
                         }
 
                         // Write Test Recipe POJO
