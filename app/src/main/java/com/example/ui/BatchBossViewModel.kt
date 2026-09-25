@@ -1278,7 +1278,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         operatingModel: String,
         currency: String,
         specialty: String,
-        onComplete: (Long) -> Unit
+        onComplete: (Long, String?) -> Unit
     ) {
         viewModelScope.launch {
             val cleanEmail = email.trim().lowercase()
@@ -1291,8 +1291,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 firstName = firstName.trim(),
                 surname = surname.trim()
             )
-            val workspace = workspaceResult.getOrElse {
-                onComplete(-1)
+            val workspace = workspaceResult.getOrElse { error ->
+                val detail = error.localizedMessage
+                    ?.takeIf { it.isNotBlank() }
+                    ?: error::class.simpleName
+                    ?: "Unknown Firebase error"
+                onComplete(-1, detail)
                 return@launch
             }
             val user = UserAccountEntity(
@@ -1350,7 +1354,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             )
 
-            onComplete(newUserId)
+            onComplete(newUserId, null)
         }
     }
 
