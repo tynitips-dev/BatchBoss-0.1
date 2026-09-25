@@ -63,6 +63,9 @@ export const listAccounts = onCall({ region: "europe-west1" }, async request => 
       bakeryName: String(data.bakeryName || ""),
       firstName: String(data.firstName || ""),
       surname: String(data.surname || ""),
+      subscriptionPlan: String(data.subscriptionPlan || "free"),
+      subscriptionStatus: String(data.subscriptionStatus || "free"),
+      subscriptionExpiresAt: data.subscriptionExpiresAt?.toDate?.()?.toISOString?.() || null,
     };
   }));
 
