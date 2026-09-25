@@ -5,6 +5,9 @@ export type UserProfile = {
   surname: string
   email: string
   role: 'owner' | 'staff' | 'admin'
+  subscriptionPlan?: 'free' | 'monthly' | 'annual'
+  subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
+  subscriptionExpiresAt?: unknown
 }
 
 export type Customer = {
@@ -18,4 +21,7 @@ export type Customer = {
   createdAt?: unknown
 }
 
-export type ModuleKey = 'recipes' | 'inventory' | 'customers' | 'orders' | 'invoices'
+export type ModuleKey =
+  | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'suppliers'
+  | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
+  | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'
