@@ -986,12 +986,13 @@ fun BatchBossApp(
                         recipes = recipes,
                         ingredients = selectedRecipeIngredients,
                         inventory = allInventory,
+                        customers = customers,
                         userProfile = userProfile,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onRestoreData = { resRecipes, resIngs, resInv ->
-                            viewModel.restoreCloudData(resRecipes, resIngs, resInv) {
+                        onRestoreData = { resRecipes, resIngs, resInv, resCustomers ->
+                            viewModel.restoreCloudData(resRecipes, resIngs, resInv, resCustomers) {
                                 coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes and ${resInv.size} items from Firestore!")
+                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes, ${resInv.size} items and ${resCustomers.size} customers from Firestore!")
                                 }
                             }
                         },
