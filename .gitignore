@@ -21,5 +21,13 @@ web/dist/
 web/*.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
+admin-web/.env
+admin-web/node_modules/
+admin-web/dist/
+admin-web/*.tsbuildinfo
+functions/node_modules/
+functions/lib/
+functions/package-lock.json
+admin-web/package-lock.json
 debug.keystore
 .build-outputs/
