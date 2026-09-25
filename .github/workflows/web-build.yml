@@ -35,6 +35,23 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Validate Firebase web configuration
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          test -n "$VITE_FIREBASE_API_KEY" || { echo "Missing VITE_FIREBASE_API_KEY"; exit 1; }
+          test -n "$VITE_FIREBASE_AUTH_DOMAIN" || { echo "Missing VITE_FIREBASE_AUTH_DOMAIN"; exit 1; }
+          test -n "$VITE_FIREBASE_PROJECT_ID" || { echo "Missing VITE_FIREBASE_PROJECT_ID"; exit 1; }
+          test -n "$VITE_FIREBASE_STORAGE_BUCKET" || { echo "Missing VITE_FIREBASE_STORAGE_BUCKET"; exit 1; }
+          test -n "$VITE_FIREBASE_MESSAGING_SENDER_ID" || { echo "Missing VITE_FIREBASE_MESSAGING_SENDER_ID"; exit 1; }
+          test -n "$VITE_FIREBASE_APP_ID" || { echo "Missing VITE_FIREBASE_APP_ID"; exit 1; }
+          case "$VITE_FIREBASE_API_KEY" in AIza*) ;; *) echo "VITE_FIREBASE_API_KEY is not a valid Firebase Web API key"; exit 1;; esac
+          test "$VITE_FIREBASE_PROJECT_ID" = "batch-boss-android" || { echo "Firebase project must be batch-boss-android"; exit 1; }
       - name: Install customer portal dependencies
         working-directory: web
         run: npm ci
@@ -62,6 +79,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Validate Firebase web configuration
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          test -n "$VITE_FIREBASE_API_KEY" || { echo "Missing VITE_FIREBASE_API_KEY"; exit 1; }
+          test -n "$VITE_FIREBASE_AUTH_DOMAIN" || { echo "Missing VITE_FIREBASE_AUTH_DOMAIN"; exit 1; }
+          test -n "$VITE_FIREBASE_PROJECT_ID" || { echo "Missing VITE_FIREBASE_PROJECT_ID"; exit 1; }
+          test -n "$VITE_FIREBASE_STORAGE_BUCKET" || { echo "Missing VITE_FIREBASE_STORAGE_BUCKET"; exit 1; }
+          test -n "$VITE_FIREBASE_MESSAGING_SENDER_ID" || { echo "Missing VITE_FIREBASE_MESSAGING_SENDER_ID"; exit 1; }
+          test -n "$VITE_FIREBASE_APP_ID" || { echo "Missing VITE_FIREBASE_APP_ID"; exit 1; }
+          case "$VITE_FIREBASE_API_KEY" in AIza*) ;; *) echo "VITE_FIREBASE_API_KEY is not a valid Firebase Web API key"; exit 1;; esac
+          test "$VITE_FIREBASE_PROJECT_ID" = "batch-boss-android" || { echo "Firebase project must be batch-boss-android"; exit 1; }
       - name: Install administrator portal dependencies
         working-directory: admin-web
         run: npm install
