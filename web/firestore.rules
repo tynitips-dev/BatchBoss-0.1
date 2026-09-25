@@ -17,12 +17,25 @@ service cloud.firestore {
       return signedIn() && userDoc().data.bakeryId == bakeryId;
     }
 
+    function hasPro() {
+      return signedIn()
+        && userDoc().data.subscriptionStatus in ['active', 'trialing'];
+    }
+
+    function isProCollection(collectionName) {
+      return collectionName in ['suppliers', 'invoices', 'quotes', 'receipts', 'products'];
+    }
+
     match /users/{uid} {
       allow create: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.uid == uid;
-      allow read, update: if signedIn()
-        && (request.auth.uid == uid || isAdmin());
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update: if isAdmin()
+        || (signedIn()
+          && request.auth.uid == uid
+          && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['subscriptionPlan', 'subscriptionStatus', 'subscriptionExpiresAt']));
       allow delete: if false;
     }
 
@@ -39,8 +52,18 @@ service cloud.firestore {
           || (ownsBakery(bakeryId) && request.auth.uid == uid);
       }
 
-      match /{document=**} {
-        allow read, create, update, delete: if ownsBakery(bakeryId) || isAdmin();
+      match /{collectionName}/{documentId} {
+        allow read: if ownsBakery(bakeryId) || isAdmin();
+        allow create, update, delete: if isAdmin()
+          || (ownsBakery(bakeryId)
+            && (!isProCollection(collectionName) || hasPro()));
+
+        match /{nestedDocument=**} {
+          allow read: if ownsBakery(bakeryId) || isAdmin();
+          allow create, update, delete: if isAdmin()
+            || (ownsBakery(bakeryId)
+              && (!isProCollection(collectionName) || hasPro()));
+        }
       }
     }
 
