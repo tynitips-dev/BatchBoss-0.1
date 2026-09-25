@@ -1526,6 +1526,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         recipes: List<com.example.data.local.RecipeEntity>,
         ingredients: List<com.example.data.local.RecipeIngredientEntity>,
         inventory: List<com.example.data.local.InventoryItemEntity>,
+        customers: List<com.example.data.local.CustomerEntity>,
         onComplete: () -> Unit
     ) {
         viewModelScope.launch {
@@ -1539,6 +1540,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             }
             for (item in inventory) {
                 repository.insertInventoryItem(item.copy(id = 0, userId = uid))
+            }
+            for (customer in customers) {
+                repository.insertCustomer(customer.copy(id = 0, userId = uid))
             }
             onComplete()
         }
