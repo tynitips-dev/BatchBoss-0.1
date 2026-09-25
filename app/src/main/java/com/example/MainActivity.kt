@@ -200,9 +200,16 @@ fun BatchBossApp(
                                 operatingModel = operatingModel,
                                 currency = currency,
                                 specialty = specialty
-                            ) { accountId ->
+                            ) { accountId, errorMessage ->
                                 if (accountId < 1) {
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Account creation failed. Check the email, password and Firebase connection.") }
+                                    val detail = errorMessage ?: "Unknown Firebase error"
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "Account creation failed: $detail",
+                                            withDismissAction = true,
+                                            duration = SnackbarDuration.Indefinite
+                                        )
+                                    }
                                 } else {
                                     coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
                                     viewModel.navigateTo(
