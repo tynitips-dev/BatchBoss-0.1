@@ -17,6 +17,9 @@ type Account = {
   bakeryName: string
   firstName: string
   surname: string
+  subscriptionPlan: string
+  subscriptionStatus: string
+  subscriptionExpiresAt: string | null
 }
 
 type DeletionRequest = {
@@ -194,15 +197,17 @@ function Dashboard({ user }: { user: User }) {
       <section className="stats">
         <article><Users /><div><span>Total accounts</span><strong>{accounts.length}</strong></div></article>
         <article><UserRoundCheck /><div><span>Active accounts</span><strong>{accounts.filter(item => !item.disabled).length}</strong></div></article>
+        <article><ShieldCheck /><div><span>Pro subscribers</span><strong>{accounts.filter(item => ['active','trialing'].includes(item.subscriptionStatus)).length}</strong></div></article>
         <article><AlertTriangle /><div><span>Deletion requests</span><strong>{requests.filter(item => item.status === 'pending').length}</strong></div></article>
       </section>
       <section className="panel">
         <div className="panel-title"><div><h2>Bakery accounts</h2><p>Authentication and workspace records from Firebase.</p></div><label className="search"><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search users or bakeries…" /></label></div>
-        <div className="table-wrap"><table><thead><tr><th>Account</th><th>Bakery</th><th>Created</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>Account</th><th>Bakery</th><th>Last login</th><th>Subscription</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           {shown.map(account => <tr key={account.uid}>
             <td><strong>{account.firstName} {account.surname}</strong><small>{account.email}</small></td>
             <td><strong>{account.bakeryName || '—'}</strong><small>{account.bakeryId || 'No workspace'}</small></td>
-            <td>{account.createdAt ? new Date(account.createdAt).toLocaleDateString('en-ZA') : '—'}</td>
+            <td>{account.lastSignInAt ? new Date(account.lastSignInAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</td>
+            <td><strong>{account.subscriptionPlan || 'free'}</strong><small className={`status ${account.subscriptionStatus === 'active' ? 'active' : 'pending'}`}>{account.subscriptionStatus || 'free'}</small></td>
             <td><span className={account.disabled ? 'status disabled' : 'status active'}>{account.disabled ? 'Disabled' : 'Active'}</span></td>
             <td className="actions"><button disabled={busyUid === account.uid} onClick={() => toggleDisabled(account)}>{account.disabled ? 'Enable' : 'Disable'}</button><button className="danger" disabled={busyUid === account.uid} onClick={() => deleteAccount(account)}><Trash2 /> Delete</button></td>
           </tr>)}
