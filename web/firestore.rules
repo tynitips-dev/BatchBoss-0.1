@@ -19,7 +19,9 @@ service cloud.firestore {
 
     function hasPro() {
       return signedIn()
-        && userDoc().data.subscriptionStatus in ['active', 'trialing'];
+        && userDoc().data.subscriptionStatus in ['active', 'trialing']
+        && (userDoc().data.subscriptionPlan != 'promo'
+          || userDoc().data.subscriptionExpiresAt > request.time);
     }
 
     function isProCollection(collectionName) {
