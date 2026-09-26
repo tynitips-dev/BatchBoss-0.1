@@ -51,6 +51,9 @@ export const listAccounts = onCall({ region: "europe-west1" }, async request => 
   const profiles = await Promise.all(result.users.map(async user => {
     const profile = await db.collection("users").doc(user.uid).get();
     const data = profile.data() || {};
+    const bakeryId = String(data.bakeryId || "");
+    const bakery = bakeryId ? await db.collection("bakeries").doc(bakeryId).get() : null;
+    const bakeryData = bakery?.data() || {};
     return {
       uid: user.uid,
       email: user.email || String(data.email || ""),
@@ -59,8 +62,8 @@ export const listAccounts = onCall({ region: "europe-west1" }, async request => 
       emailVerified: user.emailVerified,
       createdAt: user.metadata.creationTime || null,
       lastSignInAt: user.metadata.lastSignInTime || null,
-      bakeryId: String(data.bakeryId || ""),
-      bakeryName: String(data.bakeryName || ""),
+      bakeryId,
+      bakeryName: String(data.bakeryName || bakeryData.name || bakeryData.businessName || ""),
       firstName: String(data.firstName || ""),
       surname: String(data.surname || ""),
       subscriptionPlan: String(data.subscriptionPlan || "free"),
@@ -70,6 +73,58 @@ export const listAccounts = onCall({ region: "europe-west1" }, async request => 
   }));
 
   return { accounts: profiles, nextPageToken: result.pageToken || null };
+});
+
+export const setPromotionalPro = onCall({ region: "europe-west1" }, async request => {
+  const administrator = requireAdmin(request);
+  const uid = String(request.data?.uid || "");
+  const enabled = request.data?.enabled === true;
+  const durationDays = Number(request.data?.durationDays || 30);
+
+  if (!uid) throw new HttpsError("invalid-argument", "A user ID is required.");
+  if (enabled && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650)) {
+    throw new HttpsError("invalid-argument", "Promotional access must be between 1 and 3650 days.");
+  }
+
+  const userRecord = await auth.getUser(uid);
+  const userRef = db.collection("users").doc(uid);
+  const userSnapshot = await userRef.get();
+  if (!userSnapshot.exists) {
+    throw new HttpsError("failed-precondition", "This login does not have a BatchBoss user profile yet. Sign in to the customer portal once, then try again.");
+  }
+
+  const expiresAt = enabled ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
+  await userRef.set(enabled ? {
+    subscriptionPlan: "promo",
+    subscriptionStatus: "active",
+    subscriptionSource: "admin_promotion",
+    subscriptionStartedAt: FieldValue.serverTimestamp(),
+    subscriptionExpiresAt: expiresAt,
+    subscriptionGrantedBy: administrator.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  } : {
+    subscriptionPlan: "free",
+    subscriptionStatus: "free",
+    subscriptionSource: FieldValue.delete(),
+    subscriptionStartedAt: FieldValue.delete(),
+    subscriptionExpiresAt: FieldValue.delete(),
+    subscriptionGrantedBy: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  await db.collection("adminAuditLogs").add({
+    action: enabled ? "PROMOTIONAL_PRO_GRANTED" : "PROMOTIONAL_PRO_REMOVED",
+    targetUid: uid,
+    targetEmail: userRecord.email || "",
+    durationDays: enabled ? durationDays : null,
+    expiresAt,
+    actorUid: administrator.uid,
+    actorEmail: String(administrator.token.email || ""),
+    createdAt: FieldValue.serverTimestamp(),
+    status: "completed",
+  });
+
+  return { success: true, expiresAt: expiresAt?.toISOString() || null };
 });
 
 export const setAccountDisabled = onCall({ region: "europe-west1" }, async request => {
