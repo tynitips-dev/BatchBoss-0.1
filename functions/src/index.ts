@@ -25,7 +25,7 @@ function requireAdmin(request: { auth?: { uid: string; token: Record<string, unk
   return current;
 }
 
-export const bootstrapAdmin = onCall({ region: "europe-west1" }, async request => {
+export const bootstrapAdmin = onCall({ region: "europe-west1", invoker: "public" }, async request => {
   const current = requireSignedIn(request);
   const email = String(current.token.email || "").trim().toLowerCase();
   const expected = adminEmail.value().trim().toLowerCase();
@@ -45,7 +45,7 @@ export const bootstrapAdmin = onCall({ region: "europe-west1" }, async request =
   return { success: true, refreshToken: true };
 });
 
-export const listAccounts = onCall({ region: "europe-west1" }, async request => {
+export const listAccounts = onCall({ region: "europe-west1", invoker: "public" }, async request => {
   requireAdmin(request);
   try {
     const result = await auth.listUsers(1000);
@@ -97,7 +97,7 @@ export const listAccounts = onCall({ region: "europe-west1" }, async request => 
   }
 });
 
-export const setPromotionalPro = onCall({ region: "europe-west1" }, async request => {
+export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "public" }, async request => {
   const administrator = requireAdmin(request);
   const uid = String(request.data?.uid || "");
   const enabled = request.data?.enabled === true;
@@ -149,7 +149,7 @@ export const setPromotionalPro = onCall({ region: "europe-west1" }, async reques
   return { success: true, expiresAt: expiresAt?.toISOString() || null };
 });
 
-export const setAccountDisabled = onCall({ region: "europe-west1" }, async request => {
+export const setAccountDisabled = onCall({ region: "europe-west1", invoker: "public" }, async request => {
   const administrator = requireAdmin(request);
   const uid = String(request.data?.uid || "");
   const disabled = request.data?.disabled === true;
@@ -169,7 +169,7 @@ export const setAccountDisabled = onCall({ region: "europe-west1" }, async reque
 });
 
 export const deleteAccountAndData = onCall(
-  { region: "europe-west1", timeoutSeconds: 540, memory: "1GiB" },
+  { region: "europe-west1", invoker: "public", timeoutSeconds: 540, memory: "1GiB" },
   async request => {
     const administrator = requireAdmin(request);
     const uid = String(request.data?.uid || "");
@@ -220,7 +220,7 @@ export const deleteAccountAndData = onCall(
   }
 );
 
-export const submitDeletionRequest = onCall({ region: "europe-west1" }, async request => {
+export const submitDeletionRequest = onCall({ region: "europe-west1", invoker: "public" }, async request => {
   const current = requireSignedIn(request);
   const profile = await db.collection("users").doc(current.uid).get();
   const data = profile.data() || {};
