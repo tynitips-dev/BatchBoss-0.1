@@ -5,7 +5,7 @@ export type UserProfile = {
   surname: string
   email: string
   role: 'owner' | 'staff' | 'admin'
-  subscriptionPlan?: 'free' | 'monthly' | 'annual'
+  subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo'
   subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
   subscriptionExpiresAt?: unknown
 }
