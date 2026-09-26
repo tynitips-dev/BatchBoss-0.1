@@ -42,6 +42,7 @@ type AuditLog = {
 const bootstrapAdmin = httpsCallable(functions, 'bootstrapAdmin')
 const listAccounts = httpsCallable<undefined, { accounts: Account[] }>(functions, 'listAccounts')
 const setAccountDisabled = httpsCallable<{ uid: string; disabled: boolean }, { success: boolean }>(functions, 'setAccountDisabled')
+const setPromotionalPro = httpsCallable<{ uid: string; enabled: boolean; durationDays?: number }, { success: boolean; expiresAt: string | null }>(functions, 'setPromotionalPro')
 const deleteAccountAndData = httpsCallable<{ uid: string; confirmation: string }, { success: boolean }>(functions, 'deleteAccountAndData')
 
 function App() {
@@ -134,6 +135,7 @@ function Dashboard({ user }: { user: User }) {
   const [search, setSearch] = useState('')
   const [busyUid, setBusyUid] = useState('')
   const [message, setMessage] = useState('')
+  const [promoDays, setPromoDays] = useState<Record<string, number>>({})
 
   async function refreshAccounts() {
     setMessage('')
@@ -172,6 +174,32 @@ function Dashboard({ user }: { user: User }) {
     } finally { setBusyUid('') }
   }
 
+  async function grantPromo(account: Account) {
+    const days = promoDays[account.uid] || 30
+    setBusyUid(account.uid)
+    setMessage('')
+    try {
+      const result = await setPromotionalPro({ uid: account.uid, enabled: true, durationDays: days })
+      await refreshAccounts()
+      setMessage(`Promotional Pro is active for ${account.email} until ${result.data.expiresAt ? new Date(result.data.expiresAt).toLocaleDateString('en-ZA') : 'the selected expiry date'}.`)
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'Could not grant promotional Pro access.')
+    } finally { setBusyUid('') }
+  }
+
+  async function removePromo(account: Account) {
+    if (!window.confirm(`Remove promotional Pro access from ${account.email}?`)) return
+    setBusyUid(account.uid)
+    setMessage('')
+    try {
+      await setPromotionalPro({ uid: account.uid, enabled: false })
+      await refreshAccounts()
+      setMessage(`Promotional Pro was removed from ${account.email}.`)
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'Could not remove promotional Pro access.')
+    } finally { setBusyUid('') }
+  }
+
   async function deleteAccount(account: Account) {
     const confirmation = window.prompt(`Permanently delete ${account.email} and all bakery data? Type DELETE to continue.`)
     if (confirmation !== 'DELETE') return
@@ -207,9 +235,9 @@ function Dashboard({ user }: { user: User }) {
             <td><strong>{account.firstName} {account.surname}</strong><small>{account.email}</small></td>
             <td><strong>{account.bakeryName || '—'}</strong><small>{account.bakeryId || 'No workspace'}</small></td>
             <td>{account.lastSignInAt ? new Date(account.lastSignInAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</td>
-            <td><strong>{account.subscriptionPlan || 'free'}</strong><small className={`status ${account.subscriptionStatus === 'active' ? 'active' : 'pending'}`}>{account.subscriptionStatus || 'free'}</small></td>
+            <td><strong>{account.subscriptionPlan || 'free'}</strong><small className={`status ${account.subscriptionStatus === 'active' ? 'active' : 'pending'}`}>{account.subscriptionStatus || 'free'}</small>{account.subscriptionExpiresAt && <small>Until {new Date(account.subscriptionExpiresAt).toLocaleDateString('en-ZA')}</small>}</td>
             <td><span className={account.disabled ? 'status disabled' : 'status active'}>{account.disabled ? 'Disabled' : 'Active'}</span></td>
-            <td className="actions"><button disabled={busyUid === account.uid} onClick={() => toggleDisabled(account)}>{account.disabled ? 'Enable' : 'Disable'}</button><button className="danger" disabled={busyUid === account.uid} onClick={() => deleteAccount(account)}><Trash2 /> Delete</button></td>
+            <td><div className="promo-controls"><select aria-label={`Promotional Pro duration for ${account.email}`} value={promoDays[account.uid] || 30} onChange={event => setPromoDays(current => ({ ...current, [account.uid]: Number(event.target.value) }))}><option value={7}>7 days</option><option value={30}>1 month</option><option value={90}>3 months</option><option value={180}>6 months</option><option value={365}>1 year</option></select><button disabled={busyUid === account.uid} onClick={() => grantPromo(account)}>{account.subscriptionPlan === 'promo' && account.subscriptionStatus === 'active' ? 'Extend Pro' : 'Gift Pro'}</button>{account.subscriptionPlan === 'promo' && account.subscriptionStatus === 'active' && <button className="danger" disabled={busyUid === account.uid} onClick={() => removePromo(account)}>Remove Pro</button>}</div><div className="actions"><button disabled={busyUid === account.uid} onClick={() => toggleDisabled(account)}>{account.disabled ? 'Enable' : 'Disable'}</button><button className="danger" disabled={busyUid === account.uid} onClick={() => deleteAccount(account)}><Trash2 /> Delete</button></div></td>
           </tr>)}
         </tbody></table></div>
       </section>
