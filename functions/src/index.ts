@@ -47,32 +47,54 @@ export const bootstrapAdmin = onCall({ region: "europe-west1" }, async request =
 
 export const listAccounts = onCall({ region: "europe-west1" }, async request => {
   requireAdmin(request);
-  const result = await auth.listUsers(1000);
-  const profiles = await Promise.all(result.users.map(async user => {
-    const profile = await db.collection("users").doc(user.uid).get();
-    const data = profile.data() || {};
-    const bakeryId = String(data.bakeryId || "");
-    const bakery = bakeryId ? await db.collection("bakeries").doc(bakeryId).get() : null;
-    const bakeryData = bakery?.data() || {};
-    return {
-      uid: user.uid,
-      email: user.email || String(data.email || ""),
-      displayName: user.displayName || "",
-      disabled: user.disabled,
-      emailVerified: user.emailVerified,
-      createdAt: user.metadata.creationTime || null,
-      lastSignInAt: user.metadata.lastSignInTime || null,
-      bakeryId,
-      bakeryName: String(data.bakeryName || bakeryData.name || bakeryData.businessName || ""),
-      firstName: String(data.firstName || ""),
-      surname: String(data.surname || ""),
-      subscriptionPlan: String(data.subscriptionPlan || "free"),
-      subscriptionStatus: String(data.subscriptionStatus || "free"),
-      subscriptionExpiresAt: data.subscriptionExpiresAt?.toDate?.()?.toISOString?.() || null,
-    };
-  }));
+  try {
+    const result = await auth.listUsers(1000);
+    const profiles = await Promise.all(result.users.map(async user => {
+      // Authentication is the master account list. Firestore profile details are
+      // optional so a partially-created mobile account can still be administered.
+      let data: Record<string, any> = {};
+      let bakeryData: Record<string, any> = {};
+      try {
+        const profile = await db.collection("users").doc(user.uid).get();
+        data = profile.data() || {};
+        const bakeryId = String(data.bakeryId || "");
+        if (bakeryId) {
+          const bakery = await db.collection("bakeries").doc(bakeryId).get();
+          bakeryData = bakery.data() || {};
+        }
+      } catch (profileError) {
+        console.warn(`Could not load Firestore profile for ${user.uid}`, profileError);
+      }
 
-  return { accounts: profiles, nextPageToken: result.pageToken || null };
+      const expiry = data.subscriptionExpiresAt;
+      let subscriptionExpiresAt: string | null = null;
+      if (expiry instanceof Date) subscriptionExpiresAt = expiry.toISOString();
+      else if (typeof expiry?.toDate === "function") subscriptionExpiresAt = expiry.toDate().toISOString();
+      else if (typeof expiry === "string") subscriptionExpiresAt = expiry;
+
+      return {
+        uid: user.uid,
+        email: user.email || String(data.email || ""),
+        displayName: user.displayName || "",
+        disabled: user.disabled,
+        emailVerified: user.emailVerified,
+        createdAt: user.metadata.creationTime || null,
+        lastSignInAt: user.metadata.lastSignInTime || null,
+        bakeryId: String(data.bakeryId || ""),
+        bakeryName: String(data.bakeryName || bakeryData.name || bakeryData.businessName || ""),
+        firstName: String(data.firstName || ""),
+        surname: String(data.surname || ""),
+        subscriptionPlan: String(data.subscriptionPlan || "free"),
+        subscriptionStatus: String(data.subscriptionStatus || "free"),
+        subscriptionExpiresAt,
+      };
+    }));
+
+    return { accounts: profiles, nextPageToken: result.pageToken || null };
+  } catch (error) {
+    console.error("listAccounts failed", error);
+    throw new HttpsError("internal", "The Firebase Authentication account list could not be loaded. Check the listAccounts function log.");
+  }
 });
 
 export const setPromotionalPro = onCall({ region: "europe-west1" }, async request => {
