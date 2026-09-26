@@ -8,7 +8,7 @@ import {
   createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword,
   signOut, type User,
 } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
 import type { ModuleKey, UserProfile } from './types'
 
@@ -16,7 +16,7 @@ type ModuleDefinition = { key: ModuleKey; label: string; icon: typeof BookOpen; 
 const modules: ModuleDefinition[] = [
   { key: 'home', label: 'Home', icon: Gauge },
   { key: 'recipes', label: 'Recipes', icon: BookOpen, collection: 'recipes' },
-  { key: 'ingredients', label: 'Ingredients', icon: Package, collection: 'ingredients' },
+  { key: 'ingredients', label: 'Ingredients', icon: Package, collection: 'inventory' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, collection: 'inventory' },
   { key: 'suppliers', label: 'Suppliers', icon: Store, collection: 'suppliers', pro: true },
   { key: 'invoices', label: 'Invoices', icon: ReceiptText, collection: 'invoices', pro: true },
@@ -163,7 +163,9 @@ function Dashboard({ profile }: { profile: UserProfile }) {
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const isPro = ['active', 'trialing'].includes(profile.subscriptionStatus || '')
+  const subscriptionExpiry = (profile.subscriptionExpiresAt as { toDate?: () => Date } | undefined)?.toDate?.()
+  const promoValid = profile.subscriptionPlan !== 'promo' || (!!subscriptionExpiry && subscriptionExpiry.getTime() > Date.now())
+  const isPro = ['active', 'trialing'].includes(profile.subscriptionStatus || '') && promoValid
   const counts = Object.fromEntries(dataModules.map(module => [module.key, items[module.key]?.length || 0])) as Record<ModuleKey, number>
   const selectedModule = modules.find(module => module.key === active) || modules[0]
   const selectedItems = items[active] || []
@@ -195,12 +197,76 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     const data = new FormData(event.currentTarget)
     const collectionName = selectedModule.collection
     if (!collectionName) return
+    const value = (name: string) => String(data.get(name) || '').trim()
+    const number = (name: string, fallback = 0) => Number(data.get(name) || fallback)
+
+    if (active === 'recipes') {
+      const recipeRef = editing
+        ? doc(db, 'bakeries', profile.bakeryId, 'recipes', editing.id)
+        : doc(collection(db, 'bakeries', profile.bakeryId, 'recipes'))
+      const ingredientNames = data.getAll('ingredientName').map(String)
+      const ingredientQuantities = data.getAll('ingredientQuantity').map(Number)
+      const ingredientUnits = data.getAll('ingredientUnit').map(String)
+      const ingredientCosts = data.getAll('ingredientCost').map(Number)
+      const laborHours = number('laborHours', 0)
+      const laborRatePerHour = number('laborRatePerHour', 0)
+      const labourCost = laborHours * laborRatePerHour
+      const ingredientCost = ingredientCosts.reduce((sum, cost) => sum + (Number.isFinite(cost) ? cost : 0), 0)
+      const batch = writeBatch(db)
+      if (editing) {
+        const existingIngredients = await getDocs(collection(recipeRef, 'ingredients'))
+        existingIngredients.docs.forEach(ingredient => batch.delete(ingredient.ref))
+      }
+      batch.set(recipeRef, {
+        id: Number(editing?.localId || Date.now()), bakeryId: profile.bakeryId,
+        name: value('name'), category: value('category') || 'Cakes', description: value('description'),
+        servings: number('servings', 1), batchSize: number('batchSize', 1), difficulty: value('difficulty') || 'Medium',
+        laborHours, laborRatePerHour, labourCost,
+        overheadsCost: number('overheadsCost'), utilitiesCost: number('utilitiesCost'), packagingCost: number('packagingCost'),
+        profitMarginPercent: number('profitMarginPercent', 40), ingredientCost,
+        customSellingPrice: number('customSellingPrice'), instructions: value('instructions'),
+        updatedAt: serverTimestamp(), ...(editing ? {} : { createdAt: serverTimestamp() }),
+      }, { merge: true })
+      ingredientNames.forEach((name, index) => {
+        if (!name.trim()) return
+        const ingredientRef = doc(collection(recipeRef, 'ingredients'))
+        batch.set(ingredientRef, {
+          id: Date.now() + index, recipeId: Number(editing?.localId || 0), name: name.trim(),
+          quantity: ingredientQuantities[index] || 0, unit: ingredientUnits[index] || 'g',
+          cost: ingredientCosts[index] || 0,
+        })
+      })
+      await batch.commit()
+      setShowEditor(false)
+      setEditing(null)
+      return
+    }
+
+    if (active === 'ingredients' || active === 'inventory') {
+      const packagePrice = number('packagePrice')
+      const packageQuantity = number('packageQuantity', 1)
+      const unit = value('unit') || 'g'
+      const baseQuantity = unit === 'kg' || unit === 'L' ? packageQuantity * 1000 : packageQuantity
+      const payload = {
+        id: Number(editing?.localId || Date.now()), bakeryId: profile.bakeryId,
+        name: value('name'), category: value('category') || 'Baking Staples', unit,
+        packagePrice, packageQuantity, gramsPerUnit: baseQuantity,
+        unitPrice: baseQuantity > 0 ? packagePrice / baseQuantity : 0,
+        currentStock: number('currentStock'), minStock: number('minStock'),
+        isLowStock: number('currentStock') <= number('minStock'), alertEnabled: true,
+        barcode: value('barcode'), updatedAt: serverTimestamp(),
+      }
+      if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, 'inventory', editing.id), payload)
+      else await addDoc(collection(db, 'bakeries', profile.bakeryId, 'inventory'), { ...payload, createdAt: serverTimestamp() })
+      setShowEditor(false)
+      setEditing(null)
+      return
+    }
+
     const payload = {
-      name: String(data.get('name')).trim(),
-      description: String(data.get('description')).trim(),
-      email: String(data.get('email')).trim(), phone: String(data.get('phone')).trim(),
-      status: String(data.get('status') || 'active'),
-      price: Number(data.get('price') || 0), total: Number(data.get('total') || 0),
+      name: value('name'), description: value('description'),
+      email: value('email'), phone: value('phone'), status: value('status') || 'active',
+      price: number('price'), total: number('total'),
       updatedAt: serverTimestamp(),
     }
     if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, editing.id), payload)
@@ -240,7 +306,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
           <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />
         </section>}
     </main>
-    {showEditor && <ItemEditor module={selectedModule} item={editing} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
+    {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
   </div>
 }
 
@@ -255,9 +321,64 @@ function WorkspaceList({ items, label, onAdd, onEdit, onDelete }: { items: Works
   return <div className="workspace-grid">{items.map(item => <article className="workspace-card" key={item.id}><div><span className="item-status">{String(item.status || 'Active')}</span><h3>{String(item.name || item.title || 'Untitled')}</h3><p>{String(item.description || item.notes || item.email || item.phone || 'Saved in your BatchBoss workspace')}</p>{typeof item.price === 'number' && item.price > 0 && <strong>{money.format(item.price)}</strong>}</div><div className="card-actions"><button onClick={() => onEdit(item)}>Edit</button><button className="danger-link" onClick={() => onDelete(item)}>Delete</button></div></article>)}</div>
 }
 
-function ItemEditor({ module, item, onClose, onSave }: { module: ModuleDefinition; item: WorkspaceItem | null; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: ModuleDefinition; item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  if (module.key === 'recipes') return <RecipeEditor item={item} bakeryId={bakeryId} onClose={onClose} onSave={onSave} />
+  if (module.key === 'ingredients' || module.key === 'inventory') return <IngredientEditor item={item} onClose={onClose} onSave={onSave} />
   const commercial = ['invoices','quotes','receipts','products'].includes(module.key)
   return <Modal title={`${item ? 'Edit' : 'Add'} ${module.label.replace(/s$/, '').toLowerCase()}`} onClose={onClose}><form className="modal-form" onSubmit={onSave}><label>Name or reference<input name="name" defaultValue={String(item?.name || item?.title || '')} required /></label><label>Description or notes<textarea name="description" rows={3} defaultValue={String(item?.description || item?.notes || '')} /></label>{module.key === 'customers' || module.key === 'suppliers' ? <div className="split-fields"><label>Phone<input name="phone" type="tel" defaultValue={String(item?.phone || '')} /></label><label>Email<input name="email" type="email" defaultValue={String(item?.email || '')} /></label></div> : null}{commercial && <div className="split-fields"><label>Price<input name="price" type="number" min="0" step="0.01" defaultValue={Number(item?.price || item?.total || 0)} /></label><label>Status<select name="status" defaultValue={String(item?.status || 'draft')}><option value="draft">Draft</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="active">Active</option></select></label></div>}<button className="primary-button">Save changes</button></form></Modal>
+}
+
+type IngredientRow = { name: string; quantity: number; unit: string; cost: number }
+
+function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [rows, setRows] = useState<IngredientRow[]>([{ name: '', quantity: 0, unit: 'g', cost: 0 }])
+  const [inventory, setInventory] = useState<WorkspaceItem[]>([])
+  const [laborHours, setLaborHours] = useState(Number(item?.laborHours || 1.5))
+  const [laborRate, setLaborRate] = useState(Number(item?.laborRatePerHour || 120))
+  const [overheads, setOverheads] = useState(Number(item?.overheadsCost || 0))
+  const [utilities, setUtilities] = useState(Number(item?.utilitiesCost || 0))
+  const [packaging, setPackaging] = useState(Number(item?.packagingCost || 0))
+  const [batchSize, setBatchSize] = useState(Number(item?.batchSize || 1))
+
+  useEffect(() => onSnapshot(collection(db, 'bakeries', bakeryId, 'inventory'), snapshot => {
+    setInventory(snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() })))
+  }), [bakeryId])
+
+  useEffect(() => {
+    if (!item) return
+    getDocs(collection(db, 'bakeries', bakeryId, 'recipes', item.id, 'ingredients')).then(snapshot => {
+      const saved = snapshot.docs.map(entry => entry.data() as IngredientRow)
+      if (saved.length) setRows(saved)
+    })
+  }, [bakeryId, item])
+
+  const ingredientsCost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0)
+  const labourCost = laborHours * laborRate
+  const totalBatchCost = ingredientsCost + labourCost + overheads + utilities + packaging
+  const costPerUnit = batchSize > 0 ? totalBatchCost / batchSize : 0
+  const updateRow = (index: number, patch: Partial<IngredientRow>) => setRows(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+
+  return <Modal title={`${item ? 'Edit' : 'Create new'} recipe`} onClose={onClose}><form className="modal-form recipe-form" onSubmit={onSave}>
+    <label>Recipe name<input name="name" defaultValue={String(item?.name || '')} placeholder="e.g. Vanilla Cupcakes" required /></label>
+    <label>Category<select name="category" defaultValue={String(item?.category || 'Cupcakes')}><option>Cupcakes</option><option>Cakes</option><option>Cookies</option><option>Breads</option><option>Pastries</option><option>Other</option></select></label>
+    <label>Description<textarea name="description" rows={3} defaultValue={String(item?.description || '')} /></label>
+    <div className="split-fields"><label>Servings<input name="servings" type="number" min="1" defaultValue={Number(item?.servings || 1)} /></label><label>Batch size<input name="batchSize" type="number" min="1" value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} /></label></div>
+    <section className="costing-panel"><div className="mini-heading"><div><h3>Operations, Overheads & Labour</h3><p>Configure complete batch-costing details.</p></div><span>Fully editable</span></div><div className="cost-grid"><label>Labour hours<input name="laborHours" type="number" min="0" step="0.25" value={laborHours} onChange={event => setLaborHours(Number(event.target.value))} /></label><label>Rate/hour<input name="laborRatePerHour" type="number" min="0" step="0.01" value={laborRate} onChange={event => setLaborRate(Number(event.target.value))} /></label><label>Overheads cost<input name="overheadsCost" type="number" min="0" step="0.01" value={overheads} onChange={event => setOverheads(Number(event.target.value))} /></label><label>Utilities cost<input name="utilitiesCost" type="number" min="0" step="0.01" value={utilities} onChange={event => setUtilities(Number(event.target.value))} /></label><label>Packaging cost<input name="packagingCost" type="number" min="0" step="0.01" value={packaging} onChange={event => setPackaging(Number(event.target.value))} /></label><label>Profit margin %<input name="profitMarginPercent" type="number" min="0" step="0.1" defaultValue={Number(item?.profitMarginPercent || 40)} /></label></div><p className="calculated-line">Calculated labour cost <strong>{money.format(labourCost)}</strong></p></section>
+    <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Add quantities in g, kg, ml, L, tsp, tbsp or units.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="0.01" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option>tsp</option><option>tbsp</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="0.01" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
+    <section className="cost-summary"><div><span>Ingredients cost</span><strong>{money.format(ingredientsCost)}</strong></div><div><span>Operations & labour</span><strong>{money.format(labourCost)}</strong></div><div><span>Overheads</span><strong>{money.format(overheads)}</strong></div><div><span>Utilities</span><strong>{money.format(utilities)}</strong></div><div><span>Packaging</span><strong>{money.format(packaging)}</strong></div><div className="summary-total"><span>Total batch cost</span><strong>{money.format(totalBatchCost)}</strong></div><div><span>Cost per unit ({batchSize} units)</span><strong>{money.format(costPerUnit)}</strong></div></section>
+    <button className="primary-button">Save recipe</button>
+  </form></Modal>
+}
+
+function IngredientEditor({ item, onClose, onSave }: { item: WorkspaceItem | null; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [name, setName] = useState(String(item?.name || ''))
+  const [unit, setUnit] = useState(String(item?.unit || 'g'))
+  const [packagePrice, setPackagePrice] = useState(Number(item?.packagePrice || 0))
+  const [packageQuantity, setPackageQuantity] = useState(Number(item?.packageQuantity || item?.gramsPerUnit || 0))
+  const baseQuantity = unit === 'kg' || unit === 'L' ? packageQuantity * 1000 : packageQuantity
+  const unitCost = baseQuantity > 0 ? packagePrice / baseQuantity : 0
+  const presets = ['Flour', 'Sugar', 'Chocolate', 'Baking Soda', 'Butter', 'Eggs']
+  return <Modal title={`${item ? 'Edit' : 'Add'} stock & ingredient`} onClose={onClose}><form className="modal-form ingredient-form" onSubmit={onSave}><div><span className="field-heading">Ingredient presets</span><div className="preset-row">{presets.map(preset => <button type="button" key={preset} className={name === preset ? 'active' : ''} onClick={() => setName(preset)}>{preset}</button>)}</div></div><label>Ingredient/item name<input name="name" value={name} onChange={event => setName(event.target.value)} required /></label><label>Category<select name="category" defaultValue={String(item?.category || 'Baking Staples')}><option>Baking Staples</option><option>Dairy</option><option>Chocolate</option><option>Flavourings</option><option>Packaging</option><option>Other</option></select></label><div><span className="field-heading">Unit of measurement</span><div className="unit-row">{['g','kg','ml','L','unit','bottle'].map(value => <button type="button" key={value} className={unit === value ? 'active' : ''} onClick={() => setUnit(value)}>{value}</button>)}</div><input type="hidden" name="unit" value={unit} /></div><div className="split-fields"><label>Pack price<input name="packagePrice" type="number" min="0" step="0.01" value={packagePrice} onChange={event => setPackagePrice(Number(event.target.value))} /></label><label>Quantity in pack<input name="packageQuantity" type="number" min="0" step="0.01" value={packageQuantity} onChange={event => setPackageQuantity(Number(event.target.value))} /></label></div><div className="calculated-cost"><span>Calculated cost / {unit === 'kg' ? 'g' : unit === 'L' ? 'ml' : unit}</span><strong>{money.format(unitCost)}</strong></div><div className="split-fields"><label>Current stock<input name="currentStock" type="number" min="0" step="0.01" defaultValue={Number(item?.currentStock || 0)} /></label><label>Minimum stock alert<input name="minStock" type="number" min="0" step="0.01" defaultValue={Number(item?.minStock || 0)} /></label></div><label>Barcode (optional)<input name="barcode" defaultValue={String(item?.barcode || '')} /></label><button className="primary-button">{item ? 'Save ingredient' : 'Add item'}</button></form></Modal>
 }
 
 function LockedView({ title, onUpgrade }: { title: string; onUpgrade: () => void }) { return <section className="content-card locked"><div className="lock-icon"><Sparkles /></div><span className="eyebrow">BatchBoss Pro</span><h2>Unlock {title}</h2><p>Upgrade to create professional invoices, quotes and receipts, save products and work with unlimited recipes and suppliers.</p><button className="primary-button compact" onClick={onUpgrade}>View Pro plans</button></section> }
