@@ -127,7 +127,35 @@ td small { display:block; color:var(--muted); margin-top:4px; }
 .modal-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:22px; }
 .modal-title h2 { margin:0; }
 .modal-form .primary-button { margin-top:8px; }
+.modal:has(.recipe-form) { width:min(100%,980px); max-height:94vh; overflow:auto; }
+.modal:has(.ingredient-form) { width:min(100%,720px); }
+.recipe-form,.ingredient-form { display:grid; gap:16px; }
+.recipe-form label,.ingredient-form label { margin:0; }
+.costing-panel,.recipe-ingredients,.cost-summary { border:1px solid var(--line); border-radius:17px; padding:20px; background:#fff; }
+.costing-panel { background:linear-gradient(145deg,#fff8fa,#fff); }
+.mini-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:16px; }
+.mini-heading h3 { margin:0 0 4px; }
+.mini-heading p { margin:0; color:var(--muted); font-size:12px; }
+.mini-heading > span { color:var(--pink); background:#ffeaf0; border-radius:8px; padding:5px 9px; font-size:10px; font-weight:800; }
+.mini-heading > strong { color:var(--pink); white-space:nowrap; }
+.cost-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.calculated-line { display:flex; justify-content:space-between; color:var(--muted); border-top:1px solid var(--line); margin:4px 0 0; padding-top:14px; }
+.calculated-line strong { color:var(--pink); }
+.ingredient-row { display:grid; grid-template-columns:minmax(150px,2fr) 100px 90px 110px 38px; gap:8px; margin-bottom:9px; }
+.ingredient-row button { border:0; border-radius:10px; color:#c52a52; background:#fff0f4; font-size:20px; }
+.outline-button { width:100%; display:flex; justify-content:center; align-items:center; gap:7px; border:2px solid var(--pink); color:var(--pink); background:white; border-radius:12px; padding:12px; font-weight:800; }
+.cost-summary { background:#fff2f6; }
+.cost-summary > div { display:flex; justify-content:space-between; gap:20px; padding:5px 0; font-size:13px; }
+.cost-summary .summary-total { border-top:1px solid #f1c5d3; margin-top:8px; padding-top:12px; font-size:15px; }
+.cost-summary .summary-total strong { color:var(--pink); }
+.field-heading { display:block; font-size:13px; font-weight:800; margin-bottom:10px; }
+.preset-row,.unit-row { display:flex; flex-wrap:wrap; gap:9px; }
+.preset-row button,.unit-row button { border:1px solid var(--line); border-radius:11px; padding:10px 15px; background:white; color:var(--muted); font-weight:700; }
+.preset-row button.active,.unit-row button.active { color:var(--pink); border-color:#f4a8bd; background:#fff0f4; }
+.calculated-cost { display:flex; justify-content:space-between; align-items:center; padding:16px; border-radius:13px; background:#fff0f4; }
+.calculated-cost strong { color:var(--pink); font-size:18px; }
 
 @media (max-width:1000px) { .stat-grid{grid-template-columns:1fr 1fr}.workspace-grid{grid-template-columns:1fr 1fr}.quick-grid{grid-template-columns:1fr 1fr}.auth-page{grid-template-columns:1fr}.auth-story{min-height:400px}.auth-story h1{font-size:48px}.auth-story small{display:none}.auth-panel{padding:50px 25px} }
 @media (max-width:760px) { .dashboard-shell{display:block}.sidebar{position:fixed; left:-290px; width:270px; transition:.25s}.sidebar.open{left:0; box-shadow:20px 0 60px rgba(0,0,0,.25)}.close-menu,.menu-button{display:block}.dashboard-main{padding:22px 16px 45px}.dashboard-main header{justify-content:flex-start;gap:12px}.dashboard-main header .primary-button{margin-left:auto}.hero-card{align-items:flex-start;flex-direction:column;padding:24px}.profit{border-left:0;border-top:1px solid #eddae0;padding:20px 0 0;width:100%}.section-heading{align-items:flex-start;flex-direction:column}.search,.search input{width:100%}.stat-grid{grid-template-columns:1fr 1fr}.split-fields{grid-template-columns:1fr}.auth-story{padding:38px 25px}.auth-story h1{font-size:41px;letter-spacing:-2px} }
+@media (max-width:760px) { .cost-grid{grid-template-columns:1fr 1fr}.ingredient-row{grid-template-columns:1fr 90px 80px}.ingredient-row input:nth-of-type(3){grid-column:1/3}.ingredient-row button{grid-column:3;grid-row:1}.mini-heading{flex-direction:column}.modal{padding:20px}.modal:has(.recipe-form){max-height:96vh} }
 @media (max-width:600px) { .workspace-grid,.quick-grid,.plans,.tools-grid{grid-template-columns:1fr}.plan-badge{margin-left:auto;font-size:0}.stat-grid{grid-template-columns:1fr}.auth-story{min-height:360px}.auth-form h2{font-size:29px}.subscription-intro h2{font-size:29px} }
