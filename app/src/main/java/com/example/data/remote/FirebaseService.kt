@@ -10,6 +10,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -34,6 +35,15 @@ data class FirebaseRestoreResult(
     val success: Boolean,
     val message: String,
     val data: CloudBackupData? = null
+)
+
+data class FirebaseWorkspace(
+    val uid: String,
+    val bakeryId: String,
+    val email: String,
+    val firstName: String = "",
+    val surname: String = "",
+    val bakeryName: String = ""
 )
 
 /**
@@ -82,25 +92,6 @@ object FirebaseService {
     val currentUser: FirebaseUser?
         get() = auth?.currentUser
 
-    fun getEffectiveUserId(): String {
-        return currentUser?.uid ?: "local_bakery_owner"
-    }
-
-    /**
-     * Sign in anonymously so cloud operations can have an authenticated session without user friction.
-     */
-    suspend fun signInAnonymously(): Result<FirebaseUser> {
-        val authInstance = auth ?: return Result.failure(IllegalStateException("Firebase is not yet initialized with google-services.json."))
-        return try {
-            val authResult = authInstance.signInAnonymously().awaitTask()
-            val user = authResult.user ?: throw IllegalStateException("Firebase user was null after anonymous sign in.")
-            Result.success(user)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Error in anonymous sign-in", e)
-            Result.failure(e)
-        }
-    }
-
     /**
      * Sign in with email and password.
      */
@@ -129,6 +120,84 @@ object FirebaseService {
             Log.e(TAG, "Error registering account", e)
             Result.failure(e)
         }
+    }
+
+    suspend fun createWorkspace(
+        email: String,
+        password: String,
+        bakeryId: String,
+        bakeryName: String,
+        firstName: String,
+        surname: String
+    ): Result<FirebaseWorkspace> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not initialized."))
+        return createAccountWithEmail(email, password).fold(
+            onSuccess = { user ->
+                try {
+                    val targetBakeryId = bakeryId.ifBlank { "bakery_${user.uid}" }
+                    val userData = hashMapOf<String, Any>(
+                        "uid" to user.uid,
+                        "bakeryId" to targetBakeryId,
+                        "email" to email,
+                        "firstName" to firstName,
+                        "surname" to surname,
+                        "role" to "owner",
+                        "createdAt" to FieldValue.serverTimestamp()
+                    )
+                    val bakeryData = hashMapOf<String, Any>(
+                        "name" to bakeryName,
+                        "ownerUid" to user.uid,
+                        "currency" to "ZAR",
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    val memberData = hashMapOf<String, Any>(
+                        "uid" to user.uid,
+                        "email" to email,
+                        "role" to "owner",
+                        "joinedAt" to FieldValue.serverTimestamp()
+                    )
+                    val batch = db.batch()
+                    batch.set(db.collection("bakeries").document(targetBakeryId), bakeryData)
+                    batch.set(db.collection("users").document(user.uid), userData)
+                    batch.set(db.collection("bakeries").document(targetBakeryId).collection("members").document(user.uid), memberData)
+                    batch.commit().awaitTask()
+                    Result.success(FirebaseWorkspace(user.uid, targetBakeryId, email, firstName, surname, bakeryName))
+                } catch (e: Throwable) {
+                    try { user.delete().awaitTask() } catch (_: Throwable) {}
+                    Result.failure(e)
+                }
+            },
+            onFailure = { Result.failure(it) }
+        )
+    }
+
+    suspend fun signInToWorkspace(email: String, password: String): Result<FirebaseWorkspace> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not initialized."))
+        return signInWithEmail(email, password).fold(
+            onSuccess = { user ->
+                try {
+                    val snapshot = db.collection("users").document(user.uid).get().awaitTask()
+                    val bakeryId = snapshot.getString("bakeryId").orEmpty()
+                    if (bakeryId.isBlank()) throw IllegalStateException("This account has no BatchBoss bakery workspace yet.")
+                    val bakerySnapshot = db.collection("bakeries").document(bakeryId).get().awaitTask()
+                    Result.success(
+                        FirebaseWorkspace(
+                            uid = user.uid,
+                            bakeryId = bakeryId,
+                            email = snapshot.getString("email") ?: email,
+                            firstName = snapshot.getString("firstName").orEmpty(),
+                            surname = snapshot.getString("surname").orEmpty(),
+                            bakeryName = bakerySnapshot.getString("name").orEmpty()
+                        )
+                    )
+                } catch (e: Throwable) {
+                    signOut()
+                    Result.failure(e)
+                }
+            },
+            onFailure = { Result.failure(it) }
+        )
     }
 
     fun signOut() {
@@ -161,7 +230,9 @@ object FirebaseService {
             message = "Firestore service is unavailable."
         )
 
-        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        if (currentUser == null) return FirebaseSyncResult(false, "Sign in before syncing your bakery data.")
+        if (bakeryId.isBlank()) return FirebaseSyncResult(false, "Your account is missing its bakery workspace ID.")
+        val targetBakeryId = bakeryId
 
         return try {
             val batch = db.batch()
@@ -290,7 +361,9 @@ object FirebaseService {
             message = "Firestore is currently unavailable."
         )
 
-        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        if (currentUser == null) return FirebaseRestoreResult(false, "Sign in before restoring your bakery data.")
+        if (bakeryId.isBlank()) return FirebaseRestoreResult(false, "Your account is missing its bakery workspace ID.")
+        val targetBakeryId = bakeryId
 
         return try {
             val recipesColl = db.collection("bakeries").document(targetBakeryId).collection("recipes").get().awaitTask()

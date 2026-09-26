@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function ownsBakery(bakeryId) {
+      return signedIn() && userDoc().data.bakeryId == bakeryId;
+    }
+
+    function hasPro() {
+      return signedIn()
+        && userDoc().data.subscriptionStatus in ['active', 'trialing']
+        && (userDoc().data.subscriptionPlan != 'promo'
+          || userDoc().data.subscriptionExpiresAt > request.time);
+    }
+
+    function isProCollection(collectionName) {
+      return collectionName in ['suppliers', 'invoices', 'quotes', 'receipts', 'products'];
+    }
+
+    match /users/{uid} {
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update: if isAdmin()
+        || (signedIn()
+          && request.auth.uid == uid
+          && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['subscriptionPlan', 'subscriptionStatus', 'subscriptionExpiresAt']));
+      allow delete: if false;
+    }
+
+    match /bakeries/{bakeryId} {
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow read, update: if ownsBakery(bakeryId) || isAdmin();
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow create: if signedIn() && request.auth.uid == uid;
+        allow read: if ownsBakery(bakeryId) || isAdmin();
+        allow update, delete: if isAdmin()
+          || (ownsBakery(bakeryId) && request.auth.uid == uid);
+      }
+
+      match /{collectionName}/{documentId} {
+        allow read: if ownsBakery(bakeryId) || isAdmin();
+        allow create, update, delete: if isAdmin()
+          || (ownsBakery(bakeryId)
+            && (!isProCollection(collectionName) || hasPro()));
+
+        match /{nestedDocument=**} {
+          allow read: if ownsBakery(bakeryId) || isAdmin();
+          allow create, update, delete: if isAdmin()
+            || (ownsBakery(bakeryId)
+              && (!isProCollection(collectionName) || hasPro()));
+        }
+      }
+    }
+
+    match /deletionRequests/{requestId} {
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /adminAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}

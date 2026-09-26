@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.CustomerEntity
 import com.example.data.local.InventoryItemEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
@@ -39,9 +40,10 @@ fun FirebaseSyncScreen(
     recipes: List<RecipeEntity>,
     ingredients: List<RecipeIngredientEntity>,
     inventory: List<InventoryItemEntity>,
+    customers: List<CustomerEntity>,
     userProfile: com.example.data.local.UserProfileEntity? = null,
     onBack: () -> Unit,
-    onRestoreData: (List<RecipeEntity>, List<RecipeIngredientEntity>, List<InventoryItemEntity>) -> Unit,
+    onRestoreData: (List<RecipeEntity>, List<RecipeIngredientEntity>, List<InventoryItemEntity>, List<CustomerEntity>) -> Unit,
     onSyncWebBackend: ((onResult: (Boolean, String) -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -333,7 +335,7 @@ fun FirebaseSyncScreen(
                                 isSyncing = true
                                 syncStatusMessage = null
                                 coroutineScope.launch {
-                                    val result = FirebaseService.backupDataToCloud(recipes, ingredients, inventory, bakeryId = currentBakeryId)
+                                    val result = FirebaseService.backupDataToCloud(recipes, ingredients, inventory, customers, currentBakeryId)
                                     isSyncing = false
                                     syncSuccess = result.success
                                     syncStatusMessage = result.message
@@ -366,7 +368,7 @@ fun FirebaseSyncScreen(
                                     syncSuccess = result.success
                                     syncStatusMessage = result.message
                                     if (result.success && result.data != null) {
-                                        onRestoreData(result.data.recipes, result.data.ingredients, result.data.inventory)
+                                        onRestoreData(result.data.recipes, result.data.ingredients, result.data.inventory, result.data.customers)
                                     }
                                 }
                             },
