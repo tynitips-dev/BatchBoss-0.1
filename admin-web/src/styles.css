@@ -377,6 +377,30 @@ td small {
   display: flex;
   gap: 8px;
 }
+.promo-controls {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+.promo-controls select,
+.promo-controls button {
+  border: 1px solid #dfe4ec;
+  background: white;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.promo-controls button {
+  color: white;
+  background: #ff2f67;
+  border-color: #ff2f67;
+  font-weight: 800;
+}
+.promo-controls .danger {
+  color: #c81e4f;
+  background: white;
+  border-color: #ffc3d3;
+}
 .actions button {
   border: 1px solid #dfe4ec;
   background: white;
