@@ -6,11 +6,11 @@ The web portal uses the same Firebase project as the Android app. Each account i
 
 1. In Firebase Authentication, enable **Email/Password**.
 2. Create a Firestore database in production mode.
-3. Create a Firebase Web App and copy its configuration values into a new `.env` file based on `.env.example`.
+3. Use the existing **BatchBoss Web Portal** in project `batch-boss-android`. From the repository root, run `npx firebase-tools apps:sdkconfig WEB "1:802048202389:web:e0eceeb49caf0824b7ad9c" --project batch-boss-android`. Copy the six matching configuration values into `web/.env`, using `web/.env.example` as the template.
 4. Install the Firebase CLI, sign in and deploy the rules from this folder:
 
    ```bash
-   firebase use batch-boss-8a6c5
+   firebase use batch-boss-android
    firebase deploy --only firestore:rules,storage
    ```
 
@@ -28,6 +28,8 @@ npm run dev
 ```bash
 npm run build
 ```
+
+The build stops if any required Firebase setting is missing. Firebase web settings are embedded into the compiled files, so changing them requires a new build. Keep the local environment file for future builds; do not upload it separately to Xneelo.
 
 Upload the **contents** of `dist/` to the intended web subdomain, such as `app.batchboss.co.za`. Keep the public marketing website at `www.batchboss.co.za`.
 

@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
+import SubscriptionView from './SubscriptionView'
 import type { ModuleKey, UserProfile } from './types'
 
 type ModuleDefinition = { key: ModuleKey; label: string; icon: typeof BookOpen; collection?: string; pro?: boolean }
@@ -462,9 +463,6 @@ function TasksView({bakeryId,items}:{bakeryId:string;items:WorkspaceItem[]}){
 
 function LockedView({ title, onUpgrade }: { title: string; onUpgrade: () => void }) { return <section className="content-card locked"><div className="lock-icon"><Sparkles /></div><span className="eyebrow">BatchBoss Pro</span><h2>Unlock {title}</h2><p>Upgrade to create professional invoices, quotes and receipts, save products and work with unlimited recipes and suppliers.</p><button className="primary-button compact" onClick={onUpgrade}>View Pro plans</button></section> }
 
-function SubscriptionView({ isPro, profile }: { isPro: boolean; profile: UserProfile }) { return <section className="subscription-view"><div className="subscription-intro"><span className="eyebrow">Your plan</span><h2>{isPro ? 'BatchBoss Pro is active' : 'Unlock BatchBoss Pro'}</h2><p>Complete commercial tools for bakers who want to cost smarter and grow.</p></div><div className="feature-list">{['AI recipe and barcode scanning','Unlimited recipes and costing','Professional invoices and payment tracking','Quotes, estimates and customer receipts','Products, suppliers and specials'].map(feature=><div key={feature}><CheckCircle2Icon />{feature}</div>)}</div><div className="plans"><article><span>Save 33%</span><h3>Annual</h3><strong>R1 199</strong><small>per year · about R99/month</small><a className="primary-button" href="https://play.google.com/store/apps/details?id=com.aistudio.batchboss.kqwxrv" target="_blank" rel="noreferrer">Choose annual</a></article><article><span>Flexible</span><h3>Monthly</h3><strong>R149</strong><small>per month</small><a className="primary-button" href="https://play.google.com/store/apps/details?id=com.aistudio.batchboss.kqwxrv" target="_blank" rel="noreferrer">Choose monthly</a></article></div><p className="billing-note">Current status: <strong>{profile.subscriptionStatus || 'free'}</strong>. Purchases are completed securely through Google Play. The website never stores card details.</p></section> }
-
-function CheckCircle2Icon() { return <span className="feature-check">✓</span> }
 function ToolsView() { return <section className="content-card"><div className="section-heading"><div><span className="eyebrow">Bakery tools</span><h2>Converter & recipe scaler</h2></div></div><div className="tools-grid"><article><h3>Baking unit converter</h3><p>Ingredient volume weights vary. Use the app converter for ingredient-specific measurements.</p><strong>1 cup cake flour ≈ 125 g</strong></article><article><h3>Batch & recipe scaler</h3><p>Scale a recipe from its original yield to the batch you need.</p><strong>Available in the BatchBoss app</strong></article></div></section> }
 function SettingsView({ profile }: { profile: UserProfile }) {
   const [business,setBusiness]=useState<Record<string,unknown>>({}); const [saved,setSaved]=useState(false); const [logoData,setLogoData]=useState(''); const [logoError,setLogoError]=useState('')

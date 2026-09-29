@@ -31,3 +31,5 @@ functions/package-lock.json
 admin-web/package-lock.json
 debug.keystore
 .build-outputs/
+web/.env.local
+web/.env.*.local
