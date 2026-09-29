@@ -177,7 +177,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     const cleanups = dataModules.map(({ key, collection: collectionName }) => onSnapshot(
       collection(db, 'bakeries', profile.bakeryId, collectionName!),
       snapshot => {
-        setItems(current => ({ ...current, [key]: snapshot.docs.map(item => ({ id: item.id, ...item.data() })) }))
+        setItems(current => ({ ...current, [key]: snapshot.docs.map(item => ({ ...item.data(), id: item.id })) }))
       },
     ))
     return () => cleanups.forEach(cleanup => cleanup())
