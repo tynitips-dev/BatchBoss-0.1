@@ -22,6 +22,6 @@ export type Customer = {
 }
 
 export type ModuleKey =
-  | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'suppliers'
+  | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'packaging' | 'suppliers'
   | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
   | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'

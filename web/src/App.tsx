@@ -20,6 +20,7 @@ const modules: ModuleDefinition[] = [
   { key: 'recipes', label: 'Recipes', icon: BookOpen, collection: 'recipes' },
   { key: 'ingredients', label: 'Ingredients', icon: Package, collection: 'inventory' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, collection: 'inventory' },
+  { key: 'packaging', label: 'Packaging', icon: Package, collection: 'packaging' },
   { key: 'suppliers', label: 'Suppliers', icon: Store, collection: 'suppliers', pro: true },
   { key: 'invoices', label: 'Invoices', icon: ReceiptText, collection: 'invoices', pro: true },
   { key: 'quotes', label: 'Quotes & estimates', icon: FileCheck2, collection: 'quotes', pro: true },
@@ -244,7 +245,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       return
     }
 
-    if (active === 'ingredients' || active === 'inventory') {
+    if (active === 'ingredients' || active === 'inventory' || active === 'packaging') {
       const packagePrice = number('packagePrice')
       const packageQuantity = number('packageQuantity', 1)
       const unit = value('unit') || 'g'
@@ -258,8 +259,8 @@ function Dashboard({ profile }: { profile: UserProfile }) {
         isLowStock: number('currentStock') <= number('minStock'), alertEnabled: true,
         barcode: value('barcode'), updatedAt: serverTimestamp(),
       }
-      if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, 'inventory', editing.id), payload)
-      else await addDoc(collection(db, 'bakeries', profile.bakeryId, 'inventory'), { ...payload, createdAt: serverTimestamp() })
+      if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, editing.id), payload)
+      else await addDoc(collection(db, 'bakeries', profile.bakeryId, collectionName), { ...payload, createdAt: serverTimestamp() })
       setShowEditor(false)
       setEditing(null)
       return
@@ -330,7 +331,7 @@ function WorkspaceList({ items, label, onAdd, onEdit, onDelete }: { items: Works
 
 function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: ModuleDefinition; item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
   if (module.key === 'recipes') return <RecipeEditor item={item} bakeryId={bakeryId} onClose={onClose} onSave={onSave} />
-  if (module.key === 'ingredients' || module.key === 'inventory') return <IngredientEditor item={item} onClose={onClose} onSave={onSave} />
+  if (module.key === 'ingredients' || module.key === 'inventory' || module.key === 'packaging') return <IngredientEditor item={item} onClose={onClose} onSave={onSave} />
   const commercial = ['invoices','quotes','receipts','products'].includes(module.key)
   return <Modal title={`${item ? 'Edit' : 'Add'} ${module.label.replace(/s$/, '').toLowerCase()}`} onClose={onClose}><form className="modal-form" onSubmit={onSave}><label>Name or reference<input name="name" defaultValue={String(item?.name || item?.title || '')} required /></label><label>Description or notes<textarea name="description" rows={3} defaultValue={String(item?.description || item?.notes || '')} /></label>{module.key === 'customers' || module.key === 'suppliers' ? <div className="split-fields"><label>Phone<input name="phone" type="tel" defaultValue={String(item?.phone || '')} /></label><label>Email<input name="email" type="email" defaultValue={String(item?.email || '')} /></label></div> : null}{commercial && <div className="split-fields"><label>Price<input name="price" type="number" min="0" step="0.01" defaultValue={Number(item?.price || item?.total || 0)} /></label><label>Status<select name="status" defaultValue={String(item?.status || 'draft')}><option value="draft">Draft</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="active">Active</option></select></label></div>}<button className="primary-button">Save changes</button></form></Modal>
 }
