@@ -12,6 +12,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, serverTimestam
 import { auth, db, firebaseConfigured } from './firebase'
 import SubscriptionView from './SubscriptionView'
 import type { ModuleKey, UserProfile } from './types'
+import { calculateIngredientUsageCost } from './costing'
 
 type ModuleDefinition = { key: ModuleKey; label: string; icon: typeof BookOpen; collection?: string; pro?: boolean }
 const modules: ModuleDefinition[] = [
@@ -362,7 +363,15 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
   const labourCost = laborHours * laborRate
   const totalBatchCost = ingredientsCost + labourCost + overheads + utilities + packaging
   const costPerUnit = batchSize > 0 ? totalBatchCost / batchSize : 0
-  const updateRow = (index: number, patch: Partial<IngredientRow>) => setRows(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  const updateRow = (index: number, patch: Partial<IngredientRow>) =>
+    setRows(current => current.map((row, rowIndex) => {
+      if (rowIndex !== index) return row
+      const updatedRow = { ...row, ...patch }
+      const shouldCalculate = 'name' in patch || 'quantity' in patch || 'unit' in patch
+      if (!shouldCalculate) return updatedRow
+      const calculatedCost = calculateIngredientUsageCost(updatedRow, inventory)
+      return calculatedCost === null ? updatedRow : { ...updatedRow, cost: calculatedCost }
+    }))
 
   return <Modal title={`${item ? 'Edit' : 'Create new'} recipe`} onClose={onClose}><form className="modal-form recipe-form" onSubmit={onSave}>
     <label>Recipe name<input name="name" defaultValue={String(item?.name || '')} placeholder="e.g. Vanilla Cupcakes" required /></label>
