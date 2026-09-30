@@ -29,6 +29,7 @@ const modules: ModuleDefinition[] = [
   { key: 'tasks', label: 'Tasks & calendar', icon: CalendarDays, collection: 'tasks' },
   { key: 'customers', label: 'Customers', icon: Users, collection: 'customers' },
   { key: 'orders', label: 'Orders', icon: ClipboardList, collection: 'orders' },
+  { key: 'documents', label: 'Documents & templates', icon: Download },
   { key: 'tools', label: 'Bakery tools', icon: WandSparkles },
   { key: 'subscription', label: 'Subscription', icon: Sparkles },
   { key: 'settings', label: 'Business settings', icon: Settings },
@@ -302,6 +303,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {active === 'home' && <HomeView counts={counts} onOpen={setActive} />}
       {active === 'subscription' && <SubscriptionView isPro={isPro} profile={profile} />}
       {active === 'tools' && <ToolsView />}
+      {active === 'documents' && <DocumentsView onOpen={setActive} />}
       {active === 'settings' && <SettingsView profile={profile} />}
       {active === 'products' && isPro && <ProductsView bakeryId={profile.bakeryId} items={items.products || []} />}
       {active === 'invoices' && isPro && <InvoicesView bakeryId={profile.bakeryId} invoices={items.invoices || []} products={items.products || []} packaging={items.packaging || []} />}
@@ -318,6 +320,18 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
     {showImporter&&selectedModule.collection&&<BulkListImporter bakeryId={profile.bakeryId} collectionName={selectedModule.collection} label={selectedModule.label} onClose={()=>setShowImporter(false)}/>}
   </div>
+}
+
+function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
+  return <section className="content-card documents-view">
+    <div className="section-heading"><div><span className="eyebrow">Downloads & uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Download the BatchBoss starter workbook, edit your prices and pack sizes, then upload each list into your private bakery workspace.</p></div></div>
+    <div className="template-grid">
+      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Ingredients &amp; Packaging Starter Workbook</h3><p>Includes editable ingredients and packaging lists, plus BatchBoss-ready upload sheets.</p><small>Excel workbook · Prices are reference prices and can be changed.</small></div><a className="primary-button compact" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download workbook</a></article>
+      <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Open the <strong>Ingredients Upload</strong> or <strong>Packaging Upload</strong> sheet.</li><li>Save that sheet as a <strong>CSV UTF-8</strong> file.</li><li>Open the matching BatchBoss tab, select <strong>Upload list</strong>, preview the items and confirm.</li></ol></article>
+    </div>
+    <div className="document-actions"><button className="outline-button" onClick={() => onOpen('ingredients')}>Open Ingredients</button><button className="outline-button" onClick={() => onOpen('packaging')}>Open Packaging</button></div>
+    <p className="privacy-note">Your changes are saved only in your bakery account. They do not change the master workbook or another customer’s lists.</p>
+  </section>
 }
 
 function HomeView({ counts, onOpen }: { counts: Record<ModuleKey, number>; onOpen: (key: ModuleKey) => void }) {

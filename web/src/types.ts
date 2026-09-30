@@ -25,3 +25,4 @@ export type ModuleKey =
   | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'packaging' | 'suppliers'
   | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
   | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'
+  | 'documents'
