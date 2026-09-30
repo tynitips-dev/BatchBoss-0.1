@@ -179,7 +179,10 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     const cleanups = dataModules.map(({ key, collection: collectionName }) => onSnapshot(
       collection(db, 'bakeries', profile.bakeryId, collectionName!),
       snapshot => {
-        setItems(current => ({ ...current, [key]: snapshot.docs.map(item => ({ ...item.data(), id: item.id })) }))
+        setItems(current => ({ ...current, [key]: snapshot.docs.map(item => {
+          const data = item.data()
+          return { ...data, localId: data.id, id: item.id }
+        }) }))
       },
     ))
     return () => cleanups.forEach(cleanup => cleanup())
@@ -247,7 +250,28 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       return
     }
 
-    if (active === 'ingredients' || active === 'inventory' || active === 'packaging') {
+    if (active === 'packaging') {
+      const packagePrice = number('packagePrice')
+      const packageQuantity = number('packageQuantity', 1)
+      const recordId = Number(editing?.localId || Date.now())
+      const payload = {
+        id: recordId, bakeryId: profile.bakeryId,
+        name: value('name'), category: value('category') || 'Other', unit: value('unit') || 'pcs',
+        packagePrice, packageQuantity, gramsPerUnit: number('gramsPerUnit'),
+        unitPrice: packageQuantity > 0 ? packagePrice / packageQuantity : 0,
+        currentStock: number('currentStock'), minStock: number('minStock'),
+        isLowStock: number('currentStock') <= number('minStock'), alertEnabled: true,
+        barcode: value('barcode'), supplier: value('supplier'), notes: value('notes'),
+        updatedAt: Date.now(),
+      }
+      if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, editing.id), payload)
+      else await setDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, String(recordId)), { ...payload, createdAt: Date.now() })
+      setShowEditor(false)
+      setEditing(null)
+      return
+    }
+
+    if (active === 'ingredients' || active === 'inventory') {
       const packagePrice = number('packagePrice')
       const packageQuantity = number('packageQuantity', 1)
       const unit = value('unit') || 'g'
@@ -347,7 +371,8 @@ function WorkspaceList({ items, label, onAdd, onEdit, onDelete }: { items: Works
 
 function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: ModuleDefinition; item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
   if (module.key === 'recipes') return <RecipeEditor item={item} bakeryId={bakeryId} onClose={onClose} onSave={onSave} />
-  if (module.key === 'ingredients' || module.key === 'inventory' || module.key === 'packaging') return <IngredientEditor item={item} onClose={onClose} onSave={onSave} />
+  if (module.key === 'packaging') return <PackagingEditor item={item} onClose={onClose} onSave={onSave} />
+  if (module.key === 'ingredients' || module.key === 'inventory') return <IngredientEditor item={item} onClose={onClose} onSave={onSave} />
   const commercial = ['invoices','quotes','receipts','products'].includes(module.key)
   return <Modal title={`${item ? 'Edit' : 'Add'} ${module.label.replace(/s$/, '').toLowerCase()}`} onClose={onClose}><form className="modal-form" onSubmit={onSave}><label>Name or reference<input name="name" defaultValue={String(item?.name || item?.title || '')} required /></label><label>Description or notes<textarea name="description" rows={3} defaultValue={String(item?.description || item?.notes || '')} /></label>{module.key === 'customers' || module.key === 'suppliers' ? <div className="split-fields"><label>Phone<input name="phone" type="tel" defaultValue={String(item?.phone || '')} /></label><label>Email<input name="email" type="email" defaultValue={String(item?.email || '')} /></label></div> : null}{commercial && <div className="split-fields"><label>Price<input name="price" type="number" min="0" step="0.01" defaultValue={Number(item?.price || item?.total || 0)} /></label><label>Status<select name="status" defaultValue={String(item?.status || 'draft')}><option value="draft">Draft</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="active">Active</option></select></label></div>}<button className="primary-button">Save changes</button></form></Modal>
 }
@@ -358,7 +383,7 @@ type ImportRow={name:string;unit:string;price:number;quantity:number;stock:numbe
 function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:string;label:string;onClose:()=>void}){
  const [rows,setRows]=useState<ImportRow[]>([]);const [error,setError]=useState('');const [saving,setSaving]=useState(false)
  async function read(file:File){const text=await file.text();const lines=text.split(/\r?\n/).filter(Boolean);const parsed=lines.map(x=>x.split(x.includes(';')?';':',').map(y=>y.trim().replace(/^"|"$/g,'')));if(parsed[0]?.[0]?.toLowerCase().includes('name'))parsed.shift();const result=parsed.map(x=>({name:x[0]||'',unit:x[1]||'g',price:Number(x[2]||0),quantity:Number(x[3]||1),stock:Number(x[4]||0),minimum:Number(x[5]||0)})).filter(x=>x.name);setRows(result);setError(result.length?'':'No valid items found.')}
- async function save(){setSaving(true);try{const batch=writeBatch(db);rows.forEach(x=>{const ref=doc(collection(db,'bakeries',bakeryId,collectionName));const base=x.unit==='kg'||x.unit==='L'?x.quantity*1000:x.quantity;batch.set(ref,{name:x.name,unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:base,unitPrice:base?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,status:'active',createdAt:serverTimestamp(),updatedAt:serverTimestamp()})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed');setSaving(false)}}
+ async function save(){setSaving(true);try{const batch=writeBatch(db);rows.forEach((x,index)=>{const recordId=Date.now()+index;const ref=doc(db,'bakeries',bakeryId,collectionName,String(recordId));const isPackaging=collectionName==='packaging';const base=isPackaging?x.quantity:(x.unit==='kg'||x.unit==='L'?x.quantity*1000:x.quantity);batch.set(ref,{id:recordId,bakeryId,name:x.name,category:isPackaging?'Other':'Baking Staples',unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:isPackaging?0:base,unitPrice:base?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,alertEnabled:true,status:'active',createdAt:Date.now(),updatedAt:Date.now()})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed');setSaving(false)}}
  return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Upload CSV columns: Name, Unit, Package Price, Package Quantity, Current Stock, Minimum Stock.</p><input type="file" accept=".csv,.txt" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note">{error}</div>}{rows.length>0&&<><h3>Preview ({rows.length} items)</h3><div className="catalogue-list">{rows.map((x,i)=><div className="customer-card" key={i}><strong>{x.name}</strong><span>{x.quantity} {x.unit} — {money.format(x.price)}</span></div>)}</div><button type="button" className="primary-button" disabled={saving} onClick={save}>{saving?'Importing…':`Confirm and import ${rows.length} items`}</button></>}</div></Modal>
 }
 
@@ -419,6 +444,26 @@ function IngredientEditor({ item, onClose, onSave }: { item: WorkspaceItem | nul
   const unitCost = baseQuantity > 0 ? packagePrice / baseQuantity : 0
   const presets = ['Flour', 'Sugar', 'Chocolate', 'Baking Soda', 'Butter', 'Eggs']
   return <Modal title={`${item ? 'Edit' : 'Add'} stock & ingredient`} onClose={onClose}><form className="modal-form ingredient-form" onSubmit={onSave}><div><span className="field-heading">Ingredient presets</span><div className="preset-row">{presets.map(preset => <button type="button" key={preset} className={name === preset ? 'active' : ''} onClick={() => setName(preset)}>{preset}</button>)}</div></div><label>Ingredient/item name<input name="name" value={name} onChange={event => setName(event.target.value)} required /></label><label>Category<select name="category" defaultValue={String(item?.category || 'Baking Staples')}><option>Baking Staples</option><option>Dairy</option><option>Chocolate</option><option>Flavourings</option><option>Packaging</option><option>Other</option></select></label><div><span className="field-heading">Unit of measurement</span><div className="unit-row">{['g','kg','ml','L','unit','bottle'].map(value => <button type="button" key={value} className={unit === value ? 'active' : ''} onClick={() => setUnit(value)}>{value}</button>)}</div><input type="hidden" name="unit" value={unit} /></div><div className="split-fields"><label>Pack price<input name="packagePrice" type="number" min="0" step="0.01" value={packagePrice} onChange={event => setPackagePrice(Number(event.target.value))} /></label><label>Quantity in pack<input name="packageQuantity" type="number" min="0" step="0.01" value={packageQuantity} onChange={event => setPackageQuantity(Number(event.target.value))} /></label></div><div className="calculated-cost"><span>Calculated cost / {unit === 'kg' ? 'g' : unit === 'L' ? 'ml' : unit}</span><strong>{money.format(unitCost)}</strong></div><div className="split-fields"><label>Current stock<input name="currentStock" type="number" min="0" step="0.01" defaultValue={Number(item?.currentStock || 0)} /></label><label>Minimum stock alert<input name="minStock" type="number" min="0" step="0.01" defaultValue={Number(item?.minStock || 0)} /></label></div><label>Barcode (optional)<input name="barcode" defaultValue={String(item?.barcode || '')} /></label><button className="primary-button">{item ? 'Save ingredient' : 'Add item'}</button></form></Modal>
+}
+
+const packagingCategories = ['Cake boxes','Cupcake boxes','Bento boxes','Cake boards','Ribbon','Stickers and labels','Bags','Containers','Other']
+
+function PackagingEditor({ item, onClose, onSave }: { item: WorkspaceItem | null; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [packagePrice, setPackagePrice] = useState(Number(item?.packagePrice || 0))
+  const [packageQuantity, setPackageQuantity] = useState(Number(item?.packageQuantity || 1))
+  const unitPrice = packageQuantity > 0 ? packagePrice / packageQuantity : 0
+  return <Modal title={`${item ? 'Edit' : 'Add'} packaging item`} onClose={onClose}><form className="modal-form ingredient-form" onSubmit={onSave}>
+    <label>Packaging item name<input name="name" defaultValue={String(item?.name || '')} placeholder="e.g. 6-inch cake box" required /></label>
+    <label>Category<select name="category" defaultValue={String(item?.category || 'Cake boxes')}>{packagingCategories.map(category => <option key={category}>{category}</option>)}</select></label>
+    <label>Unit<select name="unit" defaultValue={String(item?.unit || 'pcs')}><option value="pcs">Pieces</option><option value="boxes">Boxes</option><option value="packs">Packs</option><option value="rolls">Rolls</option><option value="m">Metres</option><option value="sheets">Sheets</option></select></label>
+    <div className="split-fields"><label>Package price (R)<input name="packagePrice" type="number" min="0" step="0.01" value={packagePrice} onChange={event => setPackagePrice(Number(event.target.value))} /></label><label>Units in package<input name="packageQuantity" type="number" min="0.01" step="0.01" value={packageQuantity} onChange={event => setPackageQuantity(Number(event.target.value))} /></label></div>
+    <div className="calculated-cost"><span>Calculated cost per unit</span><strong>{money.format(unitPrice)}</strong></div>
+    <div className="split-fields"><label>Current stock<input name="currentStock" type="number" min="0" step="0.01" defaultValue={Number(item?.currentStock || 0)} /></label><label>Minimum stock alert<input name="minStock" type="number" min="0" step="0.01" defaultValue={Number(item?.minStock || 0)} /></label></div>
+    <label>Supplier<input name="supplier" defaultValue={String(item?.supplier || '')} placeholder="Optional supplier name" /></label>
+    <label>Barcode or SKU<input name="barcode" defaultValue={String(item?.barcode || '')} /></label>
+    <label>Notes<textarea name="notes" rows={3} defaultValue={String(item?.notes || '')} placeholder="Dimensions, colour or intended use" /></label>
+    <button className="primary-button">{item ? 'Save packaging' : 'Add packaging'}</button>
+  </form></Modal>
 }
 
 function ProductsView({ bakeryId, items }: { bakeryId: string; items: WorkspaceItem[] }) {

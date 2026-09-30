@@ -57,11 +57,9 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfigs.getByName("release").storeFile?.takeIf { it.exists() }?.let {
-        signingConfig = signingConfigs.getByName("release")
-      }
+      signingConfig = signingConfigs.getByName("release")
     }
-    debug { }
+    debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

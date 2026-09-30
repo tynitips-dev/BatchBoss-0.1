@@ -11,6 +11,7 @@ class AppRepository(private val database: AppDatabase) {
     val ingredientDao = database.recipeIngredientDao()
     val taskDao = database.taskDao()
     val inventoryDao = database.inventoryDao()
+    val packagingDao = database.packagingDao()
     val supplierDao = database.supplierDao()
     val specialDealDao = database.specialDealDao()
     val notificationDao = database.notificationDao()
@@ -113,6 +114,32 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun insertInventoryItem(item: InventoryItemEntity): Long = inventoryDao.insertItem(item)
 
     suspend fun deleteInventoryItem(id: Long) = inventoryDao.deleteItem(id)
+
+    // Packaging
+    val allPackaging: Flow<List<PackagingItemEntity>> = packagingDao.getAllPackaging()
+    val lowStockPackaging: Flow<List<PackagingItemEntity>> = packagingDao.getLowStockPackaging()
+    fun getPackagingByUser(userId: Long): Flow<List<PackagingItemEntity>> = packagingDao.getPackagingByUser(userId)
+    fun getPackagingByBakery(bakeryId: String): Flow<List<PackagingItemEntity>> = packagingDao.getPackagingByBakery(bakeryId)
+    fun getLowStockPackagingByUser(userId: Long): Flow<List<PackagingItemEntity>> = packagingDao.getLowStockPackagingByUser(userId)
+    fun getPackagingById(id: Long): Flow<PackagingItemEntity?> = packagingDao.getPackagingById(id)
+    suspend fun getPackagingByIdOnce(id: Long): PackagingItemEntity? = packagingDao.getPackagingByIdOnce(id)
+    suspend fun insertPackaging(item: PackagingItemEntity): Long = packagingDao.insertPackaging(item)
+    suspend fun insertPackagingList(items: List<PackagingItemEntity>) = packagingDao.insertPackagingList(items)
+    suspend fun updatePackaging(item: PackagingItemEntity) = packagingDao.updatePackaging(item)
+    suspend fun updatePackagingStockAndPrice(
+        id: Long,
+        packagePrice: Double,
+        packageQuantity: Double,
+        unitPrice: Double,
+        currentStock: Double,
+        minStock: Double
+    ) {
+        val isLow = currentStock <= minStock
+        packagingDao.updateStockAndPrice(id, packagePrice, packageQuantity, unitPrice, currentStock, minStock, isLow)
+    }
+    suspend fun togglePackagingAlert(id: Long) = packagingDao.toggleAlert(id)
+    suspend fun deletePackaging(id: Long) = packagingDao.deletePackaging(id)
+    suspend fun deletePackagingByBakery(bakeryId: String) = packagingDao.deletePackagingByBakery(bakeryId)
 
     // Suppliers
     val allSuppliers: Flow<List<SupplierEntity>> = supplierDao.getAllSuppliers()

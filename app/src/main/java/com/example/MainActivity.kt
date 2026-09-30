@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,12 +24,19 @@ import com.example.ui.screens.*
 import com.example.ui.theme.BatchBossTheme
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.ProductPriceHistoryEntity
+import com.example.data.model.Recipe
+import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FirebaseFirestore
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize Firestore and write a new recipe
+        initializeFirestoreAndWriteRecipe()
 
         setContent {
             BatchBossTheme {
@@ -39,6 +45,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun initializeFirestoreAndWriteRecipe() {
+        try {
+            if (FirebaseApp.getApps(this).isNotEmpty()) {
+                val db = FirebaseFirestore.getInstance()
+                val newRecipe = Recipe(
+                    title = "Artisan Sourdough Loaf",
+                    prepTimeMinutes = 120,
+                    ingredients = listOf(
+                        "500g Bread Flour",
+                        "350g Water",
+                        "100g Sourdough Starter",
+                        "10g Sea Salt"
+                    ),
+                    instructions = "Mix, autolyse 30m, stretch and fold 4 times over 2h, cold retard 12h, bake at 230°C for 40m."
+                )
+
+                db.collection("recipes")
+                    .add(newRecipe)
+                    .addOnSuccessListener { documentReference ->
+                        Log.d("MainActivity", "Firestore recipe written successfully with ID: ${documentReference.id}")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.w("MainActivity", "Error adding recipe document to Firestore", e)
+                    }
+            } else {
+                Log.i("MainActivity", "FirebaseApp not configured yet; ready for google-services.json.")
+            }
+        } catch (e: Throwable) {
+            Log.w("MainActivity", "Firestore initialization notice: ${e.message}")
+        }
+    }
 }
 
 @Composable
@@ -86,6 +123,7 @@ fun BatchBossApp(
         is Screen.Home,
         is Screen.RecipesList,
         is Screen.InventoryList,
+        is Screen.PackagingList,
         is Screen.SuppliersList,
         is Screen.BakingSupplyStoreLocator,
         is Screen.QuickActions -> true
@@ -123,7 +161,7 @@ fun BatchBossApp(
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
             is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
-            is Screen.Notifications, is Screen.Tasks, is Screen.LowStock -> viewModel.navigateTo(Screen.Home)
+            is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
         }
@@ -172,10 +210,9 @@ fun BatchBossApp(
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onLoginWithDetails = { email, password, branch ->
-                            viewModel.loginUser(email, password, branch) { success, msg ->
+                        onLoginWithDetails = { emailOrPhone, branch ->
+                            viewModel.loginUser(emailOrPhone) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                if (success) viewModel.navigateTo(Screen.Home)
                             }
                         }
                     )
@@ -189,41 +226,30 @@ fun BatchBossApp(
                         },
                         onNavigateToLogin = { viewModel.navigateTo(Screen.Login) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email, password ->
+                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email ->
                             viewModel.createAccountWithDetails(
                                 firstName = fullName.substringBefore(" "),
                                 surname = fullName.substringAfter(" ", ""),
                                 email = email,
-                                password = password,
+                                password = "",
                                 bakeryName = bakeryName,
                                 phone = phone,
                                 city = city,
                                 operatingModel = operatingModel,
                                 currency = currency,
                                 specialty = specialty
-                            ) { accountId, errorMessage ->
-                                if (accountId < 1) {
-                                    val detail = errorMessage ?: "Unknown Firebase error"
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            message = "Account creation failed: $detail",
-                                            withDismissAction = true,
-                                            duration = SnackbarDuration.Indefinite
-                                        )
-                                    }
-                                } else {
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
-                                    viewModel.navigateTo(
-                                        Screen.WelcomeEmail(
-                                            fullName = fullName,
-                                            email = email,
-                                            bakeryName = bakeryName,
-                                            city = city,
-                                            operatingModel = operatingModel,
-                                            currency = currency
-                                        )
+                            ) {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
+                                viewModel.navigateTo(
+                                    Screen.WelcomeEmail(
+                                        fullName = fullName,
+                                        email = email,
+                                        bakeryName = bakeryName,
+                                        city = city,
+                                        operatingModel = operatingModel,
+                                        currency = currency
                                     )
-                                }
+                                )
                             }
                         }
                     )
@@ -270,7 +296,8 @@ fun BatchBossApp(
                         onOpenTools = { viewModel.navigateTo(Screen.QuickActions) },
                         onOpenCustomers = { viewModel.navigateTo(Screen.CustomersList) },
                         onOpenInvoices = { viewModel.navigateTo(Screen.InvoicesList) },
-                        onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) }
+                        onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
                 }
 
@@ -354,7 +381,37 @@ fun BatchBossApp(
                             viewModel.deleteStockItem(id)
                             coroutineScope.launch { snackbarHostState.showSnackbar("Stock item removed") }
                         },
-                        onScanBarcode = { viewModel.navigateTo(Screen.BarcodeScanner) }
+                        onScanBarcode = { viewModel.navigateTo(Screen.BarcodeScanner) },
+                        onNavigateToPackaging = { viewModel.navigateTo(Screen.PackagingList) }
+                    )
+                }
+
+                is Screen.PackagingList -> {
+                    val allPackaging by viewModel.allPackaging.collectAsStateWithLifecycle(emptyList())
+                    val lowStockPackaging by viewModel.lowStockPackaging.collectAsStateWithLifecycle(emptyList())
+                    PackagingListScreen(
+                        allPackaging = allPackaging,
+                        lowStockPackaging = lowStockPackaging,
+                        initialTab = 0,
+                        onBack = { viewModel.navigateTo(Screen.Home) },
+                        onToggleAlert = { id -> viewModel.togglePackagingAlert(id) },
+                        onAddNewPackaging = { name, category, unit, packagePrice, packageQuantity, currentStock, minStock, supplier, notes ->
+                            viewModel.addNewPackagingItem(name, category, unit, packagePrice, packageQuantity, currentStock, minStock, supplier, notes)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to packaging!") }
+                        },
+                        onUpdatePackaging = { item ->
+                            viewModel.updatePackagingItem(item)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Packaging updated!") }
+                        },
+                        onUpdateStockAndPrice = { id, packagePrice, packageQuantity, currentStock, minStock ->
+                            viewModel.updatePackagingStockAndPrice(id, packagePrice, packageQuantity, currentStock, minStock)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock price & quantity updated!") }
+                        },
+                        onDeletePackaging = { id ->
+                            viewModel.deletePackagingItem(id)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Packaging item removed") }
+                        },
+                        onNavigateToInventory = { viewModel.navigateTo(Screen.InventoryList) }
                     )
                 }
 
@@ -572,7 +629,8 @@ fun BatchBossApp(
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
                         onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) },
-                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) }
+                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) },
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
                 }
 
@@ -689,9 +747,11 @@ fun BatchBossApp(
                 }
 
                 is Screen.InvoicesList -> {
+                    val allPackaging by viewModel.allPackaging.collectAsStateWithLifecycle(emptyList())
                     InvoicesListScreen(
                         invoices = allInvoices,
                         products = allProducts,
+                        packaging = allPackaging,
                         profile = userProfile,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
                         onNavigateToProducts = { viewModel.navigateTo(Screen.ProductsServicesList) },
@@ -705,8 +765,23 @@ fun BatchBossApp(
                                 unit = unit
                             )
                         },
-                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost ->
-                            viewModel.createInvoice(clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost)
+                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems ->
+                            viewModel.createInvoice(
+                                clientName = clientName,
+                                clientPhone = phone,
+                                orderDescription = desc,
+                                amount = amount,
+                                dueDate = dueDate,
+                                status = status,
+                                subtotal = subtotal,
+                                discountAmount = discount,
+                                taxRatePercent = taxRate,
+                                taxAmount = taxAmount,
+                                items = items,
+                                totalCost = totalCost,
+                                packagingTotal = packagingTotal,
+                                packagingItems = packagingItems
+                            )
                             coroutineScope.launch { snackbarHostState.showSnackbar("Invoice created!") }
                         },
                         onUpdateStatus = { id, status ->
@@ -986,13 +1061,12 @@ fun BatchBossApp(
                         recipes = recipes,
                         ingredients = selectedRecipeIngredients,
                         inventory = allInventory,
-                        customers = customers,
                         userProfile = userProfile,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onRestoreData = { resRecipes, resIngs, resInv, resCustomers ->
-                            viewModel.restoreCloudData(resRecipes, resIngs, resInv, resCustomers) {
+                        onRestoreData = { resRecipes, resIngs, resInv ->
+                            viewModel.restoreCloudData(resRecipes, resIngs, resInv) {
                                 coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes, ${resInv.size} items and ${resCustomers.size} customers from Firestore!")
+                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes and ${resInv.size} items from Firestore!")
                                 }
                             }
                         },

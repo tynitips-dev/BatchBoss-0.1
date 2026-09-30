@@ -4,13 +4,14 @@ import android.util.Log
 import com.example.BatchBossApplication
 import com.example.data.local.CustomerEntity
 import com.example.data.local.InventoryItemEntity
+import com.example.data.local.PackagingItemEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -21,29 +22,22 @@ data class FirebaseSyncResult(
     val message: String,
     val syncedRecipesCount: Int = 0,
     val syncedInventoryCount: Int = 0,
-    val syncedCustomersCount: Int = 0
+    val syncedCustomersCount: Int = 0,
+    val syncedPackagingCount: Int = 0
 )
 
 data class CloudBackupData(
     val recipes: List<RecipeEntity> = emptyList(),
     val ingredients: List<RecipeIngredientEntity> = emptyList(),
     val inventory: List<InventoryItemEntity> = emptyList(),
-    val customers: List<CustomerEntity> = emptyList()
+    val customers: List<CustomerEntity> = emptyList(),
+    val packaging: List<PackagingItemEntity> = emptyList()
 )
 
 data class FirebaseRestoreResult(
     val success: Boolean,
     val message: String,
     val data: CloudBackupData? = null
-)
-
-data class FirebaseWorkspace(
-    val uid: String,
-    val bakeryId: String,
-    val email: String,
-    val firstName: String = "",
-    val surname: String = "",
-    val bakeryName: String = ""
 )
 
 /**
@@ -92,6 +86,25 @@ object FirebaseService {
     val currentUser: FirebaseUser?
         get() = auth?.currentUser
 
+    fun getEffectiveUserId(): String {
+        return currentUser?.uid ?: "local_bakery_owner"
+    }
+
+    /**
+     * Sign in anonymously so cloud operations can have an authenticated session without user friction.
+     */
+    suspend fun signInAnonymously(): Result<FirebaseUser> {
+        val authInstance = auth ?: return Result.failure(IllegalStateException("Firebase is not yet initialized with google-services.json."))
+        return try {
+            val authResult = authInstance.signInAnonymously().awaitTask()
+            val user = authResult.user ?: throw IllegalStateException("Firebase user was null after anonymous sign in.")
+            Result.success(user)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in anonymous sign-in", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * Sign in with email and password.
      */
@@ -122,84 +135,6 @@ object FirebaseService {
         }
     }
 
-    suspend fun createWorkspace(
-        email: String,
-        password: String,
-        bakeryId: String,
-        bakeryName: String,
-        firstName: String,
-        surname: String
-    ): Result<FirebaseWorkspace> {
-        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not initialized."))
-        return createAccountWithEmail(email, password).fold(
-            onSuccess = { user ->
-                try {
-                    val targetBakeryId = bakeryId.ifBlank { "bakery_${user.uid}" }
-                    val userData = hashMapOf<String, Any>(
-                        "uid" to user.uid,
-                        "bakeryId" to targetBakeryId,
-                        "email" to email,
-                        "firstName" to firstName,
-                        "surname" to surname,
-                        "role" to "owner",
-                        "createdAt" to FieldValue.serverTimestamp()
-                    )
-                    val bakeryData = hashMapOf<String, Any>(
-                        "name" to bakeryName,
-                        "ownerUid" to user.uid,
-                        "currency" to "ZAR",
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                    val memberData = hashMapOf<String, Any>(
-                        "uid" to user.uid,
-                        "email" to email,
-                        "role" to "owner",
-                        "joinedAt" to FieldValue.serverTimestamp()
-                    )
-                    val batch = db.batch()
-                    batch.set(db.collection("bakeries").document(targetBakeryId), bakeryData)
-                    batch.set(db.collection("users").document(user.uid), userData)
-                    batch.set(db.collection("bakeries").document(targetBakeryId).collection("members").document(user.uid), memberData)
-                    batch.commit().awaitTask()
-                    Result.success(FirebaseWorkspace(user.uid, targetBakeryId, email, firstName, surname, bakeryName))
-                } catch (e: Throwable) {
-                    try { user.delete().awaitTask() } catch (_: Throwable) {}
-                    Result.failure(e)
-                }
-            },
-            onFailure = { Result.failure(it) }
-        )
-    }
-
-    suspend fun signInToWorkspace(email: String, password: String): Result<FirebaseWorkspace> {
-        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not initialized."))
-        return signInWithEmail(email, password).fold(
-            onSuccess = { user ->
-                try {
-                    val snapshot = db.collection("users").document(user.uid).get().awaitTask()
-                    val bakeryId = snapshot.getString("bakeryId").orEmpty()
-                    if (bakeryId.isBlank()) throw IllegalStateException("This account has no BatchBoss bakery workspace yet.")
-                    val bakerySnapshot = db.collection("bakeries").document(bakeryId).get().awaitTask()
-                    Result.success(
-                        FirebaseWorkspace(
-                            uid = user.uid,
-                            bakeryId = bakeryId,
-                            email = snapshot.getString("email") ?: email,
-                            firstName = snapshot.getString("firstName").orEmpty(),
-                            surname = snapshot.getString("surname").orEmpty(),
-                            bakeryName = bakerySnapshot.getString("name").orEmpty()
-                        )
-                    )
-                } catch (e: Throwable) {
-                    signOut()
-                    Result.failure(e)
-                }
-            },
-            onFailure = { Result.failure(it) }
-        )
-    }
-
     fun signOut() {
         try {
             auth?.signOut()
@@ -216,6 +151,7 @@ object FirebaseService {
         ingredients: List<RecipeIngredientEntity>,
         inventory: List<InventoryItemEntity>,
         customers: List<CustomerEntity> = emptyList(),
+        packaging: List<PackagingItemEntity> = emptyList(),
         bakeryId: String = ""
     ): FirebaseSyncResult {
         if (!isConfigured) {
@@ -230,15 +166,14 @@ object FirebaseService {
             message = "Firestore service is unavailable."
         )
 
-        if (currentUser == null) return FirebaseSyncResult(false, "Sign in before syncing your bakery data.")
-        if (bakeryId.isBlank()) return FirebaseSyncResult(false, "Your account is missing its bakery workspace ID.")
-        val targetBakeryId = bakeryId
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
 
         return try {
             val batch = db.batch()
             val recipesColl = db.collection("bakeries").document(targetBakeryId).collection("recipes")
             val inventoryColl = db.collection("bakeries").document(targetBakeryId).collection("inventory")
             val customersColl = db.collection("bakeries").document(targetBakeryId).collection("customers")
+            val packagingColl = db.collection("bakeries").document(targetBakeryId).collection("packaging")
 
             // Sync recipes
             for (recipe in recipes) {
@@ -308,6 +243,32 @@ object FirebaseService {
                 batch.set(invDoc, invData, SetOptions.merge())
             }
 
+            // Sync packaging items
+            for (pkg in packaging) {
+                val pkgDoc = packagingColl.document(pkg.id.toString())
+                val pkgData = hashMapOf(
+                    "id" to pkg.id,
+                    "bakeryId" to targetBakeryId,
+                    "name" to pkg.name,
+                    "category" to pkg.category,
+                    "unit" to pkg.unit,
+                    "packagePrice" to pkg.packagePrice,
+                    "packageQuantity" to pkg.packageQuantity,
+                    "gramsPerUnit" to pkg.gramsPerUnit,
+                    "unitPrice" to pkg.unitPrice,
+                    "currentStock" to pkg.currentStock,
+                    "minStock" to pkg.minStock,
+                    "isLowStock" to pkg.isLowStock,
+                    "alertEnabled" to pkg.alertEnabled,
+                    "barcode" to pkg.barcode,
+                    "supplier" to pkg.supplier,
+                    "notes" to pkg.notes,
+                    "createdAt" to pkg.createdAt,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                batch.set(pkgDoc, pkgData, SetOptions.merge())
+            }
+
             // Sync customers
             for (cust in customers) {
                 val custDoc = customersColl.document(cust.id.toString())
@@ -331,10 +292,11 @@ object FirebaseService {
 
             FirebaseSyncResult(
                 success = true,
-                message = "Cloud Backup complete for bakery '$targetBakeryId'! Uploaded ${recipes.size} recipes, ${customers.size} customers, and ${inventory.size} items to Firestore.",
+                message = "Cloud Backup complete for bakery '$targetBakeryId'! Uploaded ${recipes.size} recipes, ${customers.size} customers, ${inventory.size} items, and ${packaging.size} packaging records to Firestore.",
                 syncedRecipesCount = recipes.size,
                 syncedInventoryCount = inventory.size,
-                syncedCustomersCount = customers.size
+                syncedCustomersCount = customers.size,
+                syncedPackagingCount = packaging.size
             )
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to backup data to Firestore", e)
@@ -361,19 +323,64 @@ object FirebaseService {
             message = "Firestore is currently unavailable."
         )
 
-        if (currentUser == null) return FirebaseRestoreResult(false, "Sign in before restoring your bakery data.")
-        if (bakeryId.isBlank()) return FirebaseRestoreResult(false, "Your account is missing its bakery workspace ID.")
-        val targetBakeryId = bakeryId
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
 
         return try {
             val recipesColl = db.collection("bakeries").document(targetBakeryId).collection("recipes").get().awaitTask()
             val inventoryColl = db.collection("bakeries").document(targetBakeryId).collection("inventory").get().awaitTask()
             val customersColl = db.collection("bakeries").document(targetBakeryId).collection("customers").get().awaitTask()
 
+            val packagingColl = db.collection("bakeries").document(targetBakeryId).collection("packaging").get().awaitTask()
+
             val restoredRecipes = mutableListOf<RecipeEntity>()
             val restoredIngredients = mutableListOf<RecipeIngredientEntity>()
             val restoredInventory = mutableListOf<InventoryItemEntity>()
             val restoredCustomers = mutableListOf<CustomerEntity>()
+            val restoredPackaging = mutableListOf<PackagingItemEntity>()
+
+            for (doc in packagingColl.documents) {
+                val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                val name = doc.getString("name") ?: ""
+                val category = doc.getString("category") ?: "Cake boxes"
+                val unit = doc.getString("unit") ?: "pcs"
+                val packagePrice = doc.getDouble("packagePrice") ?: 0.0
+                val packageQuantity = doc.getDouble("packageQuantity") ?: 1.0
+                val gramsPerUnit = doc.getDouble("gramsPerUnit") ?: 0.0
+                val unitPrice = doc.getDouble("unitPrice") ?: if (packageQuantity > 0) packagePrice / packageQuantity else 0.0
+                val currentStock = doc.getDouble("currentStock") ?: 0.0
+                val minStock = doc.getDouble("minStock") ?: 0.0
+                val isLowStock = doc.getBoolean("isLowStock") ?: (currentStock <= minStock)
+                val alertEnabled = doc.getBoolean("alertEnabled") ?: true
+                val barcode = doc.getString("barcode") ?: ""
+                val supplier = doc.getString("supplier") ?: ""
+                val notes = doc.getString("notes") ?: ""
+                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+
+                restoredPackaging.add(
+                    PackagingItemEntity(
+                        id = id,
+                        userId = 0L,
+                        bakeryId = targetBakeryId,
+                        name = name,
+                        category = category,
+                        unit = unit,
+                        packagePrice = packagePrice,
+                        packageQuantity = packageQuantity,
+                        gramsPerUnit = gramsPerUnit,
+                        unitPrice = unitPrice,
+                        currentStock = currentStock,
+                        minStock = minStock,
+                        isLowStock = isLowStock,
+                        alertEnabled = alertEnabled,
+                        barcode = barcode,
+                        supplier = supplier,
+                        notes = notes,
+                        createdAt = createdAt,
+                        updatedAt = updatedAt
+                    )
+                )
+            }
 
             for (doc in customersColl.documents) {
                 val id = doc.getLong("id") ?: 0L
@@ -508,12 +515,13 @@ object FirebaseService {
 
             FirebaseRestoreResult(
                 success = true,
-                message = "Restored ${restoredRecipes.size} recipes, ${restoredCustomers.size} customers, and ${restoredInventory.size} inventory items from Firestore.",
+                message = "Restored ${restoredRecipes.size} recipes, ${restoredCustomers.size} customers, ${restoredInventory.size} inventory items, and ${restoredPackaging.size} packaging items from Firestore.",
                 data = CloudBackupData(
                     recipes = restoredRecipes,
                     ingredients = restoredIngredients,
                     inventory = restoredInventory,
-                    customers = restoredCustomers
+                    customers = restoredCustomers,
+                    packaging = restoredPackaging
                 )
             )
         } catch (e: Throwable) {
@@ -522,6 +530,176 @@ object FirebaseService {
                 success = false,
                 message = "Error fetching cloud data: ${e.localizedMessage ?: e.message}"
             )
+        }
+    }
+
+    /**
+     * Saves or updates a packaging item in bakeries/{bakeryId}/packaging/{id}
+     */
+    suspend fun savePackagingToCloud(bakeryId: String, item: PackagingItemEntity): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        return try {
+            val docRef = db.collection("bakeries").document(targetBakeryId).collection("packaging").document(item.id.toString())
+            val data = hashMapOf(
+                "id" to item.id,
+                "bakeryId" to targetBakeryId,
+                "name" to item.name,
+                "category" to item.category,
+                "unit" to item.unit,
+                "packagePrice" to item.packagePrice,
+                "packageQuantity" to item.packageQuantity,
+                "gramsPerUnit" to item.gramsPerUnit,
+                "unitPrice" to item.unitPrice,
+                "currentStock" to item.currentStock,
+                "minStock" to item.minStock,
+                "isLowStock" to item.isLowStock,
+                "alertEnabled" to item.alertEnabled,
+                "barcode" to item.barcode,
+                "supplier" to item.supplier,
+                "notes" to item.notes,
+                "createdAt" to item.createdAt,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            docRef.set(data, SetOptions.merge()).awaitTask()
+            Result.success(Unit)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to save packaging to cloud", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Deletes a packaging item from bakeries/{bakeryId}/packaging/{id}
+     */
+    suspend fun deletePackagingFromCloud(bakeryId: String, itemId: Long): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        return try {
+            db.collection("bakeries").document(targetBakeryId).collection("packaging").document(itemId.toString()).delete().awaitTask()
+            Result.success(Unit)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to delete packaging from cloud", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Reads all packaging documents from bakeries/{bakeryId}/packaging
+     */
+    suspend fun fetchPackagingFromCloud(bakeryId: String): List<PackagingItemEntity> {
+        val db = firestore ?: return emptyList()
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        return try {
+            val snapshot = db.collection("bakeries").document(targetBakeryId).collection("packaging").get().awaitTask()
+            snapshot.documents.mapNotNull { doc ->
+                val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                val name = doc.getString("name") ?: return@mapNotNull null
+                val category = doc.getString("category") ?: "Cake boxes"
+                val unit = doc.getString("unit") ?: "pcs"
+                val packagePrice = doc.getDouble("packagePrice") ?: 0.0
+                val packageQuantity = doc.getDouble("packageQuantity") ?: 1.0
+                val gramsPerUnit = doc.getDouble("gramsPerUnit") ?: 0.0
+                val unitPrice = doc.getDouble("unitPrice") ?: if (packageQuantity > 0) packagePrice / packageQuantity else 0.0
+                val currentStock = doc.getDouble("currentStock") ?: 0.0
+                val minStock = doc.getDouble("minStock") ?: 0.0
+                val isLowStock = doc.getBoolean("isLowStock") ?: (currentStock <= minStock)
+                val alertEnabled = doc.getBoolean("alertEnabled") ?: true
+                val barcode = doc.getString("barcode") ?: ""
+                val supplier = doc.getString("supplier") ?: ""
+                val notes = doc.getString("notes") ?: ""
+                val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+
+                PackagingItemEntity(
+                    id = id,
+                    userId = 0L,
+                    bakeryId = targetBakeryId,
+                    name = name,
+                    category = category,
+                    unit = unit,
+                    packagePrice = packagePrice,
+                    packageQuantity = packageQuantity,
+                    gramsPerUnit = gramsPerUnit,
+                    unitPrice = unitPrice,
+                    currentStock = currentStock,
+                    minStock = minStock,
+                    isLowStock = isLowStock,
+                    alertEnabled = alertEnabled,
+                    barcode = barcode,
+                    supplier = supplier,
+                    notes = notes,
+                    createdAt = createdAt,
+                    updatedAt = updatedAt
+                )
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error fetching packaging from cloud", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Real-time snapshot listener on bakeries/{bakeryId}/packaging
+     */
+    fun listenToPackaging(bakeryId: String, onUpdate: (List<PackagingItemEntity>) -> Unit): ListenerRegistration? {
+        val db = firestore ?: return null
+        val targetBakeryId = bakeryId.ifBlank { getEffectiveUserId() }
+        return try {
+            db.collection("bakeries").document(targetBakeryId).collection("packaging")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Error listening to packaging collection: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        val items = snapshot.documents.mapNotNull { doc ->
+                            val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                            val name = doc.getString("name") ?: return@mapNotNull null
+                            val category = doc.getString("category") ?: "Cake boxes"
+                            val unit = doc.getString("unit") ?: "pcs"
+                            val packagePrice = doc.getDouble("packagePrice") ?: 0.0
+                            val packageQuantity = doc.getDouble("packageQuantity") ?: 1.0
+                            val gramsPerUnit = doc.getDouble("gramsPerUnit") ?: 0.0
+                            val unitPrice = doc.getDouble("unitPrice") ?: if (packageQuantity > 0) packagePrice / packageQuantity else 0.0
+                            val currentStock = doc.getDouble("currentStock") ?: 0.0
+                            val minStock = doc.getDouble("minStock") ?: 0.0
+                            val isLowStock = doc.getBoolean("isLowStock") ?: (currentStock <= minStock)
+                            val alertEnabled = doc.getBoolean("alertEnabled") ?: true
+                            val barcode = doc.getString("barcode") ?: ""
+                            val supplier = doc.getString("supplier") ?: ""
+                            val notes = doc.getString("notes") ?: ""
+                            val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                            val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+
+                            PackagingItemEntity(
+                                id = id,
+                                userId = 0L,
+                                bakeryId = targetBakeryId,
+                                name = name,
+                                category = category,
+                                unit = unit,
+                                packagePrice = packagePrice,
+                                packageQuantity = packageQuantity,
+                                gramsPerUnit = gramsPerUnit,
+                                unitPrice = unitPrice,
+                                currentStock = currentStock,
+                                minStock = minStock,
+                                isLowStock = isLowStock,
+                                alertEnabled = alertEnabled,
+                                barcode = barcode,
+                                supplier = supplier,
+                                notes = notes,
+                                createdAt = createdAt,
+                                updatedAt = updatedAt
+                            )
+                        }
+                        onUpdate(items)
+                    }
+                }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to register packaging listener", e)
+            null
         }
     }
 

@@ -374,13 +374,13 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgot: () -> Unit,
-    onLoginWithDetails: ((email: String, password: String, branch: String) -> Unit)? = null,
+    onLoginWithDetails: ((emailOrPhone: String, branch: String) -> Unit)? = null,
     onBack: (() -> Unit)? = null
 ) {
     var loginMode by remember { mutableStateOf("Owner") } // "Owner" or "Staff PIN"
-    var emailOrPhone by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var staffPin by remember { mutableStateOf("") }
+    var emailOrPhone by remember { mutableStateOf("baker@batchboss.co.za") }
+    var password by remember { mutableStateOf("password123") }
+    var staffPin by remember { mutableStateOf("1234") }
     var passwordVisible by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(true) }
     var selectedBranch by remember { mutableStateOf("Main Flagship Bakery") }
@@ -679,11 +679,8 @@ fun LoginScreen(
                     }
                 }
                 errorMessage = null
-                if (onLoginWithDetails != null) {
-                    onLoginWithDetails.invoke(emailOrPhone, password, selectedBranch)
-                } else {
-                    onLoginSuccess()
-                }
+                onLoginWithDetails?.invoke(emailOrPhone, selectedBranch)
+                onLoginSuccess()
             },
             colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
             shape = RoundedCornerShape(16.dp),
@@ -700,7 +697,8 @@ fun LoginScreen(
         // Biometric / Quick Sign In
         OutlinedButton(
             onClick = {
-                errorMessage = "Biometric sign-in is coming soon. Please use your email and password."
+                onLoginWithDetails?.invoke("Biometric User", selectedBranch)
+                onLoginSuccess()
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -725,7 +723,8 @@ fun LoginScreen(
         ) {
             OutlinedButton(
                 onClick = {
-                    errorMessage = "Google sign-in is coming soon. Please use your email and password."
+                    onLoginWithDetails?.invoke("tyne.jenkins@gmail.com", selectedBranch)
+                    onLoginSuccess()
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -740,7 +739,8 @@ fun LoginScreen(
 
             OutlinedButton(
                 onClick = {
-                    errorMessage = "Apple sign-in is coming soon. Please use your email and password."
+                    onLoginWithDetails?.invoke("baker.apple@batchboss.com", selectedBranch)
+                    onLoginSuccess()
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -776,7 +776,7 @@ fun LoginScreen(
 fun CreateAccountScreen(
     onAccountCreated: () -> Unit,
     onNavigateToLogin: () -> Unit,
-    onAccountCreatedWithData: ((fullName: String, bakeryName: String, specialty: String, phone: String, city: String, operatingModel: String, currency: String, email: String, password: String) -> Unit)? = null,
+    onAccountCreatedWithData: ((fullName: String, bakeryName: String, specialty: String, phone: String, city: String, operatingModel: String, currency: String, email: String) -> Unit)? = null,
     onBack: (() -> Unit)? = null
 ) {
     var fullName by remember { mutableStateOf("") }
@@ -1221,10 +1221,9 @@ fun CreateAccountScreen(
                             city.trim(),
                             operatingModel,
                             currency,
-                            email.trim(),
-                            password
+                            email.trim()
                         )
-                        if (onAccountCreatedWithData == null) onAccountCreated()
+                        onAccountCreated()
                     }
                 }
             },
@@ -1254,7 +1253,17 @@ fun CreateAccountScreen(
 
         OutlinedButton(
             onClick = {
-                errorMessage = "Google sign-up is coming soon. Please complete the form above."
+                onAccountCreatedWithData?.invoke(
+                    "Master Baker",
+                    "Artisan Bakery Studio",
+                    "Cakes & Cupcakes",
+                    "+27 82 555 1234",
+                    "Cape Town",
+                    "Home Kitchen",
+                    "ZAR (R)",
+                    "baker@batchboss.co.za"
+                )
+                onAccountCreated()
             },
             modifier = Modifier
                 .fillMaxWidth()

@@ -49,7 +49,8 @@ fun QuickActionsScreen(
     onOpenAboutBatchBoss: () -> Unit = {},
     onOpenAccountDataDeletion: () -> Unit = {},
     onOpenMasterBackend: () -> Unit = {},
-    onOpenFirebaseSync: () -> Unit = {}
+    onOpenFirebaseSync: () -> Unit = {},
+    onOpenPackaging: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier
@@ -167,11 +168,12 @@ fun QuickActionsScreen(
             Spacer(modifier = Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 QuickActionPill(icon = Icons.Outlined.MenuBook, label = "New Recipe", onClick = onNewRecipeClick, modifier = Modifier.weight(1f))
-                QuickActionPill(icon = Icons.Outlined.Kitchen, label = "Add Ingredient", onClick = onViewInventoryClick, modifier = Modifier.weight(1f))
-                QuickActionPill(icon = Icons.Outlined.ReceiptLong, label = "New Order", onClick = onOpenTasks, modifier = Modifier.weight(1f))
+                QuickActionPill(icon = Icons.Outlined.Kitchen, label = "Ingredients", onClick = onViewInventoryClick, modifier = Modifier.weight(1f))
+                QuickActionPill(icon = Icons.Outlined.Inventory2, label = "Packaging", onClick = onOpenPackaging, modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                QuickActionPill(icon = Icons.Outlined.ReceiptLong, label = "New Order", onClick = onOpenTasks, modifier = Modifier.weight(1f))
                 QuickActionPill(
                     icon = Icons.Outlined.AutoAwesome,
                     label = "AI Recipe Scan",
@@ -182,12 +184,6 @@ fun QuickActionsScreen(
                     icon = Icons.Outlined.QrCodeScanner,
                     label = "Scan Barcode",
                     onClick = onOpenBarcodeScanner,
-                    modifier = Modifier.weight(1f)
-                )
-                QuickActionPill(
-                    icon = Icons.Outlined.WorkspacePremium,
-                    label = "Manage Pro",
-                    onClick = onOpenPremium,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -345,6 +341,36 @@ fun QuickActionsScreen(
         // 3. Bakery Tools Section
         item {
             Text(text = "Bakery Tools", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DarkText)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = CardBackground,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenPackaging)
+                    .testTag("tool_packaging")
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(BatchPinkLight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = BatchPink, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Packaging & Boxes", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Text(text = "Cake boxes, bento boxes, boards, ribbon, stickers & stock", fontSize = 12.sp, color = LightText)
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = LightText)
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
 
             Surface(

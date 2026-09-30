@@ -54,7 +54,8 @@ fun HomeScreen(
     onOpenTools: () -> Unit,
     onOpenCustomers: () -> Unit = {},
     onOpenInvoices: () -> Unit = {},
-    onOpenScanner: () -> Unit = {}
+    onOpenScanner: () -> Unit = {},
+    onOpenPackaging: () -> Unit = {}
 ) {
     var showTimeFrameMenu by remember { mutableStateOf(false) }
 
@@ -316,67 +317,94 @@ fun HomeScreen(
 
         // Quick Hub Shortcuts
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpenCustomers)
-                        .testTag("btn_home_customers")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = CardBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenCustomers)
+                            .testTag("btn_home_customers")
                     ) {
-                        Icon(Icons.Outlined.People, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Customers", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.People, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Customers", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = CardBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenInvoices)
+                            .testTag("btn_home_invoices")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.Receipt, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Invoices", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpenInvoices)
-                        .testTag("btn_home_invoices")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = CardBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenPackaging)
+                            .testTag("btn_home_packaging")
                     ) {
-                        Icon(Icons.Outlined.Receipt, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Invoices", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Packaging", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
                     }
-                }
 
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpenScanner)
-                        .testTag("btn_home_scanner")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = CardBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenScanner)
+                            .testTag("btn_home_scanner")
                     ) {
-                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("AI Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("AI Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        }
                     }
                 }
             }
