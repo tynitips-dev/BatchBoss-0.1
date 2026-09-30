@@ -40,6 +40,18 @@ data class FirebaseRestoreResult(
     val data: CloudBackupData? = null
 )
 
+data class CloudUserWorkspace(
+    val uid: String,
+    val bakeryId: String,
+    val bakeryName: String,
+    val firstName: String,
+    val surname: String,
+    val email: String,
+    val role: String,
+    val subscriptionPlan: String,
+    val subscriptionStatus: String
+)
+
 /**
  * Extension to safely await Google Play Services / Firebase Tasks with cancellation support.
  */
@@ -116,6 +128,33 @@ object FirebaseService {
             Result.success(user)
         } catch (e: Throwable) {
             Log.e(TAG, "Error signing in with email", e)
+            Result.failure(e)
+        }
+    }
+
+    /** Loads the same users/{uid} workspace record used by the web portal. */
+    suspend fun fetchUserWorkspace(uid: String): Result<CloudUserWorkspace> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firestore is unavailable."))
+        return try {
+            val snapshot = db.collection("users").document(uid).get().awaitTask()
+            if (!snapshot.exists()) throw IllegalStateException("Your BatchBoss workspace was not found. Please sign in on the website once or contact support.")
+            val bakeryId = snapshot.getString("bakeryId").orEmpty()
+            if (bakeryId.isBlank()) throw IllegalStateException("Your account is not linked to a bakery workspace.")
+            Result.success(
+                CloudUserWorkspace(
+                    uid = uid,
+                    bakeryId = bakeryId,
+                    bakeryName = snapshot.getString("bakeryName") ?: "My Bakery",
+                    firstName = snapshot.getString("firstName").orEmpty(),
+                    surname = snapshot.getString("surname").orEmpty(),
+                    email = snapshot.getString("email").orEmpty(),
+                    role = snapshot.getString("role") ?: "owner",
+                    subscriptionPlan = snapshot.getString("subscriptionPlan") ?: "free",
+                    subscriptionStatus = snapshot.getString("subscriptionStatus") ?: "free"
+                )
+            )
+        } catch (e: Throwable) {
+            Log.e(TAG, "Unable to load Firebase workspace", e)
             Result.failure(e)
         }
     }

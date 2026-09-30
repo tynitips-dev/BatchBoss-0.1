@@ -1345,101 +1345,70 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // User Authentication & Account Isolation
-    fun loginUser(emailOrPhone: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
+    fun loginUser(email: String, password: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            val cleanInput = emailOrPhone.trim().lowercase()
-            val user = repository.getUserByEmail(cleanInput)
-            if (user != null) {
-                _currentUserId.value = user.id
-                _isUserLoggedIn.value = true
-                authPrefs.edit().putLong("active_user_id", user.id).apply()
-                val userBakeryId = user.bakeryId.ifBlank { generateBakeryId(user.id, user.bakeryName) }
-                if (user.bakeryId.isBlank()) {
-                    repository.updateUserAccount(user.copy(bakeryId = userBakeryId))
-                }
-                updateUserProfile(
-                    fullName = user.fullName,
-                    bakeryName = user.bakeryName,
-                    specialty = user.specialty,
-                    phone = user.phone,
-                    city = user.city,
-                    operatingModel = user.operatingModel,
-                    currency = user.currency,
-                    email = user.email,
-                    bakeryId = userBakeryId
-                )
-                repository.recordLoginLog(
-                    userId = user.id,
-                    email = user.email,
-                    bakeryName = user.bakeryName,
-                    action = "LOGIN",
-                    branch = branch,
-                    notes = "Signed in successfully"
-                )
-                onResult(true, "Welcome back, ${user.firstName.ifBlank { "Baker" }}!")
-            } else {
-                val firstName = if (cleanInput.contains("@")) {
-                    cleanInput.substringBefore("@").replaceFirstChar { it.uppercase() }
-                } else {
-                    cleanInput.ifBlank { "Baker" }
-                }
-                val bakeryName = "$firstName's Bakery"
-                val initialBakeryId = generateBakeryId(0, bakeryName)
-                val newId = repository.insertUserAccount(
-                    UserAccountEntity(
-                        bakeryId = initialBakeryId,
-                        firstName = firstName,
-                        surname = "",
-                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
-                        bakeryName = bakeryName,
-                        phone = if (cleanInput.contains("@")) "" else cleanInput,
-                        city = "Cape Town",
-                        operatingModel = "Home Kitchen",
-                        currency = "ZAR (R)",
-                        specialty = "Cakes & Pastries"
-                    )
-                )
-                val finalBakeryId = generateBakeryId(newId, bakeryName)
-                repository.updateUserAccount(
-                    UserAccountEntity(
-                        id = newId,
-                        bakeryId = finalBakeryId,
-                        firstName = firstName,
-                        surname = "",
-                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
-                        bakeryName = bakeryName,
-                        phone = if (cleanInput.contains("@")) "" else cleanInput,
-                        city = "Cape Town",
-                        operatingModel = "Home Kitchen",
-                        currency = "ZAR (R)",
-                        specialty = "Cakes & Pastries"
-                    )
-                )
-                _currentUserId.value = newId
-                _isUserLoggedIn.value = true
-                authPrefs.edit().putLong("active_user_id", newId).apply()
-                val userEmail = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com"
-                updateUserProfile(
-                    fullName = firstName,
-                    bakeryName = bakeryName,
-                    specialty = "Cakes & Pastries",
-                    phone = if (cleanInput.contains("@")) "" else cleanInput,
-                    city = "Cape Town",
-                    operatingModel = "Home Kitchen",
-                    currency = "ZAR (R)",
-                    email = userEmail,
-                    bakeryId = finalBakeryId
-                )
-                repository.recordLoginLog(
-                    userId = newId,
-                    email = userEmail,
-                    bakeryName = bakeryName,
-                    action = "REGISTER",
-                    branch = branch,
-                    notes = "Account auto-provisioned on login"
-                )
-                onResult(true, "Welcome to BatchBoss, $firstName!")
+            val cleanEmail = email.trim().lowercase()
+            if (!cleanEmail.contains("@") || password.isBlank()) {
+                onResult(false, "Enter the same email address and password you use on the BatchBoss website.")
+                return@launch
             }
+
+            val authResult = FirebaseService.signInWithEmail(cleanEmail, password)
+            val firebaseUser = authResult.getOrElse { error ->
+                onResult(false, error.localizedMessage ?: "Firebase login failed. Please check your email and password.")
+                return@launch
+            }
+            val workspace = FirebaseService.fetchUserWorkspace(firebaseUser.uid).getOrElse { error ->
+                FirebaseService.signOut()
+                onResult(false, error.localizedMessage ?: "Your bakery workspace could not be loaded.")
+                return@launch
+            }
+
+            val existing = repository.getUserByEmail(cleanEmail)
+            val firstName = workspace.firstName.ifBlank { cleanEmail.substringBefore("@").replaceFirstChar { it.uppercase() } }
+            val account = (existing ?: UserAccountEntity(
+                firstName = firstName,
+                surname = workspace.surname,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName
+            )).copy(
+                bakeryId = workspace.bakeryId,
+                firstName = firstName,
+                surname = workspace.surname,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName
+            )
+            val localUserId = if (existing == null) repository.insertUserAccount(account) else {
+                repository.updateUserAccount(account)
+                account.id
+            }
+
+            _currentUserId.value = localUserId
+            _isUserLoggedIn.value = true
+            authPrefs.edit().putLong("active_user_id", localUserId).apply()
+            val proActive = workspace.subscriptionStatus.equals("active", true) || workspace.subscriptionStatus.equals("trialing", true)
+            _isPremiumUser.value = proActive
+            repository.saveUserProfile(
+                UserProfileEntity(
+                    id = 1,
+                    userId = localUserId,
+                    bakeryId = workspace.bakeryId,
+                    fullName = "${workspace.firstName} ${workspace.surname}".trim().ifBlank { firstName },
+                    bakeryName = workspace.bakeryName,
+                    email = workspace.email.ifBlank { cleanEmail },
+                    isPremium = proActive,
+                    subscriptionPlan = workspace.subscriptionPlan
+                )
+            )
+            repository.recordLoginLog(
+                userId = localUserId,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName,
+                action = "LOGIN",
+                branch = branch,
+                notes = "Firebase UID ${firebaseUser.uid}; bakery ${workspace.bakeryId}"
+            )
+            onResult(true, "Welcome back, $firstName! Your bakery is now connected.")
         }
     }
 

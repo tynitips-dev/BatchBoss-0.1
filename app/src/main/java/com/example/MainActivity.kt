@@ -210,9 +210,10 @@ fun BatchBossApp(
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onLoginWithDetails = { emailOrPhone, branch ->
-                            viewModel.loginUser(emailOrPhone) { success, msg ->
+                        onLoginWithDetails = { email, password, branch, result ->
+                            viewModel.loginUser(email, password, branch) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                result(success, msg)
                             }
                         }
                     )
