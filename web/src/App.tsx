@@ -165,6 +165,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showImporter, setShowImporter] = useState(false)
 
   const subscriptionExpiry = (profile.subscriptionExpiresAt as { toDate?: () => Date } | undefined)?.toDate?.()
   const promoValid = profile.subscriptionPlan !== 'promo' || (!!subscriptionExpiry && subscriptionExpiry.getTime() > Date.now())
@@ -310,11 +311,12 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {selectedModule.collection && selectedModule.pro && !isPro
         ? <LockedView title={selectedModule.label} onUpgrade={() => setActive('subscription')} />
         : selectedModule.collection && !['products','invoices','quotes','tasks','customers'].includes(active) && <section className="content-card">
-          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div>
+          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
           <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />
         </section>}
     </main>
     {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
+    {showImporter&&selectedModule.collection&&<BulkListImporter bakeryId={profile.bakeryId} collectionName={selectedModule.collection} label={selectedModule.label} onClose={()=>setShowImporter(false)}/>}
   </div>
 }
 
@@ -337,6 +339,14 @@ function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: Modul
 }
 
 type IngredientRow = { name: string; quantity: number; unit: string; cost: number }
+
+type ImportRow={name:string;unit:string;price:number;quantity:number;stock:number;minimum:number}
+function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:string;label:string;onClose:()=>void}){
+ const [rows,setRows]=useState<ImportRow[]>([]);const [error,setError]=useState('');const [saving,setSaving]=useState(false)
+ async function read(file:File){const text=await file.text();const lines=text.split(/\r?\n/).filter(Boolean);const parsed=lines.map(x=>x.split(x.includes(';')?';':',').map(y=>y.trim().replace(/^"|"$/g,'')));if(parsed[0]?.[0]?.toLowerCase().includes('name'))parsed.shift();const result=parsed.map(x=>({name:x[0]||'',unit:x[1]||'g',price:Number(x[2]||0),quantity:Number(x[3]||1),stock:Number(x[4]||0),minimum:Number(x[5]||0)})).filter(x=>x.name);setRows(result);setError(result.length?'':'No valid items found.')}
+ async function save(){setSaving(true);try{const batch=writeBatch(db);rows.forEach(x=>{const ref=doc(collection(db,'bakeries',bakeryId,collectionName));const base=x.unit==='kg'||x.unit==='L'?x.quantity*1000:x.quantity;batch.set(ref,{name:x.name,unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:base,unitPrice:base?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,status:'active',createdAt:serverTimestamp(),updatedAt:serverTimestamp()})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed');setSaving(false)}}
+ return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Upload CSV columns: Name, Unit, Package Price, Package Quantity, Current Stock, Minimum Stock.</p><input type="file" accept=".csv,.txt" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note">{error}</div>}{rows.length>0&&<><h3>Preview ({rows.length} items)</h3><div className="catalogue-list">{rows.map((x,i)=><div className="customer-card" key={i}><strong>{x.name}</strong><span>{x.quantity} {x.unit} — {money.format(x.price)}</span></div>)}</div><button type="button" className="primary-button" disabled={saving} onClick={save}>{saving?'Importing…':`Confirm and import ${rows.length} items`}</button></>}</div></Modal>
+}
 
 function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
   const [rows, setRows] = useState<IngredientRow[]>([{ name: '', quantity: 0, unit: 'g', cost: 0 }])
