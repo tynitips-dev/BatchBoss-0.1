@@ -123,6 +123,7 @@ fun BatchBossApp(
         is Screen.Home,
         is Screen.RecipesList,
         is Screen.InventoryList,
+        is Screen.PackagingList,
         is Screen.SuppliersList,
         is Screen.BakingSupplyStoreLocator,
         is Screen.QuickActions -> true
@@ -160,7 +161,7 @@ fun BatchBossApp(
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
             is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
-            is Screen.Notifications, is Screen.Tasks, is Screen.LowStock -> viewModel.navigateTo(Screen.Home)
+            is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
         }
@@ -209,9 +210,10 @@ fun BatchBossApp(
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onLoginWithDetails = { emailOrPhone, branch ->
-                            viewModel.loginUser(emailOrPhone) { success, msg ->
+                        onLoginWithDetails = { email, password, branch, result ->
+                            viewModel.loginUser(email, password, branch) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                result(success, msg)
                             }
                         }
                     )
@@ -295,7 +297,8 @@ fun BatchBossApp(
                         onOpenTools = { viewModel.navigateTo(Screen.QuickActions) },
                         onOpenCustomers = { viewModel.navigateTo(Screen.CustomersList) },
                         onOpenInvoices = { viewModel.navigateTo(Screen.InvoicesList) },
-                        onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) }
+                        onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
                 }
 
@@ -379,7 +382,37 @@ fun BatchBossApp(
                             viewModel.deleteStockItem(id)
                             coroutineScope.launch { snackbarHostState.showSnackbar("Stock item removed") }
                         },
-                        onScanBarcode = { viewModel.navigateTo(Screen.BarcodeScanner) }
+                        onScanBarcode = { viewModel.navigateTo(Screen.BarcodeScanner) },
+                        onNavigateToPackaging = { viewModel.navigateTo(Screen.PackagingList) }
+                    )
+                }
+
+                is Screen.PackagingList -> {
+                    val allPackaging by viewModel.allPackaging.collectAsStateWithLifecycle(emptyList())
+                    val lowStockPackaging by viewModel.lowStockPackaging.collectAsStateWithLifecycle(emptyList())
+                    PackagingListScreen(
+                        allPackaging = allPackaging,
+                        lowStockPackaging = lowStockPackaging,
+                        initialTab = 0,
+                        onBack = { viewModel.navigateTo(Screen.Home) },
+                        onToggleAlert = { id -> viewModel.togglePackagingAlert(id) },
+                        onAddNewPackaging = { name, category, unit, packagePrice, packageQuantity, currentStock, minStock, supplier, notes ->
+                            viewModel.addNewPackagingItem(name, category, unit, packagePrice, packageQuantity, currentStock, minStock, supplier, notes)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to packaging!") }
+                        },
+                        onUpdatePackaging = { item ->
+                            viewModel.updatePackagingItem(item)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Packaging updated!") }
+                        },
+                        onUpdateStockAndPrice = { id, packagePrice, packageQuantity, currentStock, minStock ->
+                            viewModel.updatePackagingStockAndPrice(id, packagePrice, packageQuantity, currentStock, minStock)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock price & quantity updated!") }
+                        },
+                        onDeletePackaging = { id ->
+                            viewModel.deletePackagingItem(id)
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Packaging item removed") }
+                        },
+                        onNavigateToInventory = { viewModel.navigateTo(Screen.InventoryList) }
                     )
                 }
 
@@ -597,7 +630,8 @@ fun BatchBossApp(
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
                         onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) },
-                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) }
+                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) },
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
                 }
 
@@ -714,9 +748,11 @@ fun BatchBossApp(
                 }
 
                 is Screen.InvoicesList -> {
+                    val allPackaging by viewModel.allPackaging.collectAsStateWithLifecycle(emptyList())
                     InvoicesListScreen(
                         invoices = allInvoices,
                         products = allProducts,
+                        packaging = allPackaging,
                         profile = userProfile,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
                         onNavigateToProducts = { viewModel.navigateTo(Screen.ProductsServicesList) },
@@ -730,8 +766,23 @@ fun BatchBossApp(
                                 unit = unit
                             )
                         },
-                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost ->
-                            viewModel.createInvoice(clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost)
+                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems ->
+                            viewModel.createInvoice(
+                                clientName = clientName,
+                                clientPhone = phone,
+                                orderDescription = desc,
+                                amount = amount,
+                                dueDate = dueDate,
+                                status = status,
+                                subtotal = subtotal,
+                                discountAmount = discount,
+                                taxRatePercent = taxRate,
+                                taxAmount = taxAmount,
+                                items = items,
+                                totalCost = totalCost,
+                                packagingTotal = packagingTotal,
+                                packagingItems = packagingItems
+                            )
                             coroutineScope.launch { snackbarHostState.showSnackbar("Invoice created!") }
                         },
                         onUpdateStatus = { id, status ->

@@ -374,7 +374,7 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgot: () -> Unit,
-    onLoginWithDetails: ((emailOrPhone: String, branch: String) -> Unit)? = null,
+    onLoginWithDetails: ((email: String, password: String, branch: String, onResult: (Boolean, String) -> Unit) -> Unit)? = null,
     onBack: (() -> Unit)? = null
 ) {
     var loginMode by remember { mutableStateOf("Owner") } // "Owner" or "Staff PIN"
@@ -679,8 +679,13 @@ fun LoginScreen(
                     }
                 }
                 errorMessage = null
-                onLoginWithDetails?.invoke(emailOrPhone, selectedBranch)
-                onLoginSuccess()
+                if (loginMode != "Owner") {
+                    errorMessage = "Staff PIN login is not connected yet. Please use the owner email and password."
+                    return@Button
+                }
+                onLoginWithDetails?.invoke(emailOrPhone.trim(), password, selectedBranch) { success, message ->
+                    if (success) onLoginSuccess() else errorMessage = message
+                }
             },
             colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
             shape = RoundedCornerShape(16.dp),
@@ -697,8 +702,7 @@ fun LoginScreen(
         // Biometric / Quick Sign In
         OutlinedButton(
             onClick = {
-                onLoginWithDetails?.invoke("Biometric User", selectedBranch)
-                onLoginSuccess()
+                errorMessage = "Biometric login will be available after your first successful Firebase login."
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -723,8 +727,7 @@ fun LoginScreen(
         ) {
             OutlinedButton(
                 onClick = {
-                    onLoginWithDetails?.invoke("tyne.jenkins@gmail.com", selectedBranch)
-                    onLoginSuccess()
+                    errorMessage = "Google login is not connected yet. Please use your BatchBoss email and password above."
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -739,8 +742,7 @@ fun LoginScreen(
 
             OutlinedButton(
                 onClick = {
-                    onLoginWithDetails?.invoke("baker.apple@batchboss.com", selectedBranch)
-                    onLoginSuccess()
+                    errorMessage = "Apple login is not connected yet. Please use your BatchBoss email and password above."
                 },
                 modifier = Modifier
                     .weight(1f)

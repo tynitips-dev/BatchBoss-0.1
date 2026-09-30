@@ -41,6 +41,7 @@ sealed class Screen {
     data object UnitConverter : Screen()
     data object RecipeScaler : Screen()
     data object InventoryList : Screen()
+    data object PackagingList : Screen()
 
     data object InvoicesList : Screen()
     data object QuotesList : Screen()
@@ -126,6 +127,16 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     @OptIn(ExperimentalCoroutinesApi::class)
     val lowStockItems: StateFlow<List<InventoryItemEntity>> = _currentUserId
         .flatMapLatest { id -> repository.getLowStockByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getPackagingByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lowStockPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getLowStockPackagingByUser(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Customers scoped to active user
@@ -251,7 +262,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         when (screen) {
             is Screen.Home -> _selectedTab.value = 0
             is Screen.RecipesList -> _selectedTab.value = 1
-            is Screen.InventoryList, is Screen.LowStock -> _selectedTab.value = 2
+            is Screen.InventoryList, is Screen.LowStock, is Screen.PackagingList -> _selectedTab.value = 2
             is Screen.SuppliersList -> _selectedTab.value = 3
             is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> _selectedTab.value = 4
             is Screen.RecipeDetail -> {
@@ -428,6 +439,129 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val calcUnitPrice = if (gramsPerUnit > 0) packagePrice / gramsPerUnit else packagePrice
             repository.updateStockItemFull(id, calcUnitPrice, packagePrice, gramsPerUnit, currentStock, minStock)
+        }
+    }
+
+    // Packaging Management
+    fun addNewPackagingItem(
+        name: String,
+        category: String,
+        unit: String,
+        packagePrice: Double,
+        packageQuantity: Double,
+        currentStock: Double,
+        minStock: Double,
+        supplier: String = "",
+        notes: String = "",
+        barcode: String = "",
+        alertEnabled: Boolean = true
+    ) {
+        viewModelScope.launch {
+            val calcUnitPrice = if (packageQuantity > 0) packagePrice / packageQuantity else 0.0
+            val isLow = currentStock <= minStock
+            val currentBakeryId = userProfile.value?.bakeryId?.ifBlank { "bakery_1" } ?: "bakery_1"
+            val item = PackagingItemEntity(
+                userId = _currentUserId.value,
+                bakeryId = currentBakeryId,
+                name = name.trim(),
+                category = category.ifBlank { "Cake boxes" },
+                unit = unit.ifBlank { "pcs" },
+                packagePrice = packagePrice,
+                packageQuantity = packageQuantity,
+                gramsPerUnit = 0.0,
+                unitPrice = calcUnitPrice,
+                currentStock = currentStock,
+                minStock = minStock,
+                isLowStock = isLow,
+                alertEnabled = alertEnabled,
+                barcode = barcode,
+                supplier = supplier.trim(),
+                notes = notes.trim(),
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            val newId = repository.insertPackaging(item)
+            val savedItem = item.copy(id = newId)
+
+            // Asynchronously sync to Firebase Firestore and WebSyncService
+            launch {
+                FirebaseService.savePackagingToCloud(currentBakeryId, savedItem)
+            }
+            launch {
+                WebSyncService.syncPackaging(currentBakeryId, savedItem)
+            }
+        }
+    }
+
+    fun updatePackagingItem(item: PackagingItemEntity) {
+        viewModelScope.launch {
+            val calcUnitPrice = if (item.packageQuantity > 0) item.packagePrice / item.packageQuantity else 0.0
+            val isLow = item.currentStock <= item.minStock
+            val currentBakeryId = userProfile.value?.bakeryId?.ifBlank { "bakery_1" } ?: "bakery_1"
+            val updated = item.copy(
+                unitPrice = calcUnitPrice,
+                isLowStock = isLow,
+                updatedAt = System.currentTimeMillis()
+            )
+            repository.updatePackaging(updated)
+
+            launch {
+                FirebaseService.savePackagingToCloud(currentBakeryId, updated)
+            }
+            launch {
+                WebSyncService.syncPackaging(currentBakeryId, updated)
+            }
+        }
+    }
+
+    fun updatePackagingStockAndPrice(
+        id: Long,
+        packagePrice: Double,
+        packageQuantity: Double,
+        currentStock: Double,
+        minStock: Double
+    ) {
+        viewModelScope.launch {
+            val calcUnitPrice = if (packageQuantity > 0) packagePrice / packageQuantity else 0.0
+            repository.updatePackagingStockAndPrice(id, packagePrice, packageQuantity, calcUnitPrice, currentStock, minStock)
+            val existing = repository.getPackagingByIdOnce(id)
+            if (existing != null) {
+                val currentBakeryId = userProfile.value?.bakeryId?.ifBlank { "bakery_1" } ?: "bakery_1"
+                val updated = existing.copy(
+                    packagePrice = packagePrice,
+                    packageQuantity = packageQuantity,
+                    unitPrice = calcUnitPrice,
+                    currentStock = currentStock,
+                    minStock = minStock,
+                    isLowStock = currentStock <= minStock,
+                    updatedAt = System.currentTimeMillis()
+                )
+                launch {
+                    FirebaseService.savePackagingToCloud(currentBakeryId, updated)
+                }
+                launch {
+                    WebSyncService.syncPackaging(currentBakeryId, updated)
+                }
+            }
+        }
+    }
+
+    fun togglePackagingAlert(id: Long) {
+        viewModelScope.launch {
+            repository.togglePackagingAlert(id)
+        }
+    }
+
+    fun deletePackagingItem(id: Long) {
+        viewModelScope.launch {
+            val currentBakeryId = userProfile.value?.bakeryId?.ifBlank { "bakery_1" } ?: "bakery_1"
+            repository.deletePackaging(id)
+            launch {
+                FirebaseService.deletePackagingFromCloud(currentBakeryId, id)
+            }
+            launch {
+                WebSyncService.deletePackaging(currentBakeryId, id)
+            }
         }
     }
 
@@ -940,12 +1074,15 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         taxRatePercent: Double = 0.0,
         taxAmount: Double = 0.0,
         items: List<LineItem> = emptyList(),
-        totalCost: Double = 0.0
+        totalCost: Double = 0.0,
+        packagingTotal: Double = 0.0,
+        packagingItems: List<InvoicePackagingItem> = emptyList()
     ) {
         viewModelScope.launch {
             val count = (allInvoices.value.size + 1008)
             val invNumber = "INV-2024-$count"
             val lineItemsJson = LineItemJsonUtil.toJson(items)
+            val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
             val finalDescription = if (orderDescription.isNotBlank()) {
                 orderDescription
             } else if (items.isNotEmpty()) {
@@ -969,7 +1106,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     taxRatePercent = taxRatePercent,
                     taxAmount = taxAmount,
                     lineItemsJson = lineItemsJson,
-                    totalCost = totalCost
+                    totalCost = totalCost,
+                    packagingTotal = packagingTotal,
+                    packagingItemsJson = packagingItemsJson
                 )
             )
             if (items.isNotEmpty()) {
@@ -1206,101 +1345,70 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // User Authentication & Account Isolation
-    fun loginUser(emailOrPhone: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
+    fun loginUser(email: String, password: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            val cleanInput = emailOrPhone.trim().lowercase()
-            val user = repository.getUserByEmail(cleanInput)
-            if (user != null) {
-                _currentUserId.value = user.id
-                _isUserLoggedIn.value = true
-                authPrefs.edit().putLong("active_user_id", user.id).apply()
-                val userBakeryId = user.bakeryId.ifBlank { generateBakeryId(user.id, user.bakeryName) }
-                if (user.bakeryId.isBlank()) {
-                    repository.updateUserAccount(user.copy(bakeryId = userBakeryId))
-                }
-                updateUserProfile(
-                    fullName = user.fullName,
-                    bakeryName = user.bakeryName,
-                    specialty = user.specialty,
-                    phone = user.phone,
-                    city = user.city,
-                    operatingModel = user.operatingModel,
-                    currency = user.currency,
-                    email = user.email,
-                    bakeryId = userBakeryId
-                )
-                repository.recordLoginLog(
-                    userId = user.id,
-                    email = user.email,
-                    bakeryName = user.bakeryName,
-                    action = "LOGIN",
-                    branch = branch,
-                    notes = "Signed in successfully"
-                )
-                onResult(true, "Welcome back, ${user.firstName.ifBlank { "Baker" }}!")
-            } else {
-                val firstName = if (cleanInput.contains("@")) {
-                    cleanInput.substringBefore("@").replaceFirstChar { it.uppercase() }
-                } else {
-                    cleanInput.ifBlank { "Baker" }
-                }
-                val bakeryName = "$firstName's Bakery"
-                val initialBakeryId = generateBakeryId(0, bakeryName)
-                val newId = repository.insertUserAccount(
-                    UserAccountEntity(
-                        bakeryId = initialBakeryId,
-                        firstName = firstName,
-                        surname = "",
-                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
-                        bakeryName = bakeryName,
-                        phone = if (cleanInput.contains("@")) "" else cleanInput,
-                        city = "Cape Town",
-                        operatingModel = "Home Kitchen",
-                        currency = "ZAR (R)",
-                        specialty = "Cakes & Pastries"
-                    )
-                )
-                val finalBakeryId = generateBakeryId(newId, bakeryName)
-                repository.updateUserAccount(
-                    UserAccountEntity(
-                        id = newId,
-                        bakeryId = finalBakeryId,
-                        firstName = firstName,
-                        surname = "",
-                        email = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com",
-                        bakeryName = bakeryName,
-                        phone = if (cleanInput.contains("@")) "" else cleanInput,
-                        city = "Cape Town",
-                        operatingModel = "Home Kitchen",
-                        currency = "ZAR (R)",
-                        specialty = "Cakes & Pastries"
-                    )
-                )
-                _currentUserId.value = newId
-                _isUserLoggedIn.value = true
-                authPrefs.edit().putLong("active_user_id", newId).apply()
-                val userEmail = if (cleanInput.contains("@")) cleanInput else "$cleanInput@bakery.com"
-                updateUserProfile(
-                    fullName = firstName,
-                    bakeryName = bakeryName,
-                    specialty = "Cakes & Pastries",
-                    phone = if (cleanInput.contains("@")) "" else cleanInput,
-                    city = "Cape Town",
-                    operatingModel = "Home Kitchen",
-                    currency = "ZAR (R)",
-                    email = userEmail,
-                    bakeryId = finalBakeryId
-                )
-                repository.recordLoginLog(
-                    userId = newId,
-                    email = userEmail,
-                    bakeryName = bakeryName,
-                    action = "REGISTER",
-                    branch = branch,
-                    notes = "Account auto-provisioned on login"
-                )
-                onResult(true, "Welcome to BatchBoss, $firstName!")
+            val cleanEmail = email.trim().lowercase()
+            if (!cleanEmail.contains("@") || password.isBlank()) {
+                onResult(false, "Enter the same email address and password you use on the BatchBoss website.")
+                return@launch
             }
+
+            val authResult = FirebaseService.signInWithEmail(cleanEmail, password)
+            val firebaseUser = authResult.getOrElse { error ->
+                onResult(false, error.localizedMessage ?: "Firebase login failed. Please check your email and password.")
+                return@launch
+            }
+            val workspace = FirebaseService.fetchUserWorkspace(firebaseUser.uid).getOrElse { error ->
+                FirebaseService.signOut()
+                onResult(false, error.localizedMessage ?: "Your bakery workspace could not be loaded.")
+                return@launch
+            }
+
+            val existing = repository.getUserByEmail(cleanEmail)
+            val firstName = workspace.firstName.ifBlank { cleanEmail.substringBefore("@").replaceFirstChar { it.uppercase() } }
+            val account = (existing ?: UserAccountEntity(
+                firstName = firstName,
+                surname = workspace.surname,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName
+            )).copy(
+                bakeryId = workspace.bakeryId,
+                firstName = firstName,
+                surname = workspace.surname,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName
+            )
+            val localUserId = if (existing == null) repository.insertUserAccount(account) else {
+                repository.updateUserAccount(account)
+                account.id
+            }
+
+            _currentUserId.value = localUserId
+            _isUserLoggedIn.value = true
+            authPrefs.edit().putLong("active_user_id", localUserId).apply()
+            val proActive = workspace.subscriptionStatus.equals("active", true) || workspace.subscriptionStatus.equals("trialing", true)
+            _isPremiumUser.value = proActive
+            repository.saveUserProfile(
+                UserProfileEntity(
+                    id = 1,
+                    userId = localUserId,
+                    bakeryId = workspace.bakeryId,
+                    fullName = "${workspace.firstName} ${workspace.surname}".trim().ifBlank { firstName },
+                    bakeryName = workspace.bakeryName,
+                    email = workspace.email.ifBlank { cleanEmail },
+                    isPremium = proActive,
+                    subscriptionPlan = workspace.subscriptionPlan
+                )
+            )
+            repository.recordLoginLog(
+                userId = localUserId,
+                email = cleanEmail,
+                bakeryName = workspace.bakeryName,
+                action = "LOGIN",
+                branch = branch,
+                notes = "Firebase UID ${firebaseUser.uid}; bakery ${workspace.bakeryId}"
+            )
+            onResult(true, "Welcome back, $firstName! Your bakery is now connected.")
         }
     }
 

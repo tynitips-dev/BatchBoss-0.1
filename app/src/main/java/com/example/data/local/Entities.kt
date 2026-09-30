@@ -348,10 +348,15 @@ data class InvoiceEntity(
     val taxRatePercent: Double = 0.0,
     val taxAmount: Double = 0.0,
     val lineItemsJson: String = "",
-    val totalCost: Double = 0.0
+    val totalCost: Double = 0.0,
+    val packagingTotal: Double = 0.0,
+    val packagingItemsJson: String = ""
 ) {
     val items: List<LineItem>
         get() = LineItemJsonUtil.fromJson(lineItemsJson)
+
+    val packagingItems: List<InvoicePackagingItem>
+        get() = InvoicePackagingJsonUtil.fromJson(packagingItemsJson)
 }
 
 @Entity(

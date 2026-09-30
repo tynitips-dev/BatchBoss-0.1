@@ -282,4 +282,121 @@ object WebSyncService {
         }
         result
     }
+
+    suspend fun syncPackaging(bakeryId: String, packaging: com.example.data.local.PackagingItemEntity): Boolean = withContext(Dispatchers.IO) {
+        val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
+        val baseUrl = getWorkingBaseUrl()
+        val json = JSONObject().apply {
+            put("id", packaging.id)
+            put("bakeryId", targetBakeryId)
+            put("name", packaging.name)
+            put("category", packaging.category)
+            put("unit", packaging.unit)
+            put("packagePrice", packaging.packagePrice)
+            put("packageQuantity", packaging.packageQuantity)
+            put("gramsPerUnit", packaging.gramsPerUnit)
+            put("unitPrice", packaging.unitPrice)
+            put("currentStock", packaging.currentStock)
+            put("minStock", packaging.minStock)
+            put("isLowStock", packaging.isLowStock)
+            put("alertEnabled", packaging.alertEnabled)
+            put("barcode", packaging.barcode)
+            put("supplier", packaging.supplier)
+            put("notes", packaging.notes)
+            put("createdAt", packaging.createdAt)
+            put("updatedAt", packaging.updatedAt)
+        }
+
+        try {
+            val body = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder()
+                .url("$baseUrl/api/bakery/$targetBakeryId/packaging")
+                .post(body)
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                resp.isSuccessful
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "WebSyncService.syncPackaging: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun fetchBakeryPackaging(bakeryId: String): List<com.example.data.local.PackagingItemEntity> = withContext(Dispatchers.IO) {
+        val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
+        val baseUrl = getWorkingBaseUrl()
+        val result = mutableListOf<com.example.data.local.PackagingItemEntity>()
+        try {
+            val request = Request.Builder()
+                .url("$baseUrl/api/bakery/$targetBakeryId/packaging")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: return@withContext emptyList()
+                    val array = JSONArray(body)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val pQty = obj.optDouble("packageQuantity", 1.0)
+                        val pPrice = obj.optDouble("packagePrice", 0.0)
+                        val cStock = obj.optDouble("currentStock", 0.0)
+                        val mStock = obj.optDouble("minStock", 0.0)
+                        val uPrice = if (obj.has("unitPrice")) obj.optDouble("unitPrice") else if (pQty > 0) pPrice / pQty else 0.0
+                        val isLow = if (obj.has("isLowStock")) obj.optBoolean("isLowStock") else cStock <= mStock
+
+                        result.add(
+                            com.example.data.local.PackagingItemEntity(
+                                id = obj.optLong("id", 0L),
+                                userId = obj.optLong("userId", 0L),
+                                bakeryId = targetBakeryId,
+                                name = obj.optString("name", "Packaging Item"),
+                                category = obj.optString("category", "Cake boxes"),
+                                unit = obj.optString("unit", "pcs"),
+                                packagePrice = pPrice,
+                                packageQuantity = pQty,
+                                gramsPerUnit = obj.optDouble("gramsPerUnit", 0.0),
+                                unitPrice = uPrice,
+                                currentStock = cStock,
+                                minStock = mStock,
+                                isLowStock = isLow,
+                                alertEnabled = obj.optBoolean("alertEnabled", true),
+                                barcode = obj.optString("barcode", ""),
+                                supplier = obj.optString("supplier", ""),
+                                notes = obj.optString("notes", ""),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "WebSyncService.fetchBakeryPackaging: ${e.message}")
+        }
+        result
+    }
+
+    suspend fun deletePackaging(bakeryId: String, id: Long): Boolean = withContext(Dispatchers.IO) {
+        val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
+        val baseUrl = getWorkingBaseUrl()
+        val json = JSONObject().apply {
+            put("id", id)
+        }
+        try {
+            val body = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder()
+                .url("$baseUrl/api/bakery/$targetBakeryId/packaging")
+                .delete(body)
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                resp.isSuccessful
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "WebSyncService.deletePackaging: ${e.message}")
+            false
+        }
+    }
 }

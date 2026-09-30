@@ -29,9 +29,10 @@ import kotlinx.coroutines.launch
         ProductPriceHistoryEntity::class,
         DocumentLineItemEntity::class,
         UserLoginLogEntity::class,
-        DataDeletionRequestEntity::class
+        DataDeletionRequestEntity::class,
+        PackagingItemEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recipeIngredientDao(): RecipeIngredientDao
     abstract fun taskDao(): TaskDao
     abstract fun inventoryDao(): InventoryDao
+    abstract fun packagingDao(): PackagingDao
     abstract fun supplierDao(): SupplierDao
     abstract fun specialDealDao(): SpecialDealDao
     abstract fun notificationDao(): NotificationDao
@@ -59,6 +61,40 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `packagingTotal` REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `packagingItemsJson` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `packaging_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `userId` INTEGER NOT NULL,
+                        `bakeryId` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `unit` TEXT NOT NULL,
+                        `packagePrice` REAL NOT NULL,
+                        `packageQuantity` REAL NOT NULL,
+                        `gramsPerUnit` REAL NOT NULL,
+                        `unitPrice` REAL NOT NULL,
+                        `currentStock` REAL NOT NULL,
+                        `minStock` REAL NOT NULL,
+                        `isLowStock` INTEGER NOT NULL,
+                        `alertEnabled` INTEGER NOT NULL,
+                        `barcode` TEXT NOT NULL,
+                        `supplier` TEXT NOT NULL,
+                        `notes` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_userId` ON `packaging_items` (`userId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_bakeryId` ON `packaging_items` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_category` ON `packaging_items` (`category`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_isLowStock` ON `packaging_items` (`isLowStock`)")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -66,6 +102,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "batchboss_database"
                 )
+                .addMigrations(MIGRATION_11_12)
                 .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()

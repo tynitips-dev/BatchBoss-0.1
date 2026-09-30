@@ -467,6 +467,124 @@ fun FirebaseSyncScreen(
                     }
                 }
             }
+
+            // 5. ChatGPT Website Collaboration Spec Card
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFFFF0F5),
+                    border = BorderStroke(1.dp, BatchPink.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth().testTag("card_chatgpt_spec")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.SmartToy,
+                                contentDescription = null,
+                                tint = BatchPink,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Website & ChatGPT Integration Spec",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = DarkText
+                            )
+                        }
+
+                        Text(
+                            text = "Download or copy the complete collaboration specification for ChatGPT. Send this file to ChatGPT so it can adapt your online website to collaborate 100% in real-time with the BatchBoss Android app (including packaging items, stock, unit prices, and invoice packaging totals).",
+                            fontSize = 12.sp,
+                            color = MediumText,
+                            lineHeight = 18.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val prompt = """
+# BatchBoss Website & Android Real-Time Collaboration Spec
+
+ChatGPT, please adapt and verify my bakery website codebase so that it collaborates seamlessly with the BatchBoss Android app.
+
+## 1. Multi-Tenant Architecture:
+- Shared workspace path: `bakeries/{bakeryId}` (e.g. `bakery_1`)
+- Currency: South African Rand (ZAR, symbol `R`)
+- VAT Rate: 15.0% standard
+
+## 2. Packaging Collection: `bakeries/{bakeryId}/packaging/{id}`
+Fields:
+- `id` (Long ms)
+- `bakeryId` (String)
+- `name` (String, e.g. "10-inch White Tall Cake Box")
+- `category` ("Cake boxes", "Cupcake boxes", "Bento boxes", "Cake boards", "Ribbon", "Stickers and labels", "Bags", "Containers", "Other")
+- `unit` ("pcs", "boxes", "rolls", "m")
+- `packagePrice` (Float, bulk pack cost)
+- `packageQuantity` (Float, units in pack)
+- `unitPrice` (Float, formula: packageQuantity > 0 ? packagePrice / packageQuantity : 0)
+- `currentStock` (Float)
+- `minStock` (Float)
+- `isLowStock` (Boolean, formula: currentStock <= minStock)
+- `supplier` (String)
+- `notes` (String)
+
+## 3. Invoices Integration: `bakeries/{bakeryId}/invoices/{id}`
+Fields:
+- `productsSubtotal`: Total of baked goods
+- `packagingTotal`: Sum of packaging line totals (quantity * unitPrice)
+- `subtotal`: productsSubtotal + packagingTotal
+- `discount`: Subtracted from subtotal
+- `taxAmount`: 15% VAT on (subtotal - discount)
+- `totalDue`: (subtotal - discount) + taxAmount
+- `totalCost`: recipe ingredient costs + packaging costs
+- `estimatedProfit`: totalDue - totalCost
+- `packagingItems`: Array of packaging items used
+
+The downloadable specification files are in the repository:
+- `public/BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md`
+- `public/batchboss-api-spec.json`
+- Web Portal Hub: `/download-spec.html`
+""".trimIndent()
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("BatchBoss ChatGPT Spec", prompt)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied ChatGPT prompt to clipboard!", Toast.LENGTH_LONG).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("btn_copy_chatgpt_prompt")
+                            ) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Copy Prompt", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val link = "http://localhost:3000/download-spec.html"
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("BatchBoss Spec Download Link", link)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied download link: $link", Toast.LENGTH_LONG).show()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("btn_copy_spec_link")
+                            ) {
+                                Icon(Icons.Filled.Link, contentDescription = null, tint = BatchPink, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Copy Link", fontSize = 12.sp, color = BatchPink)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
