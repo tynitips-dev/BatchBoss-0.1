@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatchBoss™ — Download Collaboration Spec for ChatGPT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #FF3B81;
+      --primary-dark: #D81B60;
+      --primary-light: #FFF0F5;
+      --primary-hover: #E0286F;
+      --dark: #1E1B1D;
+      --medium: #6E686B;
+      --light-bg: #F8F9FA;
+      --card-bg: #FFFFFF;
+      --border: #EFE8EC;
+      --mint: #10B981;
+      --mint-light: #ECFDF5;
+      --amber: #F59E0B;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--light-bg);
+      color: var(--dark);
+      line-height: 1.6;
+      padding: 32px 16px 80px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(255, 59, 129, 0.05);
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--dark);
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      color: var(--medium);
+      font-size: 15px;
+      max-width: 680px;
+      margin: 0 auto 24px;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 22px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 14px rgba(255, 59, 129, 0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: var(--dark);
+      border: 1.5px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+      transform: translateY(-2px);
+    }
+
+    .btn-mint {
+      background: var(--mint);
+      color: white;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+    }
+
+    .btn-mint:hover {
+      background: #059669;
+      transform: translateY(-2px);
+    }
+
+    .card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 26px;
+      margin-bottom: 24px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--dark);
+    }
+
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px;
+      border-radius: 12px;
+      background: var(--light-bg);
+      border: 1px solid var(--border);
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .step-text h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .step-text p {
+      font-size: 13px;
+      color: var(--medium);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-weight: 700;
+      color: var(--medium);
+      background: var(--light-bg);
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: #F1EFF0;
+      color: #931B4E;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre {
+      background: #18181B;
+      color: #E4E4E7;
+      padding: 18px;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      line-height: 1.5;
+      max-height: 400px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin: 3px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--dark);
+      color: white;
+      padding: 14px 22px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <div class="badge">🤖 ChatGPT Collaboration Hub</div>
+      <h1>BatchBoss™ Website &amp; Android Spec</h1>
+      <p class="subtitle">
+        Download this complete specification file or copy the ready-to-run prompt to send to ChatGPT. ChatGPT will use it to adapt your online website so it collaborates 100% in real-time with the BatchBoss Android mobile app.
+      </p>
+
+      <div class="action-grid">
+        <a href="/BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md" download="BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md" class="btn btn-primary">
+          📥 Download Markdown Spec (.md)
+        </a>
+        <a href="/batchboss-api-spec.json" download="batchboss-api-spec.json" class="btn btn-secondary">
+          📄 Download JSON Schema (.json)
+        </a>
+        <button onclick="copyChatGPTContent()" class="btn btn-mint">
+          📋 Copy Entire Prompt for ChatGPT
+        </button>
+      </div>
+      
+      <div style="margin-top: 18px;">
+        <a href="/index.html" style="font-size: 13px; color: var(--medium); text-decoration: underline;">
+          ← Back to Bakery Live Web Portal
+        </a>
+      </div>
+    </div>
+
+    <!-- 3-Step Guide -->
+    <div class="card">
+      <div class="card-title">🚀 How to Send to ChatGPT</div>
+      <div class="steps-list">
+        <div class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-text">
+            <h4>Download the Markdown File or Click "Copy Entire Prompt"</h4>
+            <p>Click the pink button above to download <code>BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md</code> to your computer or phone, or click the green button to copy the prompt text.</p>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-text">
+            <h4>Send to ChatGPT (chatgpt.com)</h4>
+            <p>Attach the <code>.md</code> file in ChatGPT, or paste the copied text into your chat window along with your website repository or code files.</p>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-text">
+            <h4>Say: "Please make sure my website collaborates with this BatchBoss spec!"</h4>
+            <p>ChatGPT will automatically verify and update your website's database paths, packaging inventory schemas, unit pricing logic, and invoice packaging line totals to achieve 100% real-time synchronicity.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary of Shared Specs -->
+    <div class="card">
+      <div class="card-title">📦 Key Schemas &amp; Logic Included in File</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>Firestore Collection</th>
+            <th>REST API Route</th>
+            <th>Key Collaboration Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Packaging</strong></td>
+            <td><code>bakeries/{id}/packaging</code></td>
+            <td><code>/api/bakery/:id/packaging</code></td>
+            <td><code>unitPrice = packagePrice / packageQuantity</code></td>
+          </tr>
+          <tr>
+            <td><strong>Invoices</strong></td>
+            <td><code>bakeries/{id}/invoices</code></td>
+            <td><code>/api/bakery/:id/invoices</code></td>
+            <td><code>subtotal = productsSubtotal + packagingTotal</code></td>
+          </tr>
+          <tr>
+            <td><strong>Recipes</strong></td>
+            <td><code>bakeries/{id}/recipes</code></td>
+            <td><code>/api/bakery/:id/sync</code></td>
+            <td>Scaled ingredient costing &amp; profit margins</td>
+          </tr>
+          <tr>
+            <td><strong>Customers</strong></td>
+            <td><code>bakeries/{id}/customers</code></td>
+            <td><code>/api/bakery/:id/sync</code></td>
+            <td>Shared contact details &amp; order history</td>
+          </tr>
+          <tr>
+            <td><strong>VAT / Tax</strong></td>
+            <td>All financial totals</td>
+            <td>Calculated dynamically</td>
+            <td>15.0% South African VAT standard</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Raw Prompt Preview Card -->
+    <div class="card">
+      <div class="card-title">
+        <span>👁️ Live Spec Preview</span>
+        <button onclick="copyChatGPTContent()" style="margin-left: auto; padding: 6px 12px; font-size: 12px; font-weight: 700; border-radius: 8px; border: 1px solid var(--border); background: white; cursor: pointer;">
+          Copy Text
+        </button>
+      </div>
+      <pre id="specContent">Loading specification...</pre>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">
+    <span>✅ Copied collaboration prompt to clipboard! Paste into ChatGPT now.</span>
+  </div>
+
+  <script>
+    let rawSpecMarkdown = "";
+
+    async function loadSpec() {
+      try {
+        const res = await fetch('/BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md');
+        if (res.ok) {
+          rawSpecMarkdown = await res.text();
+          document.getElementById('specContent').textContent = rawSpecMarkdown;
+        } else {
+          document.getElementById('specContent').textContent = "Could not load preview. Please use the direct download button above.";
+        }
+      } catch (err) {
+        document.getElementById('specContent').textContent = "Offline preview. Use the direct download button above.";
+      }
+    }
+
+    async function copyChatGPTContent() {
+      if (!rawSpecMarkdown) {
+        try {
+          const res = await fetch('/BATCHBOSS_CHATGPT_WEBSITE_COLLABORATION_SPEC.md');
+          rawSpecMarkdown = await res.text();
+        } catch (e) {}
+      }
+
+      if (rawSpecMarkdown) {
+        navigator.clipboard.writeText(rawSpecMarkdown).then(() => {
+          showToast();
+        }).catch(() => {
+          fallbackCopy(rawSpecMarkdown);
+        });
+      } else {
+        alert("Specification text is ready to download via the button above.");
+      }
+    }
+
+    function fallbackCopy(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      showToast();
+    }
+
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3500);
+    }
+
+    window.addEventListener('DOMContentLoaded', loadSpec);
+  </script>
+</body>
+</html>

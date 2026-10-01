@@ -374,17 +374,19 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToSignUp: () -> Unit,
     onNavigateToForgot: () -> Unit,
+    onPerformLogin: ((email: String, password: String, onResult: (Boolean, String?) -> Unit) -> Unit)? = null,
     onLoginWithDetails: ((emailOrPhone: String, branch: String) -> Unit)? = null,
     onBack: (() -> Unit)? = null
 ) {
     var loginMode by remember { mutableStateOf("Owner") } // "Owner" or "Staff PIN"
-    var emailOrPhone by remember { mutableStateOf("baker@batchboss.co.za") }
-    var password by remember { mutableStateOf("password123") }
-    var staffPin by remember { mutableStateOf("1234") }
+    var emailOrPhone by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var staffPin by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(true) }
     var selectedBranch by remember { mutableStateOf("Main Flagship Bakery") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -512,8 +514,8 @@ fun LoginScreen(
             OutlinedTextField(
                 value = emailOrPhone,
                 onValueChange = { emailOrPhone = it; errorMessage = null },
-                label = { Text("Email or Mobile Number") },
-                placeholder = { Text("baker@batchboss.co.za or +27 82...") },
+                label = { Text("Email Address") },
+                placeholder = { Text("e.g. baker@yourbakery.com") },
                 leadingIcon = {
                     Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LightText)
                 },
@@ -665,23 +667,34 @@ fun LoginScreen(
             onClick = {
                 if (loginMode == "Owner") {
                     if (emailOrPhone.isBlank()) {
-                        errorMessage = "Please enter your email or mobile number"
+                        errorMessage = "Please enter your email address"
                         return@Button
                     }
-                    if (password.length < 4) {
+                    if (password.isBlank()) {
                         errorMessage = "Please enter your password"
                         return@Button
                     }
-                } else {
-                    if (staffPin.length < 4) {
-                        errorMessage = "Please enter your 4-digit Kitchen PIN"
-                        return@Button
+                    errorMessage = null
+                    if (onPerformLogin != null) {
+                        isLoading = true
+                        onPerformLogin(emailOrPhone.trim(), password) { success, err ->
+                            isLoading = false
+                            if (success) {
+                                onLoginSuccess()
+                            } else {
+                                errorMessage = err ?: "Sign in failed. Please verify your email and password."
+                            }
+                        }
+                    } else {
+                        onLoginWithDetails?.invoke(emailOrPhone.trim(), selectedBranch)
+                        onLoginSuccess()
                     }
+                } else {
+                    // Kitchen Staff PIN
+                    errorMessage = "Kitchen Staff PIN login is not configured yet for this bakery branch. Please sign in with your Owner email and password."
                 }
-                errorMessage = null
-                onLoginWithDetails?.invoke(emailOrPhone, selectedBranch)
-                onLoginSuccess()
             },
+            enabled = !isLoading,
             colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
@@ -689,7 +702,17 @@ fun LoginScreen(
                 .height(52.dp)
                 .testTag("btn_login_submit")
         ) {
-            Text("Sign In to Bakery", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = Color.White,
+                    strokeWidth = 2.5.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Authenticating Workspace...", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            } else {
+                Text("Sign In to Bakery", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -697,8 +720,7 @@ fun LoginScreen(
         // Biometric / Quick Sign In
         OutlinedButton(
             onClick = {
-                onLoginWithDetails?.invoke("Biometric User", selectedBranch)
-                onLoginSuccess()
+                errorMessage = "Biometric authentication is not connected yet. Please sign in with your email and password."
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -723,8 +745,7 @@ fun LoginScreen(
         ) {
             OutlinedButton(
                 onClick = {
-                    onLoginWithDetails?.invoke("tyne.jenkins@gmail.com", selectedBranch)
-                    onLoginSuccess()
+                    errorMessage = "Google Sign-In is not connected yet. Please sign in with your email and password."
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -739,8 +760,7 @@ fun LoginScreen(
 
             OutlinedButton(
                 onClick = {
-                    onLoginWithDetails?.invoke("baker.apple@batchboss.com", selectedBranch)
-                    onLoginSuccess()
+                    errorMessage = "Apple Sign-In is not connected yet. Please sign in with your email and password."
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -1074,7 +1094,7 @@ fun CreateAccountScreen(
             value = email,
             onValueChange = { email = it; errorMessage = null },
             label = { Text("Email Address *") },
-            placeholder = { Text("baker@batchboss.co.za") },
+            placeholder = { Text("e.g. baker@yourbakery.com") },
             leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_email"),
             shape = RoundedCornerShape(14.dp),
@@ -1253,17 +1273,7 @@ fun CreateAccountScreen(
 
         OutlinedButton(
             onClick = {
-                onAccountCreatedWithData?.invoke(
-                    "Master Baker",
-                    "Artisan Bakery Studio",
-                    "Cakes & Cupcakes",
-                    "+27 82 555 1234",
-                    "Cape Town",
-                    "Home Kitchen",
-                    "ZAR (R)",
-                    "baker@batchboss.co.za"
-                )
-                onAccountCreated()
+                errorMessage = "Google Sign-Up is not connected yet. Please complete the registration form above."
             },
             modifier = Modifier
                 .fillMaxWidth()

@@ -36,6 +36,15 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE userId = :userId ORDER BY name ASC")
     fun getCustomersByUser(userId: Long): Flow<List<CustomerEntity>>
 
+    @Query("SELECT * FROM customers WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    fun getCustomersByBakery(bakeryId: String): Flow<List<CustomerEntity>>
+
+    @Query("SELECT * FROM customers WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    suspend fun getCustomersByBakeryOnce(bakeryId: String): List<CustomerEntity>
+
+    @Query("SELECT * FROM customers WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getCustomerByFirestoreId(firestoreId: String): CustomerEntity?
+
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: Long): CustomerEntity?
 
@@ -50,12 +59,30 @@ interface CustomerDao {
 
     @Query("DELETE FROM customers WHERE id = :id")
     suspend fun deleteCustomer(id: Long)
+
+    @Query("DELETE FROM customers WHERE id IN (:ids)")
+    suspend fun deleteCustomersByIds(ids: List<Long>)
+
+    @Query("DELETE FROM customers WHERE bakeryId = :bakeryId")
+    suspend fun deleteCustomersByBakery(bakeryId: String)
 }
 
 @Dao
 interface OrderDao {
     @Query("SELECT * FROM orders WHERE userId = :userId ORDER BY id DESC")
     fun getOrdersByUser(userId: Long): Flow<List<OrderEntity>>
+
+    @Query("SELECT * FROM orders WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    fun getOrdersByBakery(bakeryId: String): Flow<List<OrderEntity>>
+
+    @Query("SELECT * FROM orders WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    suspend fun getOrdersByBakeryOnce(bakeryId: String): List<OrderEntity>
+
+    @Query("SELECT * FROM orders WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getOrderByFirestoreId(firestoreId: String): OrderEntity?
+
+    @Query("SELECT * FROM orders WHERE bakeryId = :bakeryId AND orderNumber = :orderNumber LIMIT 1")
+    suspend fun getOrderByOrderNumber(bakeryId: String, orderNumber: String): OrderEntity?
 
     @Query("SELECT * FROM orders WHERE id = :id")
     suspend fun getOrderById(id: Long): OrderEntity?
@@ -69,17 +96,32 @@ interface OrderDao {
     @Update
     suspend fun updateOrder(order: OrderEntity)
 
-    @Query("UPDATE orders SET status = :status WHERE id = :id")
-    suspend fun updateOrderStatus(id: Long, status: String)
+    @Query("UPDATE orders SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateOrderStatus(id: Long, status: String, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM orders WHERE id = :id")
     suspend fun deleteOrder(id: Long)
+
+    @Query("DELETE FROM orders WHERE id IN (:ids)")
+    suspend fun deleteOrdersByIds(ids: List<Long>)
+
+    @Query("DELETE FROM orders WHERE bakeryId = :bakeryId")
+    suspend fun deleteOrdersByBakery(bakeryId: String)
 }
 
 @Dao
 interface RecipeDao {
     @Query("SELECT * FROM recipes WHERE userId = :userId ORDER BY id DESC")
     fun getRecipesByUser(userId: Long): Flow<List<RecipeEntity>>
+
+    @Query("SELECT * FROM recipes WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    fun getRecipesByBakery(bakeryId: String): Flow<List<RecipeEntity>>
+
+    @Query("SELECT * FROM recipes WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    suspend fun getRecipesByBakeryOnce(bakeryId: String): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipes WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getRecipeByFirestoreId(firestoreId: String): RecipeEntity?
 
     @Query("SELECT * FROM recipes ORDER BY id ASC")
     fun getAllRecipes(): Flow<List<RecipeEntity>>
@@ -98,6 +140,12 @@ interface RecipeDao {
 
     @Query("DELETE FROM recipes WHERE id = :id")
     suspend fun deleteRecipe(id: Long)
+
+    @Query("DELETE FROM recipes WHERE id IN (:ids)")
+    suspend fun deleteRecipesByIds(ids: List<Long>)
+
+    @Query("DELETE FROM recipes WHERE bakeryId = :bakeryId")
+    suspend fun deleteRecipesByBakery(bakeryId: String)
 
     @Query("UPDATE recipes SET isFavorite = NOT isFavorite WHERE id = :id")
     suspend fun toggleFavorite(id: Long)
@@ -120,29 +168,68 @@ interface RecipeIngredientDao {
     @Query("SELECT * FROM recipe_ingredients WHERE recipeId = :recipeId")
     suspend fun getIngredientsForRecipeOnce(recipeId: Long): List<RecipeIngredientEntity>
 
+    @Query("SELECT * FROM recipe_ingredients WHERE recipeFirestoreId = :recipeFirestoreId")
+    fun getIngredientsForRecipeFirestoreId(recipeFirestoreId: String): Flow<List<RecipeIngredientEntity>>
+
+    @Query("SELECT * FROM recipe_ingredients WHERE recipeFirestoreId = :recipeFirestoreId")
+    suspend fun getIngredientsForRecipeFirestoreIdOnce(recipeFirestoreId: String): List<RecipeIngredientEntity>
+
+    @Query("SELECT * FROM recipe_ingredients WHERE bakeryId = :bakeryId")
+    suspend fun getIngredientsByBakeryOnce(bakeryId: String): List<RecipeIngredientEntity>
+
+    @Query("SELECT * FROM recipe_ingredients WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getIngredientByFirestoreId(firestoreId: String): RecipeIngredientEntity?
+
+    @Query("SELECT * FROM recipe_ingredients WHERE id = :id LIMIT 1")
+    suspend fun getIngredientByIdOnce(id: Long): RecipeIngredientEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertIngredients(ingredients: List<RecipeIngredientEntity>)
 
     @Update
     suspend fun updateIngredient(ingredient: RecipeIngredientEntity)
 
-    @Query("UPDATE recipe_ingredients SET cost = :cost, quantity = :quantity WHERE id = :id")
-    suspend fun updateIngredientCost(id: Long, cost: Double, quantity: Double)
+    @Query("UPDATE recipe_ingredients SET cost = :cost, quantity = :quantity, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateIngredientCost(id: Long, cost: Double, quantity: Double, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM recipe_ingredients WHERE recipeId = :recipeId")
     suspend fun deleteIngredientsForRecipe(recipeId: Long)
+
+    @Query("DELETE FROM recipe_ingredients WHERE recipeFirestoreId = :recipeFirestoreId")
+    suspend fun deleteIngredientsForRecipeFirestoreId(recipeFirestoreId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertIngredient(ingredient: RecipeIngredientEntity): Long
 
     @Query("DELETE FROM recipe_ingredients WHERE id = :id")
     suspend fun deleteIngredient(id: Long)
+
+    @Query("DELETE FROM recipe_ingredients WHERE id IN (:ids)")
+    suspend fun deleteIngredientsByIds(ids: List<Long>)
+
+    @Query("DELETE FROM recipe_ingredients WHERE bakeryId = :bakeryId")
+    suspend fun deleteIngredientsByBakery(bakeryId: String)
 }
 
 @Dao
 interface TaskDao {
     @Query("SELECT * FROM tasks WHERE userId = :userId ORDER BY id ASC")
     fun getTasksByUser(userId: Long): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks WHERE bakeryId = :bakeryId ORDER BY id ASC")
+    fun getTasksByBakery(bakeryId: String): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks WHERE bakeryId = :bakeryId ORDER BY id ASC")
+    suspend fun getTasksByBakeryOnce(bakeryId: String): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getTaskByFirestoreId(firestoreId: String): TaskEntity?
+
+    @Query("SELECT * FROM tasks WHERE bakeryId = :bakeryId AND orderRef = :orderRef LIMIT 1")
+    suspend fun getTaskByOrderRef(bakeryId: String, orderRef: String): TaskEntity?
+
+    @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
+    suspend fun getTaskByIdOnce(id: Long): TaskEntity?
 
     @Query("SELECT * FROM tasks ORDER BY id ASC")
     fun getAllTasks(): Flow<List<TaskEntity>>
@@ -153,17 +240,38 @@ interface TaskDao {
     @Update
     suspend fun updateTask(task: TaskEntity)
 
-    @Query("UPDATE tasks SET status = :status WHERE id = :id")
-    suspend fun updateTaskStatus(id: Long, status: String)
+    @Query("UPDATE tasks SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateTaskStatus(id: Long, status: String, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)
+
+    @Query("DELETE FROM tasks WHERE id IN (:ids)")
+    suspend fun deleteTasksByIds(ids: List<Long>)
+
+    @Query("DELETE FROM tasks WHERE bakeryId = :bakeryId")
+    suspend fun deleteTasksByBakery(bakeryId: String)
 }
 
 @Dao
 interface InventoryDao {
     @Query("SELECT * FROM inventory_items WHERE (userId = :userId OR userId = 0) ORDER BY isLowStock DESC, name ASC")
     fun getInventoryByUser(userId: Long): Flow<List<InventoryItemEntity>>
+
+    @Query("SELECT * FROM inventory_items WHERE bakeryId = :bakeryId ORDER BY isLowStock DESC, name ASC")
+    fun getInventoryByBakery(bakeryId: String): Flow<List<InventoryItemEntity>>
+
+    @Query("SELECT * FROM inventory_items WHERE bakeryId = :bakeryId AND isLowStock = 1 ORDER BY name ASC")
+    fun getLowStockByBakery(bakeryId: String): Flow<List<InventoryItemEntity>>
+
+    @Query("SELECT * FROM inventory_items WHERE bakeryId = :bakeryId ORDER BY isLowStock DESC, name ASC")
+    suspend fun getInventoryByBakeryOnce(bakeryId: String): List<InventoryItemEntity>
+
+    @Query("SELECT * FROM inventory_items WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getInventoryByFirestoreId(firestoreId: String): InventoryItemEntity?
+
+    @Query("SELECT * FROM inventory_items WHERE id = :id LIMIT 1")
+    suspend fun getInventoryByIdOnce(id: Long): InventoryItemEntity?
 
     @Query("SELECT * FROM inventory_items WHERE (userId = :userId OR userId = 0) AND isLowStock = 1")
     fun getLowStockByUser(userId: Long): Flow<List<InventoryItemEntity>>
@@ -191,6 +299,12 @@ interface InventoryDao {
 
     @Query("DELETE FROM inventory_items WHERE id = :id")
     suspend fun deleteItem(id: Long)
+
+    @Query("DELETE FROM inventory_items WHERE id IN (:ids)")
+    suspend fun deleteInventoryByIds(ids: List<Long>)
+
+    @Query("DELETE FROM inventory_items WHERE bakeryId = :bakeryId")
+    suspend fun deleteInventoryByBakery(bakeryId: String)
 }
 
 @Dao
@@ -264,6 +378,18 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoices WHERE userId = :userId ORDER BY id DESC")
     fun getInvoicesByUser(userId: Long): Flow<List<InvoiceEntity>>
 
+    @Query("SELECT * FROM invoices WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    fun getInvoicesByBakery(bakeryId: String): Flow<List<InvoiceEntity>>
+
+    @Query("SELECT * FROM invoices WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    suspend fun getInvoicesByBakeryOnce(bakeryId: String): List<InvoiceEntity>
+
+    @Query("SELECT * FROM invoices WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getInvoiceByFirestoreId(firestoreId: String): InvoiceEntity?
+
+    @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
+    suspend fun getInvoiceByIdOnce(id: Long): InvoiceEntity?
+
     @Query("SELECT * FROM invoices ORDER BY id DESC")
     fun getAllInvoices(): Flow<List<InvoiceEntity>>
 
@@ -273,17 +399,35 @@ interface InvoiceDao {
     @Update
     suspend fun updateInvoice(invoice: InvoiceEntity)
 
-    @Query("UPDATE invoices SET status = :status WHERE id = :id")
-    suspend fun updateInvoiceStatus(id: Long, status: String)
+    @Query("UPDATE invoices SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateInvoiceStatus(id: Long, status: String, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM invoices WHERE id = :id")
     suspend fun deleteInvoice(id: Long)
+
+    @Query("DELETE FROM invoices WHERE id IN (:ids)")
+    suspend fun deleteInvoicesByIds(ids: List<Long>)
+
+    @Query("DELETE FROM invoices WHERE bakeryId = :bakeryId")
+    suspend fun deleteInvoicesByBakery(bakeryId: String)
 }
 
 @Dao
 interface QuoteDao {
     @Query("SELECT * FROM quotes WHERE userId = :userId ORDER BY id DESC")
     fun getQuotesByUser(userId: Long): Flow<List<QuoteEntity>>
+
+    @Query("SELECT * FROM quotes WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    fun getQuotesByBakery(bakeryId: String): Flow<List<QuoteEntity>>
+
+    @Query("SELECT * FROM quotes WHERE bakeryId = :bakeryId ORDER BY id DESC")
+    suspend fun getQuotesByBakeryOnce(bakeryId: String): List<QuoteEntity>
+
+    @Query("SELECT * FROM quotes WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getQuoteByFirestoreId(firestoreId: String): QuoteEntity?
+
+    @Query("SELECT * FROM quotes WHERE id = :id LIMIT 1")
+    suspend fun getQuoteByIdOnce(id: Long): QuoteEntity?
 
     @Query("SELECT * FROM quotes ORDER BY id DESC")
     fun getAllQuotes(): Flow<List<QuoteEntity>>
@@ -294,11 +438,17 @@ interface QuoteDao {
     @Update
     suspend fun updateQuote(quote: QuoteEntity)
 
-    @Query("UPDATE quotes SET status = :status WHERE id = :id")
-    suspend fun updateQuoteStatus(id: Long, status: String)
+    @Query("UPDATE quotes SET status = :status, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateQuoteStatus(id: Long, status: String, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM quotes WHERE id = :id")
     suspend fun deleteQuote(id: Long)
+
+    @Query("DELETE FROM quotes WHERE id IN (:ids)")
+    suspend fun deleteQuotesByIds(ids: List<Long>)
+
+    @Query("DELETE FROM quotes WHERE bakeryId = :bakeryId")
+    suspend fun deleteQuotesByBakery(bakeryId: String)
 }
 
 @Dao
@@ -324,8 +474,20 @@ interface ProductServiceDao {
     @Query("SELECT * FROM products_services WHERE userId = :userId ORDER BY name ASC")
     fun getProductsByUser(userId: Long): Flow<List<ProductServiceEntity>>
 
+    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    fun getProductsByBakery(bakeryId: String): Flow<List<ProductServiceEntity>>
+
+    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    suspend fun getProductsByBakeryOnce(bakeryId: String): List<ProductServiceEntity>
+
+    @Query("SELECT * FROM products_services WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getProductByFirestoreId(firestoreId: String): ProductServiceEntity?
+
     @Query("SELECT * FROM products_services WHERE userId = :userId AND isActive = 1 ORDER BY name ASC")
     fun getActiveProductsByUser(userId: Long): Flow<List<ProductServiceEntity>>
+
+    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId AND isActive = 1 ORDER BY name ASC")
+    fun getActiveProductsByBakery(bakeryId: String): Flow<List<ProductServiceEntity>>
 
     @Query("SELECT * FROM products_services WHERE id = :id")
     fun getProductById(id: Long): Flow<ProductServiceEntity?>
@@ -344,6 +506,12 @@ interface ProductServiceDao {
 
     @Query("DELETE FROM products_services WHERE id = :id")
     suspend fun deleteProduct(id: Long)
+
+    @Query("DELETE FROM products_services WHERE id IN (:ids)")
+    suspend fun deleteProductsByIds(ids: List<Long>)
+
+    @Query("DELETE FROM products_services WHERE bakeryId = :bakeryId")
+    suspend fun deleteProductsByBakery(bakeryId: String)
 }
 
 @Dao

@@ -29,7 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.local.InvoiceEntity
+import com.example.data.local.InvoicePackagingItem
+import com.example.data.local.InvoicePackagingJsonUtil
 import com.example.data.local.LineItem
+import com.example.data.local.PackagingItemEntity
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.UserProfileEntity
 import com.example.ui.theme.*
@@ -49,6 +52,7 @@ private fun formatZar(amount: Double): String {
 fun InvoicesListScreen(
     invoices: List<InvoiceEntity>,
     products: List<ProductServiceEntity> = emptyList(),
+    packaging: List<PackagingItemEntity> = emptyList(),
     onBack: () -> Unit,
     onCreateInvoice: (
         clientName: String,
@@ -62,7 +66,9 @@ fun InvoicesListScreen(
         taxRatePercent: Double,
         taxAmount: Double,
         items: List<LineItem>,
-        totalCost: Double
+        totalCost: Double,
+        packagingTotal: Double,
+        packagingItems: List<InvoicePackagingItem>
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null,
@@ -377,9 +383,10 @@ fun InvoicesListScreen(
     if (showCreateDialog) {
         CreateInvoiceDialog(
             products = products,
+            packaging = packaging,
             onDismiss = { showCreateDialog = false },
-            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost ->
-                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost)
+            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems ->
+                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems)
                 showCreateDialog = false
             },
             onSaveProductService = onSaveProductService,
@@ -558,6 +565,45 @@ private fun InvoiceItemCard(
                 }
             }
 
+            if (invoice.packagingTotal > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = BatchPinkLight.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Inventory2,
+                                contentDescription = null,
+                                tint = BatchPink,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Packaging Included",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BatchPink
+                            )
+                        }
+                        Text(
+                            text = formatZar(invoice.packagingTotal),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BatchPink
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = DividerColor)
             Spacer(modifier = Modifier.height(10.dp))
@@ -648,6 +694,7 @@ private fun InvoiceItemCard(
 @Composable
 fun CreateInvoiceDialog(
     products: List<ProductServiceEntity> = emptyList(),
+    packaging: List<PackagingItemEntity> = emptyList(),
     onDismiss: () -> Unit,
     onConfirm: (
         client: String,
@@ -661,7 +708,9 @@ fun CreateInvoiceDialog(
         taxRatePercent: Double,
         taxAmount: Double,
         items: List<LineItem>,
-        totalCost: Double
+        totalCost: Double,
+        packagingTotal: Double,
+        packagingItems: List<InvoicePackagingItem>
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null
@@ -674,20 +723,30 @@ fun CreateInvoiceDialog(
 
     // Line items list
     var lineItems by remember { mutableStateOf<List<LineItem>>(emptyList()) }
+    var packagingItems by remember { mutableStateOf<List<InvoicePackagingItem>>(emptyList()) }
     var discountText by remember { mutableStateOf("") }
     var taxRatePercent by remember { mutableStateOf(0.0) } // 0% or 15% VAT
     var manualAmountText by remember { mutableStateOf("") }
 
     var showSelectorDialog by remember { mutableStateOf(false) }
+    var showPackagingSelectorDialog by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
 
     // Automatic calculation logic
-    val subtotal = remember(lineItems, manualAmountText) {
+    val packagingTotal = remember(packagingItems) {
+        packagingItems.sumOf { it.calculateLineTotal() }
+    }
+
+    val productsSubtotal = remember(lineItems, manualAmountText) {
         if (lineItems.isNotEmpty()) {
             lineItems.sumOf { it.lineTotal }
         } else {
             manualAmountText.toDoubleOrNull() ?: 0.0
         }
+    }
+
+    val subtotal = remember(productsSubtotal, packagingTotal) {
+        productsSubtotal + packagingTotal
     }
 
     val discountAmount = remember(discountText, subtotal) {
@@ -707,8 +766,8 @@ fun CreateInvoiceDialog(
         taxableAmount + taxAmount
     }
 
-    val totalCost = remember(lineItems) {
-        lineItems.sumOf { it.costPrice * it.quantity }
+    val totalCost = remember(lineItems, packagingItems) {
+        lineItems.sumOf { it.costPrice * it.quantity } + packagingItems.sumOf { it.quantity * it.unitPrice }
     }
 
     val estimatedProfit = remember(grandTotal, totalCost) {
@@ -716,11 +775,18 @@ fun CreateInvoiceDialog(
     }
 
     // Auto-update order description if blank
-    val effectiveDescription = remember(orderDesc, lineItems) {
+    val effectiveDescription = remember(orderDesc, lineItems, packagingItems) {
         if (orderDesc.isNotBlank()) orderDesc
-        else if (lineItems.isNotEmpty()) {
-            lineItems.joinToString(", ") { "${if (it.quantity % 1.0 == 0.0) it.quantity.toInt() else it.quantity}x ${it.itemName}" }
-        } else ""
+        else {
+            val parts = mutableListOf<String>()
+            if (lineItems.isNotEmpty()) {
+                parts.add(lineItems.joinToString(", ") { "${if (it.quantity % 1.0 == 0.0) it.quantity.toInt() else it.quantity}x ${it.itemName}" })
+            }
+            if (packagingItems.isNotEmpty()) {
+                parts.add(packagingItems.joinToString(", ") { "${if (it.quantity % 1.0 == 0.0) it.quantity.toInt() else it.quantity}x ${it.name}" })
+            }
+            parts.joinToString(" + ")
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -1073,6 +1139,208 @@ fun CreateInvoiceDialog(
                         }
                     }
 
+                    // Packaging Items Section
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "PACKAGING & BOXES (${packagingItems.size})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BatchPink,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = "Boxes, boards, ribbon, labels & containers",
+                                    fontSize = 10.sp,
+                                    color = MediumText
+                                )
+                            }
+
+                            Button(
+                                onClick = { showPackagingSelectorDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("btn_add_packaging_invoice_dialog")
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("+ Packaging", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (packagingItems.isEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = BackgroundLight,
+                                border = BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showPackagingSelectorDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Inventory2,
+                                        contentDescription = null,
+                                        tint = BatchPink,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "No packaging added to invoice",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 12.sp,
+                                            color = DarkText
+                                        )
+                                        Text(
+                                            text = "Tap to select saved cake boxes, boards, ribbon, or stickers",
+                                            fontSize = 11.sp,
+                                            color = LightText
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Render Selected Packaging Items
+                    items(packagingItems) { pkg ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            border = BorderStroke(1.dp, BorderLight),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = pkg.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = DarkText
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = BatchPinkLight
+                                            ) {
+                                                Text(
+                                                    text = pkg.category,
+                                                    fontSize = 10.sp,
+                                                    color = BatchPink,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Cost: ${formatZar(pkg.unitPrice)} / ${pkg.unit}",
+                                                fontSize = 11.sp,
+                                                color = LightText
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            packagingItems = packagingItems.filter { it.id != pkg.id }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Remove", tint = LightText, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Quantity Stepper
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .background(BackgroundLight, RoundedCornerShape(8.dp))
+                                            .padding(2.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                if (pkg.quantity > 1) {
+                                                    val newQ = pkg.quantity - 1
+                                                    packagingItems = packagingItems.map {
+                                                        if (it.id == pkg.id) it.copy(quantity = newQ, lineTotal = newQ * it.unitPrice)
+                                                        else it
+                                                    }
+                                                } else {
+                                                    packagingItems = packagingItems.filter { it.id != pkg.id }
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Filled.Remove, contentDescription = "Decrease", modifier = Modifier.size(14.dp), tint = DarkText)
+                                        }
+
+                                        val qtyDisplay = if (pkg.quantity % 1.0 == 0.0) pkg.quantity.toInt().toString() else String.format(Locale.US, "%.1f", pkg.quantity)
+                                        Text(
+                                            text = "$qtyDisplay ${pkg.unit}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = DarkText,
+                                            modifier = Modifier.padding(horizontal = 6.dp)
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                val newQ = pkg.quantity + 1
+                                                packagingItems = packagingItems.map {
+                                                    if (it.id == pkg.id) it.copy(quantity = newQ, lineTotal = newQ * it.unitPrice)
+                                                    else it
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Filled.Add, contentDescription = "Increase", modifier = Modifier.size(14.dp), tint = DarkText)
+                                        }
+                                    }
+
+                                    // Line total
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = "@ ${formatZar(pkg.unitPrice)} each",
+                                            fontSize = 11.sp,
+                                            color = MediumText
+                                        )
+                                        Text(
+                                            text = formatZar(pkg.calculateLineTotal()),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BatchPink
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Order Notes / Description
                     item {
                         OutlinedTextField(
@@ -1105,13 +1373,47 @@ fun CreateInvoiceDialog(
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
-                                // Subtotal
+                                // Products Subtotal
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("Subtotal:", fontSize = 13.sp, color = MediumText)
-                                    Text(formatZar(subtotal), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                                    Text("Products Subtotal:", fontSize = 13.sp, color = MediumText)
+                                    Text(formatZar(productsSubtotal), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Packaging Total (Requirement 8)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Packaging Total:", fontSize = 13.sp, color = MediumText)
+                                        if (packagingItems.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = BatchPinkLight
+                                            ) {
+                                                Text(
+                                                    text = "${packagingItems.size} items",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = BatchPink,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = formatZar(packagingTotal),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (packagingTotal > 0) BatchPink else DarkText
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -1266,7 +1568,9 @@ fun CreateInvoiceDialog(
                                     taxRatePercent,
                                     taxAmount,
                                     lineItems,
-                                    totalCost
+                                    totalCost,
+                                    packagingTotal,
+                                    packagingItems
                                 )
                             }
                         },
@@ -1323,5 +1627,222 @@ fun CreateInvoiceDialog(
                 onNavigateToProducts?.invoke()
             }
         )
+    }
+
+    if (showPackagingSelectorDialog) {
+        PackagingLineItemSelectorDialog(
+            packaging = packaging,
+            onDismiss = { showPackagingSelectorDialog = false },
+            onSelectPackaging = { pkg ->
+                val existing = packagingItems.find { it.packagingId == pkg.id }
+                if (existing != null) {
+                    val newQ = existing.quantity + 1
+                    packagingItems = packagingItems.map {
+                        if (it.packagingId == pkg.id) it.copy(quantity = newQ, lineTotal = newQ * it.unitPrice)
+                        else it
+                    }
+                } else {
+                    packagingItems = packagingItems + InvoicePackagingItem(
+                        packagingId = pkg.id,
+                        name = pkg.name,
+                        category = pkg.category,
+                        unit = pkg.unit,
+                        quantity = 1.0,
+                        unitPrice = pkg.unitPrice,
+                        lineTotal = pkg.unitPrice
+                    )
+                }
+                showPackagingSelectorDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun PackagingLineItemSelectorDialog(
+    packaging: List<PackagingItemEntity>,
+    onDismiss: () -> Unit,
+    onSelectPackaging: (PackagingItemEntity) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
+
+    val categories = remember {
+        listOf("All", "Cake boxes", "Cupcake boxes", "Bento boxes", "Cake boards", "Ribbon", "Stickers and labels", "Bags", "Containers", "Other")
+    }
+
+    val filtered = remember(packaging, searchQuery, selectedCategory) {
+        packaging.filter { item ->
+            val matchCat = selectedCategory == "All" || item.category.equals(selectedCategory, ignoreCase = true)
+            val matchSearch = searchQuery.isBlank() ||
+                item.name.contains(searchQuery, ignoreCase = true) ||
+                item.category.contains(searchQuery, ignoreCase = true) ||
+                item.supplier.contains(searchQuery, ignoreCase = true)
+            matchCat && matchSearch
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = Color.White,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Select Packaging",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DarkText
+                        )
+                        Text(
+                            text = "Add saved packaging to invoice",
+                            fontSize = 11.sp,
+                            color = LightText
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = LightText)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search packaging...") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = LightText) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(categories) { cat ->
+                        val isSelected = selectedCategory == cat
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) BatchPink else BackgroundLight,
+                            border = if (isSelected) null else BorderStroke(1.dp, BorderLight),
+                            modifier = Modifier.clickable { selectedCategory = cat }
+                        ) {
+                            Text(
+                                text = cat,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else DarkText,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = DividerColor)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (filtered.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = LightText, modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (packaging.isEmpty()) "No saved packaging items found" else "No matching packaging",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = DarkText
+                            )
+                            Text(
+                                text = if (packaging.isEmpty()) "Create packaging items in Stock & Packaging to select them for invoices" else "Try clearing filters",
+                                fontSize = 11.sp,
+                                color = LightText
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filtered) { item ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White,
+                                border = BorderStroke(1.dp, BorderLight),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectPackaging(item) }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkText)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = BatchPinkLight
+                                            ) {
+                                                Text(
+                                                    text = item.category,
+                                                    fontSize = 10.sp,
+                                                    color = BatchPink,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Stock: ${item.currentStock} ${item.unit}", fontSize = 11.sp, color = if (item.isLowStock) BatchPink else LightText)
+                                        }
+                                    }
+
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = formatZar(item.unitPrice),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BatchPink
+                                        )
+                                        Text(
+                                            text = "per ${item.unit}",
+                                            fontSize = 10.sp,
+                                            color = LightText
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

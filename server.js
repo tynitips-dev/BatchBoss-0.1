@@ -64,7 +64,8 @@ function getBakery(bakeryId) {
         currency: "ZAR (R)"
       },
       recipes: [],
-      customers: []
+      customers: [],
+      packaging: []
     };
     saveStore();
   }
@@ -101,6 +102,8 @@ const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -229,6 +232,51 @@ const server = http.createServer((req, res) => {
           saveStore();
           console.log(`[Server] Saved customer '${data.name}' for bakery: ${bakeryId}`);
           return sendJson(res, 200, { success: true, customer: data });
+        });
+      }
+    }
+
+    // Packaging: /api/bakery/:bakeryId/packaging
+    if (subRoute === 'packaging') {
+      if (!bakery.packaging) bakery.packaging = [];
+      if (method === 'GET') {
+        return sendJson(res, 200, bakery.packaging || []);
+      }
+      if (method === 'POST') {
+        return readJsonBody(req, (err, data) => {
+          if (err) return sendJson(res, 400, { error: 'Invalid JSON payload' });
+          if (!data || !data.name) return sendJson(res, 400, { error: 'Packaging item name is required' });
+
+          data.bakeryId = bakeryId;
+          data.updatedAt = Date.now();
+
+          // Calculate unitPrice if missing
+          const pPrice = Number(data.packagePrice) || 0;
+          const pQty = Number(data.packageQuantity) || 1;
+          if (!data.unitPrice) {
+            data.unitPrice = pQty > 0 ? pPrice / pQty : 0;
+          }
+
+          const idx = bakery.packaging.findIndex(p => (data.id && p.id === data.id) || (p.name && p.name.toLowerCase() === data.name.toLowerCase()));
+          if (idx >= 0) {
+            bakery.packaging[idx] = { ...bakery.packaging[idx], ...data };
+          } else {
+            if (!data.id) data.id = Date.now();
+            bakery.packaging.push(data);
+          }
+          saveStore();
+          console.log(`[Server] Saved packaging item '${data.name}' for bakery: ${bakeryId}`);
+          return sendJson(res, 200, { success: true, packaging: data });
+        });
+      }
+      if (method === 'DELETE') {
+        return readJsonBody(req, (err, data) => {
+          const deleteId = data?.id;
+          if (deleteId) {
+            bakery.packaging = (bakery.packaging || []).filter(p => p.id !== deleteId);
+            saveStore();
+          }
+          return sendJson(res, 200, { success: true });
         });
       }
     }

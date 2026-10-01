@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BatchBoss Unified API & Data Specification",
+  "description": "JSON specification and schemas for real-time collaboration between BatchBoss Android app and website",
+  "version": "1.2.0",
+  "currency": {
+    "code": "ZAR",
+    "symbol": "R",
+    "standardVatPercent": 15.0
+  },
+  "storage": {
+    "firestore": {
+      "baseCollection": "bakeries",
+      "path": "bakeries/{bakeryId}/{subCollection}/{documentId}",
+      "subCollections": [
+        "profile",
+        "packaging",
+        "invoices",
+        "recipes",
+        "ingredients",
+        "customers",
+        "batches"
+      ]
+    },
+    "restApi": {
+      "baseUrl": "http://localhost:3000",
+      "endpoints": [
+        {
+          "path": "/api/bakery/:bakeryId/sync",
+          "methods": ["GET", "POST"],
+          "description": "Full sync of profile, recipes, inventory, packaging, invoices, and customers"
+        },
+        {
+          "path": "/api/bakery/:bakeryId/packaging",
+          "methods": ["GET", "POST", "DELETE"],
+          "description": "CRUD for packaging items (boxes, boards, ribbons, labels)"
+        },
+        {
+          "path": "/api/bakery/:bakeryId/invoices",
+          "methods": ["GET", "POST"],
+          "description": "Fetch and create invoices with packaging items"
+        },
+        {
+          "path": "/api/bakery/:bakeryId/deletion-request",
+          "methods": ["POST"],
+          "description": "Submit account or data wipe request for Google Play compliance"
+        }
+      ]
+    }
+  },
+  "packagingCategories": [
+    "Cake boxes",
+    "Cupcake boxes",
+    "Bento boxes",
+    "Cake boards",
+    "Ribbon",
+    "Stickers and labels",
+    "Bags",
+    "Containers",
+    "Other"
+  ],
+  "schemas": {
+    "packagingItem": {
+      "type": "object",
+      "required": ["id", "bakeryId", "name", "category", "unit", "packagePrice", "packageQuantity", "unitPrice", "currentStock", "minStock", "isLowStock"],
+      "properties": {
+        "id": { "type": "integer", "description": "Epoch ms or unique ID" },
+        "bakeryId": { "type": "string", "example": "bakery_1" },
+        "userId": { "type": "integer", "default": 0 },
+        "name": { "type": "string", "example": "10-inch White Tall Cake Box" },
+        "category": { "type": "string", "enum": ["Cake boxes", "Cupcake boxes", "Bento boxes", "Cake boards", "Ribbon", "Stickers and labels", "Bags", "Containers", "Other"] },
+        "unit": { "type": "string", "example": "pcs" },
+        "packagePrice": { "type": "number", "description": "Bulk buy price paid", "example": 250.0 },
+        "packageQuantity": { "type": "number", "description": "Units inside bulk pack", "example": 25.0 },
+        "gramsPerUnit": { "type": "number", "default": 0.0 },
+        "unitPrice": { "type": "number", "description": "packagePrice / packageQuantity", "example": 10.0 },
+        "currentStock": { "type": "number", "example": 45.0 },
+        "minStock": { "type": "number", "example": 10.0 },
+        "isLowStock": { "type": "boolean", "description": "currentStock <= minStock" },
+        "alertEnabled": { "type": "boolean", "default": true },
+        "barcode": { "type": "string", "default": "" },
+        "supplier": { "type": "string", "example": "BakePak Supplies" },
+        "notes": { "type": "string", "example": "Fits 8-inch and 10-inch cakes" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      }
+    },
+    "invoice": {
+      "type": "object",
+      "required": ["id", "invoiceNumber", "bakeryId", "clientName", "productsSubtotal", "packagingTotal", "subtotal", "taxRate", "taxAmount", "totalDue", "status"],
+      "properties": {
+        "id": { "type": "integer" },
+        "invoiceNumber": { "type": "string", "example": "INV-1001" },
+        "bakeryId": { "type": "string", "example": "bakery_1" },
+        "clientName": { "type": "string", "example": "Sarah Jenkins" },
+        "clientPhone": { "type": "string", "example": "+27 82 123 4567" },
+        "orderDescription": { "type": "string", "example": "Custom 2-Tier Birthday Cake" },
+        "status": { "type": "string", "enum": ["UNPAID", "PAID", "OVERDUE", "DRAFT"] },
+        "dueDate": { "type": "string", "format": "date", "example": "2026-10-15" },
+        "productsSubtotal": { "type": "number", "example": 850.0 },
+        "packagingTotal": { "type": "number", "description": "Sum of packaging line totals", "example": 65.0 },
+        "subtotal": { "type": "number", "description": "productsSubtotal + packagingTotal", "example": 915.0 },
+        "discount": { "type": "number", "default": 0.0 },
+        "taxRate": { "type": "number", "default": 15.0 },
+        "taxAmount": { "type": "number", "example": 137.25 },
+        "totalDue": { "type": "number", "example": 1052.25 },
+        "totalCost": { "type": "number", "example": 380.0 },
+        "estimatedProfit": { "type": "number", "example": 672.25 },
+        "lineItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "integer" },
+              "name": { "type": "string" },
+              "quantity": { "type": "number" },
+              "unitPrice": { "type": "number" },
+              "costPerUnit": { "type": "number" },
+              "lineTotal": { "type": "number" }
+            }
+          }
+        },
+        "packagingItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "packagingId": { "type": "integer" },
+              "name": { "type": "string" },
+              "category": { "type": "string" },
+              "unit": { "type": "string" },
+              "quantity": { "type": "number" },
+              "unitPrice": { "type": "number" },
+              "lineTotal": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      }
+    }
+  },
+  "formulas": {
+    "packagingUnitPrice": "packageQuantity > 0 ? (packagePrice / packageQuantity) : 0",
+    "invoiceSubtotal": "productsSubtotal + packagingTotal",
+    "invoiceTaxableAmount": "Math.max(0, subtotal - discount)",
+    "invoiceTaxAmount": "taxableAmount * (taxRate / 100)",
+    "invoiceTotalDue": "taxableAmount + taxAmount",
+    "invoiceEstimatedProfit": "totalDue - totalCost",
+    "invoiceProfitMarginPercent": "totalDue > 0 ? (estimatedProfit / totalDue) * 100 : 0"
+  }
+}

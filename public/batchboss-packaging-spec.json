@@ -1,0 +1,244 @@
+{
+  "system": "BatchBoss",
+  "version": "1.0",
+  "description": "Standardized Packaging and Invoice Integration Specification for BatchBoss Web and Android Applications",
+  "firestore": {
+    "collectionPath": "bakeries/{bakeryId}/packaging/{packagingId}",
+    "fields": {
+      "id": {
+        "type": "number",
+        "description": "Unique identifier for the packaging item (timestamp or long integer)",
+        "required": true,
+        "example": 1790075000000
+      },
+      "bakeryId": {
+        "type": "string",
+        "description": "Workspace bakery identifier scoping the record",
+        "required": true,
+        "example": "bakery_1"
+      },
+      "userId": {
+        "type": "number",
+        "description": "User identifier who created the item",
+        "required": false,
+        "default": 0
+      },
+      "name": {
+        "type": "string",
+        "description": "Display name of the packaging item",
+        "required": true,
+        "example": "10-inch White Cake Box (Tall)"
+      },
+      "category": {
+        "type": "string",
+        "description": "Category for classification and filtering",
+        "required": true,
+        "allowedValues": [
+          "Cake boxes",
+          "Cupcake boxes",
+          "Bento boxes",
+          "Cake boards",
+          "Ribbon",
+          "Stickers and labels",
+          "Bags",
+          "Containers",
+          "Other"
+        ],
+        "example": "Cake boxes"
+      },
+      "unit": {
+        "type": "string",
+        "description": "Unit of measurement (e.g. pcs, boxes, rolls, m, packs)",
+        "required": true,
+        "default": "pcs",
+        "example": "pcs"
+      },
+      "packagePrice": {
+        "type": "number",
+        "description": "Total purchase price paid for the bulk package in ZAR (R)",
+        "required": true,
+        "example": 250.00
+      },
+      "packageQuantity": {
+        "type": "number",
+        "description": "Total quantity of units inside the bulk package",
+        "required": true,
+        "default": 1.0,
+        "example": 25.0
+      },
+      "gramsPerUnit": {
+        "type": "number",
+        "description": "Optional weight in grams per unit",
+        "required": false,
+        "default": 0.0
+      },
+      "unitPrice": {
+        "type": "number",
+        "description": "Calculated cost per unit (packagePrice / packageQuantity)",
+        "required": true,
+        "formula": "packageQuantity > 0 ? (packagePrice / packageQuantity) : 0",
+        "example": 10.00
+      },
+      "currentStock": {
+        "type": "number",
+        "description": "Current quantity in stock",
+        "required": true,
+        "default": 0.0,
+        "example": 45.0
+      },
+      "minStock": {
+        "type": "number",
+        "description": "Minimum stock threshold before low-stock warning triggers",
+        "required": true,
+        "default": 10.0,
+        "example": 10.0
+      },
+      "isLowStock": {
+        "type": "boolean",
+        "description": "Flag indicating if currentStock <= minStock",
+        "required": true,
+        "formula": "currentStock <= minStock",
+        "example": false
+      },
+      "alertEnabled": {
+        "type": "boolean",
+        "description": "Whether low-stock notification alerts are enabled for this item",
+        "required": true,
+        "default": true
+      },
+      "barcode": {
+        "type": "string",
+        "description": "Optional barcode or SKU string",
+        "required": false,
+        "default": ""
+      },
+      "supplier": {
+        "type": "string",
+        "description": "Name of packaging supplier or vendor",
+        "required": false,
+        "default": "",
+        "example": "BakePak Supplies"
+      },
+      "notes": {
+        "type": "string",
+        "description": "Additional notes, dimensions or usage guidelines",
+        "required": false,
+        "default": "",
+        "example": "Fits 8\" and 10\" single tier drip cakes up to 20cm height"
+      },
+      "createdAt": {
+        "type": "number",
+        "description": "Creation timestamp in UTC milliseconds",
+        "required": true,
+        "example": 1790075000000
+      },
+      "updatedAt": {
+        "type": "number",
+        "description": "Last update timestamp in UTC milliseconds",
+        "required": true,
+        "example": 1790075000000
+      }
+    }
+  },
+  "webApiEndpoints": {
+    "getAll": {
+      "method": "GET",
+      "endpoint": "/api/bakery/:bakeryId/packaging",
+      "description": "Fetches all packaging items for the bakery workspace",
+      "responseExample": [
+        {
+          "id": 1790075000000,
+          "bakeryId": "bakery_1",
+          "name": "10-inch White Cake Box (Tall)",
+          "category": "Cake boxes",
+          "unit": "pcs",
+          "packagePrice": 250.0,
+          "packageQuantity": 25.0,
+          "gramsPerUnit": 0.0,
+          "unitPrice": 10.0,
+          "currentStock": 45.0,
+          "minStock": 10.0,
+          "isLowStock": false,
+          "alertEnabled": true,
+          "supplier": "BakePak Supplies",
+          "notes": "Fits 8\" and 10\" single tier drip cakes",
+          "createdAt": 1790075000000,
+          "updatedAt": 1790075000000
+        }
+      ]
+    },
+    "createOrUpdate": {
+      "method": "POST",
+      "endpoint": "/api/bakery/:bakeryId/packaging",
+      "description": "Creates or updates a packaging item in the bakery workspace",
+      "requestPayload": {
+        "id": 1790075000000,
+        "name": "10-inch White Cake Box (Tall)",
+        "category": "Cake boxes",
+        "unit": "pcs",
+        "packagePrice": 250.0,
+        "packageQuantity": 25.0,
+        "currentStock": 45.0,
+        "minStock": 10.0,
+        "supplier": "BakePak Supplies",
+        "notes": "Fits 8\" and 10\" single tier drip cakes"
+      },
+      "responseExample": {
+        "success": true,
+        "packaging": {
+          "id": 1790075000000,
+          "unitPrice": 10.0,
+          "isLowStock": false
+        }
+      }
+    },
+    "delete": {
+      "method": "DELETE",
+      "endpoint": "/api/bakery/:bakeryId/packaging",
+      "description": "Deletes a packaging item by ID",
+      "requestPayload": {
+        "id": 1790075000000
+      },
+      "responseExample": {
+        "success": true
+      }
+    }
+  },
+  "invoiceIntegration": {
+    "invoiceFields": {
+      "packagingTotal": {
+        "type": "number",
+        "description": "Sum of all packaging line items on the invoice",
+        "required": true,
+        "default": 0.0,
+        "example": 45.00
+      },
+      "packagingItemsJson": {
+        "type": "string",
+        "description": "JSON string representation of InvoicePackagingItem array",
+        "example": "[{\"id\":\"uuid-1\",\"packagingId\":1790075000000,\"name\":\"10-inch White Cake Box (Tall)\",\"category\":\"Cake boxes\",\"unit\":\"pcs\",\"quantity\":2.0,\"unitPrice\":10.0,\"lineTotal\":20.0}]"
+      }
+    },
+    "packagingItemStructure": {
+      "id": "string (UUID)",
+      "packagingId": "number (Reference to packaging record)",
+      "name": "string",
+      "category": "string",
+      "unit": "string",
+      "quantity": "number (Quantity of packaging units used)",
+      "unitPrice": "number (Cost or price per unit)",
+      "lineTotal": "number (quantity * unitPrice)"
+    },
+    "calculationRules": {
+      "packagingLineTotal": "quantity * unitPrice",
+      "packagingTotal": "sum(packagingItems.map(p => p.lineTotal))",
+      "subtotal": "productItemsSubtotal + packagingTotal",
+      "discountAmount": "min(discount, subtotal)",
+      "taxableAmount": "max(0, subtotal - discountAmount)",
+      "taxAmount": "taxRatePercent > 0 ? (taxableAmount * (taxRatePercent / 100)) : 0",
+      "totalDue": "taxableAmount + taxAmount",
+      "totalCost": "sum(productItems.cost) + packagingTotal",
+      "estimatedProfit": "totalDue - totalCost"
+    }
+  }
+}

@@ -39,10 +39,15 @@ data class UserAccountEntity(
 
 @Entity(
     tableName = "customers",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class CustomerEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
     val bakeryId: String = "",
     val name: String,
@@ -52,16 +57,25 @@ data class CustomerEntity(
     val notes: String = "",
     val totalOrders: Int = 0,
     val totalSpend: Double = 0.0,
-    val createdAt: Long = System.currentTimeMillis()
-)
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "orders",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class OrderEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val orderNumber: String,
     val customerName: String,
     val customerPhone: String = "",
@@ -72,15 +86,23 @@ data class OrderEntity(
     val status: String = "Pending", // "Pending", "In Progress", "Completed", "Cancelled"
     val recipeOrItemName: String = "",
     val quantity: Int = 1,
-    val createdAt: Long = System.currentTimeMillis()
-)
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "recipes",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class RecipeEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
     val bakeryId: String = "",
     val name: String,
@@ -102,46 +124,79 @@ data class RecipeEntity(
     val laborHours: Double = 1.5,
     val laborRatePerHour: Double = 120.0,
     val instructions: String = "",
-    val photoUri: String = ""
-)
+    val photoUri: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "recipe_ingredients",
-    indices = [Index(value = ["recipeId"]), Index(value = ["userId"])]
+    indices = [
+        Index(value = ["recipeId"]),
+        Index(value = ["userId"]),
+        Index(value = ["recipeFirestoreId"]),
+        Index(value = ["firestoreId"]),
+        Index(value = ["bakeryId"])
+    ]
 )
 data class RecipeIngredientEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
+    val recipeFirestoreId: String = "",
     val recipeId: Long,
     val userId: Long = 0,
+    val bakeryId: String = "",
     val name: String,
     val quantity: Double,
     val unit: String,
-    val cost: Double
-)
+    val cost: Double,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "tasks",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val title: String,
     val orderRef: String,
     val dueTime: String,
     val priority: String, // "High", "Medium", "Low"
     val status: String, // "Pending", "InProgress", "Completed"
     val dayOfWeek: String = "Wed",
-    val dueDate: String = "" // "yyyy-MM-dd"
-)
+    val dueDate: String = "", // "yyyy-MM-dd"
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "inventory_items",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class InventoryItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val name: String,
     val currentStock: Double,
     val minStock: Double,
@@ -152,8 +207,12 @@ data class InventoryItemEntity(
     val packagePrice: Double = 0.0,
     val gramsPerUnit: Double = 1000.0,
     val category: String = "Baking Staples",
-    val barcode: String = ""
-)
+    val barcode: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "suppliers",
@@ -206,11 +265,17 @@ data class NotificationEntity(
 
 @Entity(
     tableName = "products_services",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class ProductServiceEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val name: String,
     val description: String = "",
     val category: String = "Cakes",
@@ -224,7 +289,9 @@ data class ProductServiceEntity(
     val linkedRecipeId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 @Entity(
     tableName = "product_price_history",
@@ -330,11 +397,17 @@ object LineItemJsonUtil {
 
 @Entity(
     tableName = "invoices",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class InvoiceEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val invoiceNumber: String,
     val clientName: String,
     val clientPhone: String,
@@ -348,19 +421,34 @@ data class InvoiceEntity(
     val taxRatePercent: Double = 0.0,
     val taxAmount: Double = 0.0,
     val lineItemsJson: String = "",
-    val totalCost: Double = 0.0
+    val totalCost: Double = 0.0,
+    val packagingTotal: Double = 0.0,
+    val packagingItemsJson: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 ) {
+    val firestoreDocumentId: String get() = firestoreId
+
     val items: List<LineItem>
         get() = LineItemJsonUtil.fromJson(lineItemsJson)
+
+    val packagingItems: List<InvoicePackagingItem>
+        get() = InvoicePackagingJsonUtil.fromJson(packagingItemsJson)
 }
 
 @Entity(
     tableName = "quotes",
-    indices = [Index(value = ["userId"])]
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["bakeryId"]),
+        Index(value = ["firestoreId"])
+    ]
 )
 data class QuoteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
+    val bakeryId: String = "",
     val quoteNumber: String,
     val clientName: String,
     val clientPhone: String,
@@ -377,8 +465,12 @@ data class QuoteEntity(
     val taxRatePercent: Double = 0.0,
     val taxAmount: Double = 0.0,
     val lineItemsJson: String = "",
-    val totalCost: Double = 0.0
+    val totalCost: Double = 0.0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 ) {
+    val firestoreDocumentId: String get() = firestoreId
+
     val items: List<LineItem>
         get() = LineItemJsonUtil.fromJson(lineItemsJson)
 }

@@ -42,7 +42,8 @@ fun InventoryListScreen(
     onDeleteStockItem: (Long) -> Unit,
     onUpdateStockPriceDetailed: ((Long, Double, Double, Double, Double, Double) -> Unit)? = null,
     onAddNewStockItemDetailed: ((String, Double, Double, Double, Double, Double, String, String) -> Unit)? = null,
-    onScanBarcode: () -> Unit = {}
+    onScanBarcode: () -> Unit = {},
+    onNavigateToPackaging: (() -> Unit)? = null
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     var searchQuery by remember { mutableStateOf("") }
@@ -213,6 +214,55 @@ fun InventoryListScreen(
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (lowStockItems.isNotEmpty()) WarmAmber else DarkText
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (onNavigateToPackaging != null) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BatchPinkLight.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onNavigateToPackaging)
+                            .testTag("banner_switch_to_packaging")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Outlined.Inventory2,
+                                    contentDescription = null,
+                                    tint = BatchPink,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Packaging & Boxes Section",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = DarkText
+                                    )
+                                    Text(
+                                        text = "Cake boxes, boards, ribbon, labels & containers",
+                                        fontSize = 11.sp,
+                                        color = MediumText
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.Filled.ChevronRight,
+                                contentDescription = "Open Packaging",
+                                tint = BatchPink,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }

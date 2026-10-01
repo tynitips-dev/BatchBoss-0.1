@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatchBoss - Packaging & Website Integration Specification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #FF3B81;
+      --primary-light: #FFF0F5;
+      --primary-hover: #E0286F;
+      --dark: #1E1B1D;
+      --medium: #6E686B;
+      --light-bg: #F8F9FA;
+      --card-bg: #FFFFFF;
+      --border: #EFE8EC;
+      --mint: #10B981;
+      --mint-light: #ECFDF5;
+      --amber: #F59E0B;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--light-bg);
+      color: var(--dark);
+      line-height: 1.6;
+      padding: 32px 16px;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(255, 59, 129, 0.05);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--dark);
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      color: var(--medium);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(255, 59, 129, 0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: var(--dark);
+      border: 1.5px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .btn-mint {
+      background: var(--mint);
+      color: white;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+    }
+
+    .btn-mint:hover {
+      background: #059669;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-weight: 700;
+      color: var(--medium);
+      background: var(--light-bg);
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: #F1EFF0;
+      color: #931B4E;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre {
+      background: #18181B;
+      color: #E4E4E7;
+      padding: 16px;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin: 3px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--dark);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <div class="badge">📦 BatchBoss Specification</div>
+      <h1>Website & Android Packaging Integration</h1>
+      <p class="subtitle">
+        Everything ChatGPT needs to build and synchronize the Packaging module and Invoice Packaging calculations on your website so it collaborates 100% with the BatchBoss Android app.
+      </p>
+
+      <div class="action-grid">
+        <a href="/batchboss-packaging-spec.json" download="batchboss-packaging-spec.json" class="btn btn-primary">
+          ⬇️ Download JSON Schema (.json)
+        </a>
+        <a href="/batchboss-website-integration-prompt.md" download="batchboss-website-integration-prompt.md" class="btn btn-secondary">
+          ⬇️ Download Markdown Guide (.md)
+        </a>
+        <button onclick="copyChatGPTContent()" class="btn btn-mint">
+          📋 Copy Prompt for ChatGPT
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Overview Card -->
+    <div class="card">
+      <div class="card-title">🔗 Real-time Sync & Architecture</div>
+      <p style="font-size: 14px; color: var(--medium); margin-bottom: 12px;">
+        The Android app and website communicate directly through the following Firebase Firestore collection:
+      </p>
+      <pre><code>Firestore Path: bakeries/{bakeryId}/packaging/{packagingId}
+Web API Path:   /api/bakery/:bakeryId/packaging</code></pre>
+    </div>
+
+    <!-- Standard Categories -->
+    <div class="card">
+      <div class="card-title">🏷️ Standard Packaging Categories (9 Types)</div>
+      <div>
+        <span class="pill">Cake boxes</span>
+        <span class="pill">Cupcake boxes</span>
+        <span class="pill">Bento boxes</span>
+        <span class="pill">Cake boards</span>
+        <span class="pill">Ribbon</span>
+        <span class="pill">Stickers and labels</span>
+        <span class="pill">Bags</span>
+        <span class="pill">Containers</span>
+        <span class="pill">Other</span>
+      </div>
+    </div>
+
+    <!-- Schema Table -->
+    <div class="card">
+      <div class="card-title">📋 Exact Field Names & Data Types</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Formula / Rule</th>
+            <th>Sample Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>id</code></td>
+            <td>Number</td>
+            <td>Unique ID (Epoch timestamp)</td>
+            <td><code>1790075000000</code></td>
+          </tr>
+          <tr>
+            <td><code>name</code></td>
+            <td>String</td>
+            <td>Item display name</td>
+            <td><code>"10-inch Cake Box"</code></td>
+          </tr>
+          <tr>
+            <td><code>category</code></td>
+            <td>String</td>
+            <td>From 9 categories above</td>
+            <td><code>"Cake boxes"</code></td>
+          </tr>
+          <tr>
+            <td><code>unit</code></td>
+            <td>String</td>
+            <td>Measurement unit</td>
+            <td><code>"pcs"</code></td>
+          </tr>
+          <tr>
+            <td><code>packagePrice</code></td>
+            <td>Number</td>
+            <td>Bulk package price</td>
+            <td><code>250.00</code></td>
+          </tr>
+          <tr>
+            <td><code>packageQuantity</code></td>
+            <td>Number</td>
+            <td>Units in package</td>
+            <td><code>25.0</code></td>
+          </tr>
+          <tr>
+            <td><code>unitPrice</code></td>
+            <td>Number</td>
+            <td><code>packagePrice / packageQuantity</code></td>
+            <td><code>10.00</code></td>
+          </tr>
+          <tr>
+            <td><code>currentStock</code></td>
+            <td>Number</td>
+            <td>Stock on hand</td>
+            <td><code>45.0</code></td>
+          </tr>
+          <tr>
+            <td><code>minStock</code></td>
+            <td>Number</td>
+            <td>Threshold for low stock</td>
+            <td><code>10.0</code></td>
+          </tr>
+          <tr>
+            <td><code>isLowStock</code></td>
+            <td>Boolean</td>
+            <td><code>currentStock <= minStock</code></td>
+            <td><code>false</code></td>
+          </tr>
+          <tr>
+            <td><code>alertEnabled</code></td>
+            <td>Boolean</td>
+            <td>Notification toggle</td>
+            <td><code>true</code></td>
+          </tr>
+          <tr>
+            <td><code>supplier</code></td>
+            <td>String</td>
+            <td>Vendor name</td>
+            <td><code>"BakePak Supplies"</code></td>
+          </tr>
+          <tr>
+            <td><code>notes</code></td>
+            <td>String</td>
+            <td>Dimensions & details</td>
+            <td><code>"Fits 8\" & 10\" drip cakes"</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Invoice Integration -->
+    <div class="card">
+      <div class="card-title">🧾 Invoice Calculations & Integration</div>
+      <pre><code>// 1. Line total for each packaging item selected:
+lineTotal = quantity * unitPrice;
+
+// 2. Separate Packaging Total on the invoice:
+packagingTotal = sum(packagingItems.map(item => item.quantity * item.unitPrice));
+
+// 3. Subtotal including packaging:
+subtotal = productsSubtotal + packagingTotal;
+
+// 4. Tax (15% in SA) and Total Due:
+taxableAmount = Math.max(0, subtotal - discountAmount);
+taxAmount = taxRatePercent > 0 ? (taxableAmount * (taxRatePercent / 100)) : 0;
+totalDue = taxableAmount + taxAmount;
+
+// 5. Total Cost and Estimated Profit:
+totalCost = productsCost + packagingTotal;
+estimatedProfit = totalDue - totalCost;</code></pre>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">✅ Prompt copied to clipboard!</div>
+
+  <script>
+    async function copyChatGPTContent() {
+      try {
+        const response = await fetch('/batchboss-website-integration-prompt.md');
+        const text = await response.text();
+        await navigator.clipboard.writeText(text);
+        showToast("✅ Full prompt copied to clipboard! Paste it into ChatGPT.");
+      } catch (err) {
+        showToast("⚠️ Could not auto-copy. Use the Download buttons above.");
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+  </script>
+</body>
+</html>
