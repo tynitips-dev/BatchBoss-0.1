@@ -54,7 +54,6 @@ sealed class Screen {
     data object BakingSupplyStoreLocator : Screen()
     data object AboutBatchBoss : Screen()
     data object AccountDataDeletion : Screen()
-    data object MasterBackend : Screen()
     data object FirebaseSync : Screen()
     data class BakingSupplyStoreDetail(val storeId: Long) : Screen()
     data class WelcomeEmail(
@@ -113,7 +112,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     val userProfile: StateFlow<UserProfileEntity?> = repository.userProfile
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    // Master Backend Streams
+    // Master User & Audit Streams
     val allRegisteredUsers: StateFlow<List<UserAccountEntity>> = repository.allUsers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -308,7 +307,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             is Screen.RecipesList -> _selectedTab.value = 1
             is Screen.InventoryList, is Screen.LowStock, is Screen.PackagingList -> _selectedTab.value = 2
             is Screen.SuppliersList -> _selectedTab.value = 3
-            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> _selectedTab.value = 4
+            is Screen.QuickActions, is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AboutBatchBoss, is Screen.AccountDataDeletion, is Screen.FirebaseSync -> _selectedTab.value = 4
             is Screen.RecipeDetail -> {
                 _selectedRecipeId.value = screen.recipeId
                 _selectedTab.value = 1
@@ -1832,7 +1831,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 email = email.trim().lowercase(),
                 bakeryName = bakeryName.trim(),
                 action = "ADMIN_CREATED",
-                notes = "Provisioned via Master Backend"
+                notes = "Provisioned by Administrator"
             )
             onComplete(id)
         }

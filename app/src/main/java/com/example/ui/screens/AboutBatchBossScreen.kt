@@ -121,7 +121,7 @@ fun AboutBatchBossScreen(
                             border = androidx.compose.foundation.BorderStroke(0.5.dp, BatchPink.copy(alpha = 0.3f))
                         ) {
                             Text(
-                                text = "Version 10.0 • Production Build",
+                                text = "Production Build",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = BatchPink,

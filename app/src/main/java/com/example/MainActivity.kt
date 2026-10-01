@@ -161,7 +161,7 @@ fun BatchBossApp(
             is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AddSupplier,
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
-            is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
+            is Screen.AccountDataDeletion, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
             is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
@@ -645,7 +645,6 @@ fun BatchBossApp(
                         onOpenProductsServices = { viewModel.navigateTo(Screen.ProductsServicesList) },
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
-                        onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) },
                         onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) },
                         onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
@@ -1000,73 +999,6 @@ fun BatchBossApp(
                             viewModel.instantDeleteCurrentAccountAndData {
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar("Account and data permanently deleted.")
-                                }
-                            }
-                        }
-                    )
-                }
-
-                is Screen.MasterBackend -> {
-                    MasterBackendScreen(
-                        users = allRegisteredUsers,
-                        loginLogs = allLoginLogs,
-                        deletionRequests = allDeletionRequests,
-                        onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onDeleteUser = { uid ->
-                            viewModel.adminDeleteUserData(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("User account and data wiped.")
-                                }
-                            }
-                        },
-                        onProcessDeletionRequest = { reqId, uid ->
-                            viewModel.adminProcessDeletionRequest(reqId, uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Deletion request approved and executed.")
-                                }
-                            }
-                        },
-                        onRejectDeletionRequest = { reqId ->
-                            viewModel.adminRejectDeletionRequest(reqId) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Deletion request dismissed.")
-                                }
-                            }
-                        },
-                        onClearLogs = {
-                            viewModel.adminClearLoginLogs()
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Login audit logs cleared.")
-                            }
-                        },
-                        onFactoryReset = {
-                            viewModel.adminFactoryResetDatabase {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Database reset to zero state.")
-                                }
-                            }
-                        },
-                        onCreateUser = { first, last, email, bakery, phone, city, opModel, curr, isPro ->
-                            viewModel.adminCreateUserAccount(first, last, email, bakery, phone, city, opModel, curr, isPro) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Bakery account stored successfully!")
-                                }
-                            }
-                        },
-                        onToggleUserPro = { uid, isPro ->
-                            viewModel.adminToggleUserPro(uid, isPro)
-                        },
-                        onPurgeInvoices = { uid ->
-                            viewModel.adminPurgeUserInvoices(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Invoices purged for user.")
-                                }
-                            }
-                        },
-                        onPurgeQuotes = { uid ->
-                            viewModel.adminPurgeUserQuotes(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Quotes purged for user.")
                                 }
                             }
                         }

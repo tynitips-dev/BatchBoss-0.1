@@ -1,6 +1,6 @@
 {
   "name": "BatchBoss",
-  "description": "Version 8: Bakery costing, recipe pricing, central products & services catalog, quotes, invoices, personal master backend, and Google Play account & data deletion compliance.",
+  "description": "Bakery costing, recipe pricing, central products & services catalog, quotes, invoices, and Google Play account & data deletion compliance.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

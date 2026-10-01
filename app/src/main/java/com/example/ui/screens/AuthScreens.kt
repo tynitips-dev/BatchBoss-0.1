@@ -146,7 +146,7 @@ fun SplashScreen(
                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = LightText, modifier = Modifier.size(13.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Professional Bakery Operating System • v7.0",
+                    text = "Professional Bakery Operating System",
                     color = LightText,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
