@@ -13,6 +13,7 @@ import { auth, db, firebaseConfigured } from './firebase'
 import SubscriptionView from './SubscriptionView'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
+import * as XLSX from 'xlsx'
 
 type ModuleDefinition = { key: ModuleKey; label: string; icon: typeof BookOpen; collection?: string; pro?: boolean }
 const modules: ModuleDefinition[] = [
@@ -379,12 +380,62 @@ function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: Modul
 
 type IngredientRow = { name: string; quantity: number; unit: string; cost: number }
 
-type ImportRow={name:string;unit:string;price:number;quantity:number;stock:number;minimum:number}
+type ImportRow={name:string;unit:string;price:number;quantity:number;stock:number;minimum:number;category:string;barcode:string}
+
+const normaliseImportHeader = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+const importNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback
+  const cleaned = String(value ?? '').replace(/[^0-9,.-]/g, '').replace(',', '.')
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function mapImportTable(table: unknown[][]): ImportRow[] {
+  const headerIndex = table.findIndex(row => row.some(cell => ['name','ingredient','packagingitem','productname'].includes(normaliseImportHeader(cell))))
+  if (headerIndex < 0) return []
+  const headers = table[headerIndex].map(normaliseImportHeader)
+  const indexOf = (...names: string[]) => headers.findIndex(header => names.includes(header))
+  const nameIndex = indexOf('name','ingredient','packagingitem','productname','itemname')
+  const unitIndex = indexOf('unit','unitofmeasurement','packageunit','packunit')
+  const priceIndex = indexOf('packageprice','packprice','referenceprice','referencepackprice','price','cost')
+  const quantityIndex = indexOf('packagequantity','packquantity','quantityinpack','packsize','quantity','weight')
+  const stockIndex = indexOf('currentstock','stock','stockquantity','quantityonhand','onhand')
+  const minimumIndex = indexOf('minimumstock','minstock','minimumstockalert','reorderlevel','lowstocklevel')
+  const categoryIndex = indexOf('category','type')
+  const barcodeIndex = indexOf('barcode','sku','code')
+  if (nameIndex < 0) return []
+  return table.slice(headerIndex + 1).map(row => ({
+    name: String(row[nameIndex] ?? '').trim(),
+    unit: String(unitIndex >= 0 ? row[unitIndex] ?? 'g' : 'g').trim() || 'g',
+    price: importNumber(priceIndex >= 0 ? row[priceIndex] : 0),
+    quantity: importNumber(quantityIndex >= 0 ? row[quantityIndex] : 1, 1),
+    stock: importNumber(stockIndex >= 0 ? row[stockIndex] : 0),
+    minimum: importNumber(minimumIndex >= 0 ? row[minimumIndex] : 0),
+    category: String(categoryIndex >= 0 ? row[categoryIndex] ?? '' : '').trim(),
+    barcode: String(barcodeIndex >= 0 ? row[barcodeIndex] ?? '' : '').trim(),
+  })).filter(row => row.name)
+}
+
 function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:string;label:string;onClose:()=>void}){
  const [rows,setRows]=useState<ImportRow[]>([]);const [error,setError]=useState('');const [saving,setSaving]=useState(false)
- async function read(file:File){const text=await file.text();const lines=text.split(/\r?\n/).filter(Boolean);const parsed=lines.map(x=>x.split(x.includes(';')?';':',').map(y=>y.trim().replace(/^"|"$/g,'')));if(parsed[0]?.[0]?.toLowerCase().includes('name'))parsed.shift();const result=parsed.map(x=>({name:x[0]||'',unit:x[1]||'g',price:Number(x[2]||0),quantity:Number(x[3]||1),stock:Number(x[4]||0),minimum:Number(x[5]||0)})).filter(x=>x.name);setRows(result);setError(result.length?'':'No valid items found.')}
- async function save(){setSaving(true);try{const batch=writeBatch(db);rows.forEach((x,index)=>{const recordId=Date.now()+index;const ref=doc(db,'bakeries',bakeryId,collectionName,String(recordId));const isPackaging=collectionName==='packaging';const base=isPackaging?x.quantity:(x.unit==='kg'||x.unit==='L'?x.quantity*1000:x.quantity);batch.set(ref,{id:recordId,bakeryId,name:x.name,category:isPackaging?'Other':'Baking Staples',unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:isPackaging?0:base,unitPrice:base?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,alertEnabled:true,status:'active',createdAt:Date.now(),updatedAt:Date.now()})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed');setSaving(false)}}
- return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Upload CSV columns: Name, Unit, Package Price, Package Quantity, Current Stock, Minimum Stock.</p><input type="file" accept=".csv,.txt" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note">{error}</div>}{rows.length>0&&<><h3>Preview ({rows.length} items)</h3><div className="catalogue-list">{rows.map((x,i)=><div className="customer-card" key={i}><strong>{x.name}</strong><span>{x.quantity} {x.unit} — {money.format(x.price)}</span></div>)}</div><button type="button" className="primary-button" disabled={saving} onClick={save}>{saving?'Importing…':`Confirm and import ${rows.length} items`}</button></>}</div></Modal>
+ async function read(file:File){
+  setError('');setRows([])
+  try{
+   let table:unknown[][]=[]
+   if(/\.xlsx?$/i.test(file.name)){
+    const workbook=XLSX.read(await file.arrayBuffer(),{type:'array'})
+    const preferred=collectionName==='packaging'?'Packaging Upload':'Ingredients Upload'
+    const sheetName=workbook.SheetNames.find(name=>name.toLowerCase()===preferred.toLowerCase())||workbook.SheetNames.find(name=>name.toLowerCase().includes(collectionName==='packaging'?'packaging':'ingredient'))||workbook.SheetNames[0]
+    table=XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:''}) as unknown[][]
+   }else{
+    const text=await file.text();const lines=text.split(/\r?\n/).filter(line=>line.trim());
+    table=lines.map(line=>line.split(line.includes(';')?';':',').map(value=>value.trim().replace(/^"|"$/g,'')))
+   }
+   const result=mapImportTable(table);setRows(result);setError(result.length?'':'No valid items found. Use the BatchBoss upload template and keep the column headings.')
+  }catch(e){setError(e instanceof Error?e.message:'The selected file could not be read.')}
+ }
+ async function save(){setSaving(true);try{const batch=writeBatch(db);const now=Date.now();rows.forEach((x,index)=>{const recordId=now+index;const ref=doc(db,'bakeries',bakeryId,collectionName,String(recordId));const normalisedUnit=x.unit.toLowerCase();const isPackaging=collectionName==='packaging';const base=normalisedUnit==='kg'||normalisedUnit==='l'?x.quantity*1000:x.quantity;batch.set(ref,{id:recordId,bakeryId,name:x.name,unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:isPackaging?0:base,unitPrice:base>0?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,alertEnabled:true,category:x.category||(isPackaging?'Other':'Baking Staples'),barcode:x.barcode,status:'active',createdAt:now,updatedAt:now})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed')}finally{setSaving(false)}}
+ return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Upload the BatchBoss Excel workbook, CSV or TXT file. Required headings: Name, Unit, Package Price, Package Quantity, Current Stock and Minimum Stock.</p><input type="file" accept=".xlsx,.xls,.csv,.txt" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note">{error}</div>}{rows.length>0&&<><h3>Preview ({rows.length} items)</h3><div className="catalogue-list">{rows.map((x,i)=><div className="customer-card" key={`${x.name}-${i}`}><div><strong>{x.name}</strong><small>{x.quantity} {x.unit} per pack</small></div><div><span>{money.format(x.price)} pack</span><small>Stock: {x.stock} · Minimum: {x.minimum} · Unit cost: {money.format((x.unit.toLowerCase()==='kg'||x.unit.toLowerCase()==='l'?x.quantity*1000:x.quantity)>0?x.price/(x.unit.toLowerCase()==='kg'||x.unit.toLowerCase()==='l'?x.quantity*1000:x.quantity):0)}</small></div></div>)}</div><button type="button" className="primary-button" disabled={saving} onClick={save}>{saving?'Importing…':`Confirm and import ${rows.length} items`}</button></>}</div></Modal>
 }
 
 function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
