@@ -184,6 +184,23 @@ data class TaskEntity(
     val firestoreDocumentId: String get() = firestoreId
 }
 
+fun Any?.safeDouble(default: Double = 0.0): Double {
+    return when (this) {
+        null -> default
+        is Number -> {
+            val d = this.toDouble()
+            if (d.isNaN() || d.isInfinite()) default else d
+        }
+        is String -> {
+            val trimmed = this.trim().replace(",", ".")
+            trimmed.toDoubleOrNull()?.let {
+                if (it.isNaN() || it.isInfinite()) default else it
+            } ?: default
+        }
+        else -> default
+    }
+}
+
 @Entity(
     tableName = "inventory_items",
     indices = [
@@ -197,10 +214,10 @@ data class InventoryItemEntity(
     val firestoreId: String = "",
     val userId: Long = 0,
     val bakeryId: String = "",
-    val name: String,
-    val currentStock: Double,
-    val minStock: Double,
-    val unit: String,
+    val name: String = "Unnamed item",
+    val currentStock: Double = 0.0,
+    val minStock: Double = 0.0,
+    val unit: String = "g",
     val isLowStock: Boolean = false,
     val alertEnabled: Boolean = true,
     val unitPrice: Double = 0.0,
@@ -212,6 +229,62 @@ data class InventoryItemEntity(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     val firestoreDocumentId: String get() = firestoreId
+    val packageQuantity: Double
+        get() = if (unit.equals("kg", true) || unit.equals("l", true)) {
+            if (gramsPerUnit >= 1000.0) gramsPerUnit / 1000.0 else gramsPerUnit
+        } else {
+            if (gramsPerUnit > 0) gramsPerUnit else 1.0
+        }
+
+    fun normalized(): InventoryItemEntity {
+        val normName = if (name.isNullOrBlank() || name == "null") "Unnamed item" else name.trim()
+        val normCategory = if (category.isNullOrBlank() || category == "null") "Baking Staples" else category.trim()
+        val normUnit = if (unit.isNullOrBlank() || unit == "null") "g" else unit.trim()
+        val normPkgPrice = (packagePrice as Any?).safeDouble(0.0).coerceAtLeast(0.0)
+
+        val pQty = (packageQuantity as Any?).safeDouble(1.0).let { if (it > 0.0) it else 1.0 }
+        val rawGpu = (gramsPerUnit as Any?).safeDouble(0.0)
+        val normGpu = if (rawGpu > 0.0) {
+            rawGpu
+        } else {
+            if (normUnit.equals("kg", true) || normUnit.equals("l", true)) pQty * 1000.0 else pQty
+        }
+
+        val rawUnitPrice = (unitPrice as Any?).safeDouble(-1.0)
+        val normUnitPrice = if (rawUnitPrice >= 0.0) {
+            rawUnitPrice
+        } else {
+            if (normGpu > 0.0) normPkgPrice / normGpu else 0.0
+        }
+
+        val normCurrentStock = (currentStock as Any?).safeDouble(0.0)
+        val normMinStock = (minStock as Any?).safeDouble(0.0)
+        val normIsLow = normCurrentStock <= normMinStock
+
+        return this.copy(
+            id = id,
+            firestoreId = firestoreId ?: "",
+            userId = userId,
+            bakeryId = bakeryId ?: "",
+            name = normName,
+            currentStock = normCurrentStock,
+            minStock = normMinStock,
+            unit = normUnit,
+            isLowStock = normIsLow,
+            alertEnabled = alertEnabled,
+            unitPrice = normUnitPrice,
+            packagePrice = normPkgPrice,
+            gramsPerUnit = normGpu,
+            category = normCategory,
+            barcode = barcode ?: "",
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        )
+    }
+}
+
+fun InventoryItemEntity.normalized(): InventoryItemEntity {
+    return this.normalized()
 }
 
 @Entity(

@@ -1893,6 +1893,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
             val customersList = repository.getCustomersByUser(uid).first()
             val recipesList = repository.getRecipesByUser(uid).first()
+            val inventoryList = repository.getInventoryByBakery(bId).first()
+            val packagingList = repository.getPackagingByBakery(bId).first()
 
             var syncedItems = 0
             if (WebSyncService.syncProfile(bId, profile)) syncedItems++
@@ -1906,12 +1908,31 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 if (WebSyncService.syncRecipe(bId, rec, ings)) syncedItems++
             }
 
+            for (item in inventoryList) {
+                if (WebSyncService.syncInventory(bId, item)) syncedItems++
+            }
+
+            for (pkg in packagingList) {
+                if (WebSyncService.syncPackaging(bId, pkg)) syncedItems++
+            }
+
+            val webInventory = WebSyncService.fetchBakeryInventory(bId)
+            if (webInventory.isNotEmpty()) {
+                repository.syncInventoryWithFirestore(bId, webInventory)
+            }
+
+            val webPackaging = WebSyncService.fetchBakeryPackaging(bId)
+            if (webPackaging.isNotEmpty()) {
+                repository.syncPackagingWithFirestore(bId, webPackaging)
+            }
+
             try {
                 FirebaseService.backupDataToCloud(
                     recipes = recipesList,
                     ingredients = emptyList(),
-                    inventory = emptyList(),
+                    inventory = repository.getInventoryByBakery(bId).first(),
                     customers = customersList,
+                    packaging = repository.getPackagingByBakery(bId).first(),
                     bakeryId = bId
                 )
             } catch (_: Throwable) {}

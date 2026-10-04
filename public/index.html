@@ -433,16 +433,16 @@
           <div class="stat-label">Synced Recipes</div>
         </div>
         <div class="stat-box">
+          <div class="stat-number" id="statInventory">0</div>
+          <div class="stat-label">Synced Ingredients</div>
+        </div>
+        <div class="stat-box">
           <div class="stat-number" id="statCustomers">0</div>
           <div class="stat-label">Synced Customers</div>
         </div>
         <div class="stat-box">
           <div class="stat-number" id="statCurrency">ZAR (R)</div>
           <div class="stat-label">Active Currency</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-number" style="font-size: 16px; margin-top: 6px;" id="statModel">Home Kitchen</div>
-          <div class="stat-label">Operating Model</div>
         </div>
       </div>
 
@@ -511,6 +511,29 @@
         </p>
         <div id="recipesListContainer">
           <div class="empty-state">Loading recipes...</div>
+        </div>
+      </div>
+
+      <!-- Synchronized Inventory & Website Excel Importer Card -->
+      <div class="card" id="cardInventory">
+        <div class="card-header">
+          <h2>📦 Synced Inventory &amp; Ingredients</h2>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <label class="btn-primary" style="margin: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+              📊 Import Excel / CSV
+              <input type="file" id="excelInventoryInput" accept=".xlsx,.xls,.csv,.json" style="display: none;" onchange="handleExcelInventoryUpload(event)">
+            </label>
+            <button class="btn-secondary" onclick="openInventoryModal()">+ Add Item</button>
+            <button class="btn-secondary" onclick="loadBakeryData()">↻ Refresh</button>
+          </div>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          Synchronized bakery ingredients and stock levels. Upload an Excel spreadsheet or CSV to import raw inventory. Every imported document preserves:
+          <code>id, bakeryId, name, unit, packagePrice, packageQuantity, gramsPerUnit, unitPrice, currentStock, minStock, isLowStock, alertEnabled, category, barcode, createdAt, updatedAt</code>.
+        </p>
+        <div id="inventoryUploadStatus" style="display: none; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;"></div>
+        <div id="inventoryListContainer">
+          <div class="empty-state">Loading inventory...</div>
         </div>
       </div>
 
@@ -647,6 +670,72 @@
       </div>
     </div>
 
+    <!-- Modal: Add Inventory Item -->
+    <div id="inventoryModal" class="modal-overlay">
+      <div class="modal">
+        <h3 style="margin-bottom: 14px; color: var(--primary);">Add Ingredient / Stock Item</h3>
+        <form onsubmit="handleInventorySubmit(event)">
+          <div class="form-group">
+            <label>Item / Ingredient Name *</label>
+            <input type="text" id="invName" required placeholder="e.g. Unsalted Butter">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Category</label>
+              <select id="invCategory">
+                <option value="Baking Staples">Baking Staples</option>
+                <option value="Flour & Grains">Flour & Grains</option>
+                <option value="Dairy & Eggs">Dairy & Eggs</option>
+                <option value="Sugars & Sweeteners">Sugars & Sweeteners</option>
+                <option value="Chocolate & Cocoa">Chocolate & Cocoa</option>
+                <option value="Spices & Extracts">Spices & Extracts</option>
+                <option value="Packaging">Packaging</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Counting Unit</label>
+              <select id="invUnit">
+                <option value="g">g (Grams)</option>
+                <option value="kg">kg (Kilograms)</option>
+                <option value="ml">ml (Milliliters)</option>
+                <option value="l">l (Liters)</option>
+                <option value="pcs">pcs (Pieces)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Package Price (R)</label>
+              <input type="text" id="invPkgPrice" value="0.00">
+            </div>
+            <div class="form-group">
+              <label>Package Quantity</label>
+              <input type="text" id="invPkgQty" value="1.0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Current Stock</label>
+              <input type="text" id="invCurrentStock" value="0.0">
+            </div>
+            <div class="form-group">
+              <label>Min Stock Threshold</label>
+              <input type="text" id="invMinStock" value="0.0">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Barcode / SKU (Optional)</label>
+            <input type="text" id="invBarcode" placeholder="e.g. 6001234567890">
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn-secondary" onclick="closeInventoryModal()">Cancel</button>
+            <button type="submit" class="btn-primary">Save Ingredient</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Footer -->
     <div class="footer">
       <p><strong>&copy; 2026 BatchBoss™ by Tada Innovations (Pty) Ltd. All rights reserved.</strong></p>
@@ -723,6 +812,11 @@
 
         // Render Recipes
         renderRecipes(recipes, prof.currency || 'ZAR (R)');
+
+        // Render Inventory
+        const inventory = data.inventory || [];
+        document.getElementById('statInventory').innerText = inventory.length;
+        renderInventory(inventory, prof.currency || 'ZAR (R)');
 
       } catch (err) {
         console.error('Error fetching bakery data:', err);
@@ -863,6 +957,207 @@
       } catch (err) {
         alert('Error: ' + err.message);
       }
+    }
+
+    function renderInventory(inventory, currency) {
+      const container = document.getElementById('inventoryListContainer');
+      if (!inventory || inventory.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p style="font-weight: 600;">No inventory items yet for this bakery.</p>
+            <p style="margin-top: 4px;">Click <strong>📊 Import Excel / CSV</strong> or tap <strong>+ Add Item</strong> to upload bakery inventory.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = inventory.map(item => {
+        const uPrice = (Number(item.unitPrice) || 0).toFixed(2);
+        const cStock = (Number(item.currentStock) || 0).toFixed(1);
+        const mStock = (Number(item.minStock) || 0).toFixed(1);
+        const isLow = item.isLowStock || (Number(item.currentStock) <= Number(item.minStock));
+
+        return `
+          <div class="item-card">
+            <div class="item-top">
+              <div class="item-title">${escapeHtml(item.name || 'Unnamed item')}</div>
+              <span class="item-badge" style="${isLow ? 'background:#FEE2E2; color:#DC2626;' : 'background:#DCFCE7; color:#16A34A;'}">
+                ${isLow ? '⚠️ Low Stock' : 'In Stock'} (${cStock} ${escapeHtml(item.unit || 'g')})
+              </span>
+            </div>
+            <div class="item-meta">
+              <span><strong>Category:</strong> ${escapeHtml(item.category || 'Baking Staples')}</span>
+              <span><strong>Unit Cost:</strong> R${uPrice}/${escapeHtml(item.unit || 'g')}</span>
+              <span><strong>Package:</strong> R${(Number(item.packagePrice)||0).toFixed(2)} (${(Number(item.packageQuantity)||1)} ${escapeHtml(item.unit || 'g')})</span>
+              <span><strong>Min Stock:</strong> ${mStock} ${escapeHtml(item.unit || 'g')}</span>
+              ${item.barcode ? `<span><strong>Barcode:</strong> <code>${escapeHtml(item.barcode)}</code></span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openInventoryModal() {
+      document.getElementById('inventoryModal').classList.add('open');
+    }
+
+    function closeInventoryModal() {
+      document.getElementById('inventoryModal').classList.remove('open');
+    }
+
+    async function handleInventorySubmit(e) {
+      e.preventDefault();
+      const pPrice = parseFloat(document.getElementById('invPkgPrice').value) || 0.0;
+      const pQty = parseFloat(document.getElementById('invPkgQty').value) || 1.0;
+      const unit = document.getElementById('invUnit').value || 'g';
+      const gpu = (unit.toLowerCase() === 'kg' || unit.toLowerCase() === 'l') ? pQty * 1000 : pQty;
+      const cStock = parseFloat(document.getElementById('invCurrentStock').value) || 0.0;
+      const mStock = parseFloat(document.getElementById('invMinStock').value) || 0.0;
+
+      const item = {
+        id: Date.now(),
+        bakeryId: currentBakeryId,
+        name: document.getElementById('invName').value.trim() || 'Unnamed item',
+        unit: unit,
+        packagePrice: pPrice,
+        packageQuantity: pQty,
+        gramsPerUnit: gpu,
+        unitPrice: gpu > 0 ? pPrice / gpu : 0.0,
+        currentStock: cStock,
+        minStock: mStock,
+        isLowStock: cStock <= mStock,
+        alertEnabled: true,
+        category: document.getElementById('invCategory').value || 'Baking Staples',
+        barcode: document.getElementById('invBarcode').value.trim(),
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      try {
+        const res = await fetch(`/api/bakery/${encodeURIComponent(currentBakeryId)}/inventory`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item)
+        });
+        if (res.ok) {
+          closeInventoryModal();
+          e.target.reset();
+          loadBakeryData();
+        } else {
+          alert('Failed to save inventory item');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Excel & CSV Spreadsheet Importer
+    // Confirms and guarantees every uploaded inventory document saves:
+    // id, bakeryId, name, unit, packagePrice, packageQuantity, gramsPerUnit, unitPrice,
+    // currentStock, minStock, isLowStock, alertEnabled, category, barcode, createdAt, updatedAt
+    function handleExcelInventoryUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const statusBox = document.getElementById('inventoryUploadStatus');
+      statusBox.style.display = 'block';
+      statusBox.style.background = '#EFF6FF';
+      statusBox.style.color = '#1D4ED8';
+      statusBox.innerText = `Reading '${file.name}'...`;
+
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        try {
+          const text = e.target.result;
+          let parsedItems = [];
+
+          if (file.name.endsWith('.json')) {
+            const data = JSON.parse(text);
+            parsedItems = Array.isArray(data) ? data : (data.inventory || data.items || [data]);
+          } else {
+            // CSV / TSV / Delimited spreadsheet parsing
+            const lines = text.split(/\r\n|\n/).filter(line => line.trim().length > 0);
+            if (lines.length > 0) {
+              const delimiter = lines[0].includes('\t') ? '\t' : (lines[0].includes(';') ? ';' : ',');
+              const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+
+              for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+                if (cols.length === 0 || cols.every(c => c === '')) continue;
+
+                const rowObj = {};
+                headers.forEach((h, idx) => {
+                  rowObj[h] = cols[idx] !== undefined ? cols[idx] : '';
+                });
+
+                const rawName = rowObj['name'] || rowObj['item'] || rowObj['ingredient'] || cols[0] || 'Unnamed item';
+                const unit = rowObj['unit'] || cols[1] || 'g';
+                const pPrice = parseFloat((rowObj['packageprice'] || rowObj['price'] || cols[2] || '0').replace(',', '.')) || 0.0;
+                const pQty = parseFloat((rowObj['packagequantity'] || rowObj['quantity'] || rowObj['qty'] || cols[3] || '1').replace(',', '.')) || 1.0;
+                const cStock = parseFloat((rowObj['currentstock'] || rowObj['stock'] || cols[4] || '0').replace(',', '.')) || 0.0;
+                const mStock = parseFloat((rowObj['minstock'] || rowObj['min'] || cols[5] || '0').replace(',', '.')) || 0.0;
+                const cat = rowObj['category'] || cols[6] || 'Baking Staples';
+                const barcode = rowObj['barcode'] || rowObj['sku'] || cols[7] || '';
+
+                const gpu = (unit.toLowerCase() === 'kg' || unit.toLowerCase() === 'l') ? pQty * 1000 : pQty;
+                const uPrice = gpu > 0 ? pPrice / gpu : 0.0;
+
+                parsedItems.push({
+                  id: Date.now() + i,
+                  bakeryId: currentBakeryId,
+                  name: rawName,
+                  unit: unit,
+                  packagePrice: pPrice,
+                  packageQuantity: pQty,
+                  gramsPerUnit: gpu,
+                  unitPrice: uPrice,
+                  currentStock: cStock,
+                  minStock: mStock,
+                  isLowStock: cStock <= mStock,
+                  alertEnabled: true,
+                  category: cat,
+                  barcode: barcode,
+                  createdAt: Date.now(),
+                  updatedAt: Date.now()
+                });
+              }
+            }
+          }
+
+          if (parsedItems.length === 0) {
+            statusBox.style.background = '#FEF2F2';
+            statusBox.style.color = '#B91C1C';
+            statusBox.innerText = `No valid inventory rows found in ${file.name}.`;
+            return;
+          }
+
+          statusBox.innerText = `Uploading ${parsedItems.length} inventory documents to bakery '${currentBakeryId}'...`;
+
+          const res = await fetch(`/api/bakery/${encodeURIComponent(currentBakeryId)}/inventory`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsedItems)
+          });
+
+          if (res.ok) {
+            const result = await res.json();
+            statusBox.style.background = '#F0FDF4';
+            statusBox.style.color = '#15803D';
+            statusBox.innerText = `✅ Successfully imported ${parsedItems.length} inventory items! Every uploaded document was saved with all 16 required fields.`;
+            loadBakeryData();
+          } else {
+            statusBox.style.background = '#FEF2F2';
+            statusBox.style.color = '#B91C1C';
+            statusBox.innerText = `Upload failed with status: ${res.status}`;
+          }
+        } catch (err) {
+          statusBox.style.background = '#FEF2F2';
+          statusBox.style.color = '#B91C1C';
+          statusBox.innerText = `Importer error: ${err.message}`;
+        }
+      };
+
+      reader.readAsText(file);
     }
 
     function handleFormSubmit(e) {

@@ -65,11 +65,53 @@ function getBakery(bakeryId) {
       },
       recipes: [],
       customers: [],
-      packaging: []
+      packaging: [],
+      inventory: []
     };
     saveStore();
   }
+  if (!store.bakeries[cleanId].inventory) {
+    store.bakeries[cleanId].inventory = [];
+  }
   return store.bakeries[cleanId];
+}
+
+function normalizeInventoryItem(data, bakeryId) {
+  const pPrice = Number(data.packagePrice) || 0.0;
+  const pQty = Number(data.packageQuantity) || 1.0;
+  const unit = (data.unit && String(data.unit).trim()) ? String(data.unit).trim() : 'g';
+  let gpu = Number(data.gramsPerUnit) || 0.0;
+  if (gpu <= 0) {
+    const uLower = unit.toLowerCase();
+    gpu = (uLower === 'kg' || uLower === 'l') ? pQty * 1000.0 : pQty;
+  }
+  let uPrice = Number(data.unitPrice);
+  if (isNaN(uPrice) || uPrice < 0) {
+    uPrice = gpu > 0 ? pPrice / gpu : (pQty > 0 ? pPrice / pQty : 0.0);
+  }
+  const cStock = Number(data.currentStock) || 0.0;
+  const mStock = Number(data.minStock) || 0.0;
+  const isLow = typeof data.isLowStock === 'boolean' ? data.isLowStock : (cStock <= mStock);
+  const alert = data.alertEnabled !== false;
+
+  return {
+    id: data.id ? Number(data.id) : Date.now(),
+    bakeryId: bakeryId,
+    name: (data.name && String(data.name).trim()) ? String(data.name).trim() : "Unnamed item",
+    unit: unit,
+    packagePrice: pPrice,
+    packageQuantity: pQty,
+    gramsPerUnit: gpu,
+    unitPrice: uPrice,
+    currentStock: cStock,
+    minStock: mStock,
+    isLowStock: isLow,
+    alertEnabled: alert,
+    category: (data.category && String(data.category).trim()) ? String(data.category).trim() : "Baking Staples",
+    barcode: data.barcode ? String(data.barcode).trim() : "",
+    createdAt: Number(data.createdAt) || Date.now(),
+    updatedAt: Date.now()
+  };
 }
 
 function sendJson(res, statusCode, data) {
@@ -160,7 +202,9 @@ const server = http.createServer((req, res) => {
         bakeryId: bakeryId,
         profile: bakery.profile,
         recipes: bakery.recipes,
-        customers: bakery.customers
+        customers: bakery.customers,
+        packaging: bakery.packaging || [],
+        inventory: bakery.inventory || []
       });
     }
 
@@ -274,6 +318,53 @@ const server = http.createServer((req, res) => {
           const deleteId = data?.id;
           if (deleteId) {
             bakery.packaging = (bakery.packaging || []).filter(p => p.id !== deleteId);
+            saveStore();
+          }
+          return sendJson(res, 200, { success: true });
+        });
+      }
+    }
+
+    // Inventory & Excel Importer: /api/bakery/:bakeryId/inventory
+    if (subRoute === 'inventory' || subRoute === 'inventory/import' || subRoute === 'inventory/excel-import') {
+      if (!bakery.inventory) bakery.inventory = [];
+      if (method === 'GET') {
+        return sendJson(res, 200, bakery.inventory || []);
+      }
+      if (method === 'POST') {
+        return readJsonBody(req, (err, payload) => {
+          if (err) return sendJson(res, 400, { error: 'Invalid JSON payload' });
+          const rawItems = Array.isArray(payload) ? payload : (Array.isArray(payload?.items) ? payload.items : [payload]);
+          const savedItems = [];
+
+          for (const raw of rawItems) {
+            if (!raw || (!raw.name && !raw.id)) continue;
+            // Confirm every uploaded inventory document saves all 16 required fields:
+            // id, bakeryId, name, unit, packagePrice, packageQuantity, gramsPerUnit, unitPrice,
+            // currentStock, minStock, isLowStock, alertEnabled, category, barcode, createdAt, updatedAt
+            const normalized = normalizeInventoryItem(raw, bakeryId);
+            const idx = bakery.inventory.findIndex(item =>
+              (normalized.id && item.id === normalized.id) ||
+              (normalized.name && item.name && item.name.toLowerCase() === normalized.name.toLowerCase())
+            );
+            if (idx >= 0) {
+              bakery.inventory[idx] = { ...bakery.inventory[idx], ...normalized, id: bakery.inventory[idx].id || normalized.id };
+              savedItems.push(bakery.inventory[idx]);
+            } else {
+              bakery.inventory.push(normalized);
+              savedItems.push(normalized);
+            }
+          }
+          saveStore();
+          console.log(`[Server] Saved ${savedItems.length} inventory items for bakery: ${bakeryId}`);
+          return sendJson(res, 200, { success: true, count: savedItems.length, items: savedItems, inventory: bakery.inventory });
+        });
+      }
+      if (method === 'DELETE') {
+        return readJsonBody(req, (err, data) => {
+          const deleteId = data?.id;
+          if (deleteId) {
+            bakery.inventory = (bakery.inventory || []).filter(item => item.id !== deleteId);
             saveStore();
           }
           return sendJson(res, 200, { success: true });

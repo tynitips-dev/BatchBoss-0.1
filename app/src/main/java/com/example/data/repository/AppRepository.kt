@@ -129,7 +129,7 @@ class AppRepository(private val database: AppDatabase) {
         inventoryDao.updateStockItemFull(id, unitPrice, packagePrice, gramsPerUnit, currentStock, minStock, isLow)
     }
 
-    suspend fun insertInventoryItem(item: InventoryItemEntity): Long = inventoryDao.insertItem(item)
+    suspend fun insertInventoryItem(item: InventoryItemEntity): Long = inventoryDao.insertItem(item.normalized())
 
     suspend fun deleteInventoryItem(id: Long) = inventoryDao.deleteItem(id)
 
@@ -243,33 +243,38 @@ class AppRepository(private val database: AppDatabase) {
         val remoteDocIds = mutableSetOf<String>()
 
         for (remote in remoteItems) {
-            val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
+            val norm = remote.normalized()
+            val docId = norm.firestoreId.ifBlank { if (norm.id > 0) norm.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
-            val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: localByName[remote.name.trim().lowercase()]
+            try {
+                val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
+                    ?: (if (norm.id > 0) localById[norm.id] else null)
+                    ?: localByName[norm.name.trim().lowercase()]
 
-            if (existing != null) {
-                if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
-                if (remote.updatedAt >= existing.updatedAt) {
-                    val updated = remote.copy(
-                        id = existing.id,
-                        firestoreId = if (docId.isNotBlank()) docId else existing.firestoreId,
-                        userId = if (remote.userId != 0L) remote.userId else existing.userId,
+                if (existing != null) {
+                    if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
+                    if (norm.updatedAt >= existing.updatedAt) {
+                        val updated = norm.copy(
+                            id = existing.id,
+                            firestoreId = if (docId.isNotBlank()) docId else existing.firestoreId,
+                            userId = if (norm.userId != 0L) norm.userId else existing.userId,
+                            bakeryId = bakeryId
+                        ).normalized()
+                        inventoryDao.updateItem(updated)
+                    }
+                } else {
+                    val newLocalId = if (norm.id > 0 && !localById.containsKey(norm.id)) norm.id else 0L
+                    val newItem = norm.copy(
+                        id = newLocalId,
+                        firestoreId = docId,
                         bakeryId = bakeryId
-                    )
-                    inventoryDao.updateItem(updated)
+                    ).normalized()
+                    val insertedId = inventoryDao.insertItem(newItem)
+                    if (docId.isBlank()) remoteDocIds.add(insertedId.toString())
                 }
-            } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
-                val newItem = remote.copy(
-                    id = newLocalId,
-                    firestoreId = docId,
-                    bakeryId = bakeryId
-                )
-                val insertedId = inventoryDao.insertItem(newItem)
-                if (docId.isBlank()) remoteDocIds.add(insertedId.toString())
+            } catch (e: Throwable) {
+                android.util.Log.e("AppRepository", "Error syncing inventory item ${norm.name} ($docId): ${e.message}", e)
             }
         }
 

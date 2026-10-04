@@ -12,6 +12,8 @@ import com.example.data.local.QuoteEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
 import com.example.data.local.TaskEntity
+import com.example.data.local.normalized
+import com.example.data.local.safeDouble
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -469,6 +471,7 @@ object FirebaseService {
                     "alertEnabled" to item.alertEnabled,
                     "unitPrice" to item.unitPrice,
                     "packagePrice" to item.packagePrice,
+                    "packageQuantity" to item.packageQuantity,
                     "gramsPerUnit" to item.gramsPerUnit,
                     "category" to item.category,
                     "barcode" to item.barcode,
@@ -716,35 +719,12 @@ object FirebaseService {
             }
 
             for (doc in inventoryColl.documents) {
-                val id = doc.getLong("id") ?: 0L
-                val name = doc.getString("name") ?: "Item"
-                val currentStock = doc.getDouble("currentStock") ?: 0.0
-                val minStock = doc.getDouble("minStock") ?: 0.0
-                val unit = doc.getString("unit") ?: "kg"
-                val isLowStock = doc.getBoolean("isLowStock") ?: false
-                val alertEnabled = doc.getBoolean("alertEnabled") ?: true
-                val unitPrice = doc.getDouble("unitPrice") ?: 0.0
-                val packagePrice = doc.getDouble("packagePrice") ?: 0.0
-                val gramsPerUnit = doc.getDouble("gramsPerUnit") ?: 1000.0
-                val category = doc.getString("category") ?: "Baking Staples"
-                val barcode = doc.getString("barcode") ?: ""
-
-                restoredInventory.add(
-                    InventoryItemEntity(
-                        id = id,
-                        name = name,
-                        currentStock = currentStock,
-                        minStock = minStock,
-                        unit = unit,
-                        isLowStock = isLowStock,
-                        alertEnabled = alertEnabled,
-                        unitPrice = unitPrice,
-                        packagePrice = packagePrice,
-                        gramsPerUnit = gramsPerUnit,
-                        category = category,
-                        barcode = barcode
-                    )
-                )
+                try {
+                    val item = documentToInventoryItem(doc, targetBakeryId)
+                    restoredInventory.add(item)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Error restoring inventory doc ${doc.id}: ${e.message}")
+                }
             }
 
             FirebaseRestoreResult(
@@ -768,15 +748,30 @@ object FirebaseService {
     }
 
     /**
+     * Safe number helper converting Number, Long, Double, String and null values to non-null Double.
+     */
+    fun Any?.safeDouble(default: Double = 0.0): Double {
+        return when (this) {
+            null -> default
+            is Number -> {
+                val d = this.toDouble()
+                if (d.isNaN() || d.isInfinite()) default else d
+            }
+            is String -> {
+                val trimmed = this.trim().replace(",", ".")
+                trimmed.toDoubleOrNull()?.let {
+                    if (it.isNaN() || it.isInfinite()) default else it
+                } ?: default
+            }
+            else -> default
+        }
+    }
+
+    /**
      * Extracts numeric value safely from Firestore DocumentSnapshot handling Number or numeric String.
      */
     fun extractNumber(doc: com.google.firebase.firestore.DocumentSnapshot, field: String, default: Double = 0.0): Double {
-        val raw = doc.get(field)
-        return when (raw) {
-            is Number -> raw.toDouble()
-            is String -> raw.toDoubleOrNull() ?: default
-            else -> default
-        }
+        return doc.get(field).safeDouble(default)
     }
 
     /**
@@ -849,31 +844,75 @@ object FirebaseService {
         )
     }
 
-    // 1. Inventory Item Converter
-    fun documentToInventoryItem(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): InventoryItemEntity? {
-        val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
-        if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
-        val category = doc.getString("category") ?: "Baking Staples"
-        val unit = doc.getString("unit") ?: "g"
-        val packagePrice = extractNumber(doc, "packagePrice", 0.0)
-        val packageQuantity = extractNumber(doc, "packageQuantity", 1.0).let { if (it > 0) it else 1.0 }
-        val gramsPerUnit = extractNumber(doc, "gramsPerUnit", if (unit.equals("kg", true)) packageQuantity * 1000.0 else packageQuantity)
-        val explicitUnitPrice = if (doc.contains("unitPrice") && doc.get("unitPrice") != null) {
-            extractNumber(doc, "unitPrice", 0.0)
-        } else null
-        val unitPrice = explicitUnitPrice ?: if (gramsPerUnit > 0) packagePrice / gramsPerUnit else (if (packageQuantity > 0) packagePrice / packageQuantity else 0.0)
-        val currentStock = extractNumber(doc, "currentStock", 0.0)
-        val minStock = extractNumber(doc, "minStock", 0.0)
-        val isLowStock = doc.getBoolean("isLowStock") ?: (currentStock <= minStock)
-        val alertEnabled = doc.getBoolean("alertEnabled") ?: true
-        val barcode = doc.getString("barcode") ?: (doc.get("barcode")?.toString() ?: "")
-        val createdAt = (doc.get("createdAt") as? Number)?.toLong() ?: System.currentTimeMillis()
-        val updatedAt = extractUpdatedAt(doc)
+    /**
+     * Maps arbitrary Firestore/Map key-values into a guaranteed non-null, normalized InventoryItemEntity.
+     * Never returns null and handles missing, null, String, Long and Double data safely.
+     */
+    fun mapToInventoryItem(
+        docId: String,
+        data: Map<String, Any?>,
+        targetBakeryId: String
+    ): InventoryItemEntity {
+        val rawName = data["name"]?.toString()
+        val name = if (rawName.isNullOrBlank() || rawName == "null") "Unnamed item" else rawName.trim()
+        val id = (data["id"] as? Number)?.toLong() ?: (docId.toLongOrNull() ?: 0L)
+        val rawCat = data["category"]?.toString()
+        val category = if (rawCat.isNullOrBlank() || rawCat == "null") "Baking Staples" else rawCat.trim()
+        val rawUnit = data["unit"]?.toString()
+        val unit = if (rawUnit.isNullOrBlank() || rawUnit == "null") "g" else rawUnit.trim()
+
+        val packagePrice = data["packagePrice"].safeDouble(0.0).coerceAtLeast(0.0)
+        val rawPkgQty = data["packageQuantity"].safeDouble(1.0)
+        val packageQuantity = if (rawPkgQty > 0.0) rawPkgQty else 1.0
+
+        val rawGpu = data["gramsPerUnit"]?.safeDouble(0.0) ?: 0.0
+        val gramsPerUnit = if (rawGpu > 0.0) {
+            rawGpu
+        } else {
+            if (unit.equals("kg", true) || unit.equals("l", true)) {
+                packageQuantity * 1000.0
+            } else {
+                packageQuantity
+            }
+        }
+
+        val rawUnitPrice = if (data.containsKey("unitPrice") && data["unitPrice"] != null) {
+            data["unitPrice"].safeDouble(-1.0)
+        } else -1.0
+
+        val unitPrice = if (rawUnitPrice >= 0.0) {
+            rawUnitPrice
+        } else {
+            if (gramsPerUnit > 0.0) packagePrice / gramsPerUnit else (if (packageQuantity > 0.0) packagePrice / packageQuantity else 0.0)
+        }
+
+        val currentStock = data["currentStock"].safeDouble(0.0)
+        val minStock = data["minStock"].safeDouble(0.0)
+
+        val isLowStock = when (val rawLow = data["isLowStock"]) {
+            is Boolean -> rawLow
+            is String -> rawLow.toBooleanStrictOrNull() ?: (currentStock <= minStock)
+            else -> currentStock <= minStock
+        }
+
+        val alertEnabled = when (val rawAlert = data["alertEnabled"]) {
+            is Boolean -> rawAlert
+            is String -> rawAlert.toBooleanStrictOrNull() ?: true
+            else -> true
+        }
+
+        val barcode = data["barcode"]?.toString()?.trim() ?: ""
+        val createdAt = (data["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        val updatedAt = when (val rawUp = data["updatedAt"]) {
+            is com.google.firebase.Timestamp -> rawUp.toDate().time
+            is Number -> rawUp.toLong()
+            is String -> rawUp.toLongOrNull() ?: System.currentTimeMillis()
+            else -> System.currentTimeMillis()
+        }
 
         return InventoryItemEntity(
             id = id,
-            firestoreId = doc.id,
+            firestoreId = docId,
             userId = 0L,
             bakeryId = targetBakeryId,
             name = name,
@@ -889,7 +928,13 @@ object FirebaseService {
             barcode = barcode,
             createdAt = createdAt,
             updatedAt = updatedAt
-        )
+        ).normalized()
+    }
+
+    // 1. Inventory Item Converter - Never returns null, normalises all fields with safe defaults
+    fun documentToInventoryItem(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): InventoryItemEntity {
+        val data = doc.data ?: emptyMap<String, Any?>()
+        return mapToInventoryItem(doc.id, data, targetBakeryId)
     }
 
     // 2. Recipe Converter
@@ -1267,6 +1312,7 @@ object FirebaseService {
                 "category" to item.category,
                 "unit" to item.unit,
                 "packagePrice" to item.packagePrice,
+                "packageQuantity" to item.packageQuantity,
                 "gramsPerUnit" to item.gramsPerUnit,
                 "unitPrice" to item.unitPrice,
                 "currentStock" to item.currentStock,
@@ -1777,7 +1823,24 @@ object FirebaseService {
         try {
             val reg = bakeryDoc.collection("inventory").addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) return@addSnapshotListener
-                val items = snapshot.documents.mapNotNull { documentToInventoryItem(it, targetBakeryId) }
+                val items: List<InventoryItemEntity> = snapshot.documents.map { doc: com.google.firebase.firestore.DocumentSnapshot ->
+                    try {
+                        documentToInventoryItem(doc, targetBakeryId).normalized()
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Error in snapshot inventory doc ${doc.id}: ${e.message}", e)
+                        InventoryItemEntity(
+                            firestoreId = doc.id,
+                            bakeryId = targetBakeryId,
+                            name = "Unnamed item",
+                            currentStock = 0.0,
+                            minStock = 0.0,
+                            unit = "g",
+                            packagePrice = 0.0,
+                            gramsPerUnit = 1.0,
+                            unitPrice = 0.0
+                        ).normalized()
+                    }
+                }
                 syncScope.launch {
                     try {
                         getRepo().syncInventoryWithFirestore(targetBakeryId, items)
@@ -2036,9 +2099,88 @@ object FirebaseService {
         return try {
             val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
-            // 1. Download Inventory
+            // 1. Download & Repair Inventory
             val invSnapshot = bakeryDoc.collection("inventory").get().awaitTask()
-            val invItems = invSnapshot.documents.mapNotNull { documentToInventoryItem(it, targetBakeryId) }
+            val invItems = mutableListOf<InventoryItemEntity>()
+            val offendingDocIds = mutableListOf<String>()
+            val repairs = mutableListOf<Pair<String, Map<String, Any>>>()
+
+            for (doc in invSnapshot.documents) {
+                val docId = doc.id
+                var isMalformed = false
+
+                // Check for missing or null fields to repair on Firestore via merge
+                val missingFields = mutableMapOf<String, Any>()
+                if (doc.get("currentStock") == null) {
+                    missingFields["currentStock"] = 0.0
+                    isMalformed = true
+                }
+                if (doc.get("minStock") == null) {
+                    missingFields["minStock"] = 0.0
+                    isMalformed = true
+                }
+                if (doc.get("packagePrice") == null) {
+                    missingFields["packagePrice"] = 0.0
+                    isMalformed = true
+                }
+                if (doc.get("packageQuantity") == null) {
+                    missingFields["packageQuantity"] = 1.0
+                    isMalformed = true
+                }
+
+                if (missingFields.isNotEmpty()) {
+                    repairs.add(docId to missingFields)
+                }
+
+                if (doc.get("currentStock") is String || doc.get("minStock") is String ||
+                    doc.get("packagePrice") is String || doc.get("packageQuantity") is String ||
+                    doc.getString("name").isNullOrBlank()
+                ) {
+                    isMalformed = true
+                }
+
+                if (isMalformed) {
+                    Log.w(TAG, "Normalising malformed inventory doc id: $docId")
+                    offendingDocIds.add(docId)
+                }
+
+                try {
+                    val item = documentToInventoryItem(doc, targetBakeryId).normalized()
+                    invItems.add(item)
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Error normalising inventory doc $docId: ${e.message}", e)
+                    offendingDocIds.add(docId)
+                    invItems.add(
+                        InventoryItemEntity(
+                            firestoreId = docId,
+                            bakeryId = targetBakeryId,
+                            name = "Unnamed item",
+                            currentStock = 0.0,
+                            minStock = 0.0,
+                            unit = "g",
+                            packagePrice = 0.0,
+                            gramsPerUnit = 1.0,
+                            unitPrice = 0.0
+                        ).normalized()
+                    )
+                }
+            }
+
+            // Execute repair backfills to Firestore without overwriting valid data
+            if (repairs.isNotEmpty()) {
+                try {
+                    val batch = db.batch()
+                    for ((docId, patch) in repairs) {
+                        val ref = bakeryDoc.collection("inventory").document(docId)
+                        batch.set(ref, patch, SetOptions.merge())
+                    }
+                    batch.commit().awaitTask()
+                    Log.i(TAG, "Repaired ${repairs.size} incomplete inventory documents in Firestore.")
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Failed backfilling repairs to Firestore: ${e.message}")
+                }
+            }
+
             repository.syncInventoryWithFirestore(targetBakeryId, invItems)
 
             // 2. Download Recipes + subcollections
@@ -2106,7 +2248,12 @@ object FirebaseService {
             // Ensure listeners are active
             startAllRealtimeListeners(targetBakeryId, repository)
 
-            Result.success("Sync complete")
+            val finalMsg = if (offendingDocIds.isNotEmpty()) {
+                "Sync complete (normalised ${offendingDocIds.size} inventory items)"
+            } else {
+                "Sync complete"
+            }
+            Result.success(finalMsg)
         } catch (e: Throwable) {
             Log.e(TAG, "Manual sync failed", e)
             Result.failure(e)

@@ -737,4 +737,324 @@ class BakerySyncRobolectricTest {
         assertEquals(1, allOrders.size)
         assertEquals(1, allTasks.size)
     }
+
+    @Test
+    fun `website-imported ingredient retains packagePrice, packageQuantity, currentStock and minStock after pressing Sync in the Android app`() = runBlocking {
+        val repository = AppRepository(database)
+
+        // 1. Simulate an ingredient imported from the website backend
+        val websiteImportedIngredient = InventoryItemEntity(
+            id = 0L,
+            firestoreId = "web_imported_flour_101",
+            bakeryId = testBakeryId,
+            name = "Organic Stoneground Bread Flour",
+            unit = "kg",
+            packagePrice = 180.0,
+            gramsPerUnit = 2500.0, // 2.5 kg package
+            unitPrice = 180.0 / 2500.0,
+            currentStock = 15.0,
+            minStock = 5.0,
+            category = "Flour & Grains",
+            isLowStock = false,
+            alertEnabled = true,
+            updatedAt = System.currentTimeMillis()
+        )
+
+        // Verify initial packageQuantity calculation from unit & gramsPerUnit
+        assertEquals(180.0, websiteImportedIngredient.packagePrice, 0.001)
+        assertEquals(2.5, websiteImportedIngredient.packageQuantity, 0.001)
+        assertEquals(15.0, websiteImportedIngredient.currentStock, 0.001)
+        assertEquals(5.0, websiteImportedIngredient.minStock, 0.001)
+
+        // 2. Import into Room via repository sync
+        val syncCount = repository.syncInventoryWithFirestore(testBakeryId, listOf(websiteImportedIngredient))
+        assertEquals(1, syncCount)
+
+        val localStored = database.inventoryDao().getInventoryByFirestoreId("web_imported_flour_101")
+        assertNotNull("Imported ingredient must exist in Room", localStored)
+        assertEquals("Organic Stoneground Bread Flour", localStored!!.name)
+        assertEquals(180.0, localStored.packagePrice, 0.001)
+        assertEquals(2.5, localStored.packageQuantity, 0.001)
+        assertEquals(15.0, localStored.currentStock, 0.001)
+        assertEquals(5.0, localStored.minStock, 0.001)
+
+        // 3. Simulate pressing Sync in the Android app (full sync cycle)
+        // Flow items collected from Room
+        val itemsInBakery = repository.getInventoryByBakery(testBakeryId).first()
+        assertEquals(1, itemsInBakery.size)
+
+        // Sync cycle executing with the local item
+        repository.syncInventoryWithFirestore(testBakeryId, itemsInBakery)
+
+        // 4. Confirm all 4 required fields are strictly retained after pressing Sync
+        val afterSync = database.inventoryDao().getInventoryByFirestoreId("web_imported_flour_101")
+        assertNotNull(afterSync)
+        assertEquals("packagePrice must be retained after Sync", 180.0, afterSync!!.packagePrice, 0.001)
+        assertEquals("packageQuantity must be retained after Sync", 2.5, afterSync.packageQuantity, 0.001)
+        assertEquals("currentStock must be retained after Sync", 15.0, afterSync.currentStock, 0.001)
+        assertEquals("minStock must be retained after Sync", 5.0, afterSync.minStock, 0.001)
+    }
+
+    @Test
+    fun `website-imported ingredient with discrete package unit retains all four fields`() = runBlocking {
+        val repository = AppRepository(database)
+
+        // Discrete items like Vanilla Pods (pack of 5 pods for R120, 20 packs in stock, min 5)
+        val websiteImportedItem = InventoryItemEntity(
+            id = 0L,
+            firestoreId = "web_imported_vanilla_pods",
+            bakeryId = testBakeryId,
+            name = "Bourbon Vanilla Pods",
+            unit = "pcs",
+            packagePrice = 120.0,
+            gramsPerUnit = 5.0, // 5 pods in pack
+            unitPrice = 24.0,
+            currentStock = 20.0,
+            minStock = 5.0,
+            category = "Spices & Extracts",
+            updatedAt = System.currentTimeMillis()
+        )
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(websiteImportedItem))
+
+        val inDb = database.inventoryDao().getInventoryByFirestoreId("web_imported_vanilla_pods")
+        assertNotNull(inDb)
+        assertEquals(120.0, inDb!!.packagePrice, 0.001)
+        assertEquals(5.0, inDb.packageQuantity, 0.001)
+        assertEquals(20.0, inDb.currentStock, 0.001)
+        assertEquals(5.0, inDb.minStock, 0.001)
+
+        // After pressing sync again
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(inDb))
+
+        val verified = database.inventoryDao().getInventoryByFirestoreId("web_imported_vanilla_pods")
+        assertNotNull(verified)
+        assertEquals(120.0, verified!!.packagePrice, 0.001)
+        assertEquals(5.0, verified.packageQuantity, 0.001)
+        assertEquals(20.0, verified.currentStock, 0.001)
+        assertEquals(5.0, verified.minStock, 0.001)
+    }
+
+    @Test
+    fun `missing currentStock in Firestore document defaults safely to zero without SQLite NOT NULL constraint crash`() = runBlocking {
+        val repository = AppRepository(database)
+        // Simulate legacy Firestore document completely missing currentStock
+        val data = mapOf<String, Any?>(
+            "name" to "Legacy Brown Sugar",
+            "unit" to "kg",
+            "packagePrice" to 42.0,
+            "minStock" to 2.0
+            // "currentStock" is missing
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_sugar_no_stock", data, testBakeryId)
+        assertEquals("Missing currentStock must default to 0.0", 0.0, item.currentStock, 0.0001)
+
+        // Must insert into Room with no SQLITE_CONSTRAINT_NOTNULL exception
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_sugar_no_stock")
+        assertNotNull(inRoom)
+        assertEquals("Legacy Brown Sugar", inRoom!!.name)
+        assertEquals(0.0, inRoom.currentStock, 0.0001)
+        assertEquals(42.0, inRoom.packagePrice, 0.001)
+    }
+
+    @Test
+    fun `currentStock explicitly null in Firestore document defaults safely to zero`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = java.util.HashMap<String, Any?>()
+        data["name"] = "Fine Sea Salt"
+        data["currentStock"] = null // Null in Firestore doc
+        data["minStock"] = 1.0
+        data["packagePrice"] = 18.0
+        data["unit"] = "kg"
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_salt_null_stock", data, testBakeryId)
+        assertEquals(0.0, item.currentStock, 0.0001)
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_salt_null_stock")
+        assertNotNull(inRoom)
+        assertEquals(0.0, inRoom!!.currentStock, 0.0001)
+    }
+
+    @Test
+    fun `currentStock stored as string 5000 is safely parsed to double 5000`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = mapOf<String, Any?>(
+            "name" to "Cake Flour Special",
+            "currentStock" to "5000", // String format from website/web import
+            "minStock" to "1000",
+            "packagePrice" to "55.50",
+            "packageQuantity" to "2.5",
+            "unit" to "kg"
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_flour_string_stock", data, testBakeryId)
+        assertEquals(5000.0, item.currentStock, 0.001)
+        assertEquals(1000.0, item.minStock, 0.001)
+        assertEquals(55.50, item.packagePrice, 0.001)
+        assertEquals(2.5, item.packageQuantity, 0.001)
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_flour_string_stock")
+        assertNotNull(inRoom)
+        assertEquals(5000.0, inRoom!!.currentStock, 0.001)
+        assertEquals(1000.0, inRoom.minStock, 0.001)
+    }
+
+    @Test
+    fun `currentStock stored as Long is safely parsed to Double`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = mapOf<String, Any?>(
+            "name" to "Royal Baking Powder",
+            "currentStock" to 2500L, // Long value from JSON/Firestore
+            "minStock" to 500L,
+            "packagePrice" to 35L,
+            "unit" to "g"
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_baking_powder_long", data, testBakeryId)
+        assertEquals(2500.0, item.currentStock, 0.001)
+        assertEquals(500.0, item.minStock, 0.001)
+        assertEquals(35.0, item.packagePrice, 0.001)
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_baking_powder_long")
+        assertNotNull(inRoom)
+        assertEquals(2500.0, inRoom!!.currentStock, 0.001)
+    }
+
+    @Test
+    fun `missing minStock defaults safely to zero`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = mapOf<String, Any?>(
+            "name" to "Instant Dry Yeast",
+            "currentStock" to 400.0,
+            "packagePrice" to 28.0,
+            "unit" to "g"
+            // "minStock" is missing
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_yeast_no_minstock", data, testBakeryId)
+        assertEquals(0.0, item.minStock, 0.0001)
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_yeast_no_minstock")
+        assertNotNull(inRoom)
+        assertEquals(0.0, inRoom!!.minStock, 0.0001)
+    }
+
+    @Test
+    fun `missing packageQuantity defaults safely to 1_0`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = mapOf<String, Any?>(
+            "name" to "Dark Chocolate Callets 70 percent",
+            "packagePrice" to 145.0,
+            "currentStock" to 10.0,
+            "minStock" to 2.0,
+            "unit" to "kg"
+            // "packageQuantity" missing
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_choc_no_pkg_qty", data, testBakeryId)
+        assertEquals(1.0, item.packageQuantity, 0.001)
+
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val inRoom = database.inventoryDao().getInventoryByFirestoreId("doc_choc_no_pkg_qty")
+        assertNotNull(inRoom)
+        assertEquals(1.0, inRoom!!.packageQuantity, 0.001)
+    }
+
+    @Test
+    fun `repeated sync with corrupted documents produces no duplicates and preserves valid state`() = runBlocking {
+        val repository = AppRepository(database)
+        val data = mapOf<String, Any?>(
+            "name" to "Unsalted Butter Block",
+            "currentStock" to "12.5",
+            "minStock" to 2.0,
+            "packagePrice" to 85.0,
+            "packageQuantity" to 1.0,
+            "unit" to "kg",
+            "updatedAt" to 1000L
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_butter_repeat", data, testBakeryId)
+
+        // Multiple rapid sync operations
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val allItems = database.inventoryDao().getInventoryByBakeryOnce(testBakeryId)
+        assertEquals("Repeated sync must never duplicate items", 1, allItems.size)
+        assertEquals("doc_butter_repeat", allItems[0].firestoreId)
+        assertEquals(12.5, allItems[0].currentStock, 0.001)
+        assertEquals(85.0, allItems[0].packagePrice, 0.001)
+    }
+
+    @Test
+    fun `website Excel importer confirms all 16 fields saved and synced into Room`() = runBlocking {
+        val repository = AppRepository(database)
+        // Verify all 16 required fields from Excel importer specification
+        val excelUploadedData = mapOf<String, Any?>(
+            "id" to 1790950000000L,
+            "bakeryId" to testBakeryId,
+            "name" to "Callebaut Gold Caramel Callets",
+            "unit" to "kg",
+            "packagePrice" to "285.50",
+            "packageQuantity" to "2.5",
+            "gramsPerUnit" to 2500.0,
+            "unitPrice" to (285.50 / 2500.0),
+            "currentStock" to "7.5",
+            "minStock" to "2.0",
+            "isLowStock" to false,
+            "alertEnabled" to true,
+            "category" to "Chocolate & Cocoa",
+            "barcode" to "5410522000000",
+            "createdAt" to 1790950000000L,
+            "updatedAt" to 1790950000000L
+        )
+
+        val item = com.example.data.remote.FirebaseService.mapToInventoryItem("doc_excel_callets_1", excelUploadedData, testBakeryId)
+
+        assertEquals(1790950000000L, item.id)
+        assertEquals(testBakeryId, item.bakeryId)
+        assertEquals("Callebaut Gold Caramel Callets", item.name)
+        assertEquals("kg", item.unit)
+        assertEquals(285.50, item.packagePrice, 0.001)
+        assertEquals(2.5, item.packageQuantity, 0.001)
+        assertEquals(2500.0, item.gramsPerUnit, 0.001)
+        assertEquals(285.50 / 2500.0, item.unitPrice, 0.0001)
+        assertEquals(7.5, item.currentStock, 0.001)
+        assertEquals(2.0, item.minStock, 0.001)
+        assertEquals(false, item.isLowStock)
+        assertEquals(true, item.alertEnabled)
+        assertEquals("Chocolate & Cocoa", item.category)
+        assertEquals("5410522000000", item.barcode)
+        assertEquals(1790950000000L, item.createdAt)
+        assertEquals(1790950000000L, item.updatedAt)
+
+        // Insert and sync to Room
+        repository.syncInventoryWithFirestore(testBakeryId, listOf(item))
+
+        val loaded = database.inventoryDao().getInventoryByFirestoreId("doc_excel_callets_1")
+        assertNotNull(loaded)
+        assertEquals(1790950000000L, loaded!!.id)
+        assertEquals("Callebaut Gold Caramel Callets", loaded.name)
+        assertEquals(7.5, loaded.currentStock, 0.001)
+        assertEquals(2.0, loaded.minStock, 0.001)
+        assertEquals(285.50, loaded.packagePrice, 0.001)
+        assertEquals(2.5, loaded.packageQuantity, 0.001)
+        assertEquals(2500.0, loaded.gramsPerUnit, 0.001)
+        assertEquals("Chocolate & Cocoa", loaded.category)
+        assertEquals("5410522000000", loaded.barcode)
+    }
 }
