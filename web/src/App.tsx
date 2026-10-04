@@ -210,9 +210,10 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     const number = (name: string, fallback = 0) => Number(data.get(name) || fallback)
 
     if (active === 'recipes') {
+      const recipeRecordId = Number(editing?.localId || Date.now())
       const recipeRef = editing
         ? doc(db, 'bakeries', profile.bakeryId, 'recipes', editing.id)
-        : doc(collection(db, 'bakeries', profile.bakeryId, 'recipes'))
+        : doc(db, 'bakeries', profile.bakeryId, 'recipes', String(recipeRecordId))
       const ingredientNames = data.getAll('ingredientName').map(String)
       const ingredientQuantities = data.getAll('ingredientQuantity').map(Number)
       const ingredientUnits = data.getAll('ingredientUnit').map(String)
@@ -227,7 +228,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
         existingIngredients.docs.forEach(ingredient => batch.delete(ingredient.ref))
       }
       batch.set(recipeRef, {
-        id: Number(editing?.localId || Date.now()), bakeryId: profile.bakeryId,
+        id: recipeRecordId, bakeryId: profile.bakeryId,
         name: value('name'), category: value('category') || 'Cakes', description: value('description'),
         servings: number('servings', 1), batchSize: number('batchSize', 1), difficulty: value('difficulty') || 'Medium',
         laborHours, laborRatePerHour, labourCost,
@@ -238,9 +239,10 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       }, { merge: true })
       ingredientNames.forEach((name, index) => {
         if (!name.trim()) return
-        const ingredientRef = doc(collection(recipeRef, 'ingredients'))
+        const ingredientId = Date.now() + index
+        const ingredientRef = doc(recipeRef, 'ingredients', String(ingredientId))
         batch.set(ingredientRef, {
-          id: Date.now() + index, recipeId: Number(editing?.localId || 0), name: name.trim(),
+          id: ingredientId, recipeId: recipeRecordId, name: name.trim(),
           quantity: ingredientQuantities[index] || 0, unit: ingredientUnits[index] || 'g',
           cost: ingredientCosts[index] || 0,
         })
@@ -277,8 +279,9 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       const packageQuantity = number('packageQuantity', 1)
       const unit = value('unit') || 'g'
       const baseQuantity = unit === 'kg' || unit === 'L' ? packageQuantity * 1000 : packageQuantity
+      const recordId = Number(editing?.localId || Date.now())
       const payload = {
-        id: Number(editing?.localId || Date.now()), bakeryId: profile.bakeryId,
+        id: recordId, bakeryId: profile.bakeryId,
         name: value('name'), category: value('category') || 'Baking Staples', unit,
         packagePrice, packageQuantity, gramsPerUnit: baseQuantity,
         unitPrice: baseQuantity > 0 ? packagePrice / baseQuantity : 0,
@@ -287,7 +290,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
         barcode: value('barcode'), updatedAt: serverTimestamp(),
       }
       if (editing) await updateDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, editing.id), payload)
-      else await addDoc(collection(db, 'bakeries', profile.bakeryId, collectionName), { ...payload, createdAt: serverTimestamp() })
+      else await setDoc(doc(db, 'bakeries', profile.bakeryId, collectionName, String(recordId)), { ...payload, createdAt: serverTimestamp() })
       setShowEditor(false)
       setEditing(null)
       return
@@ -352,7 +355,7 @@ function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
     <div className="section-heading"><div><span className="eyebrow">Downloads & uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Download the BatchBoss starter workbook, edit your prices and pack sizes, then upload each list into your private bakery workspace.</p></div></div>
     <div className="template-grid">
       <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Ingredients &amp; Packaging Starter Workbook</h3><p>Includes editable ingredients and packaging lists, plus BatchBoss-ready upload sheets.</p><small>Excel workbook · Prices are reference prices and can be changed.</small></div><a className="primary-button compact" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download workbook</a></article>
-      <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Open the <strong>Ingredients Upload</strong> or <strong>Packaging Upload</strong> sheet.</li><li>Save that sheet as a <strong>CSV UTF-8</strong> file.</li><li>Open the matching BatchBoss tab, select <strong>Upload list</strong>, preview the items and confirm.</li></ol></article>
+      <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Save the workbook.</li><li>Open the matching BatchBoss tab and select <strong>Upload list</strong>.</li><li>Select the Excel workbook, check every value in the preview and confirm.</li></ol></article>
     </div>
     <div className="document-actions"><button className="outline-button" onClick={() => onOpen('ingredients')}>Open Ingredients</button><button className="outline-button" onClick={() => onOpen('packaging')}>Open Packaging</button></div>
     <p className="privacy-note">Your changes are saved only in your bakery account. They do not change the master workbook or another customer’s lists.</p>

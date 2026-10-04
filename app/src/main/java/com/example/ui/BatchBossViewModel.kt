@@ -1681,14 +1681,14 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val uid = _currentUserId.value
             for (r in recipes) {
-                val newRecipeId = repository.insertRecipe(r.copy(id = 0, userId = uid))
+                val newRecipeId = repository.insertRecipe(r.copy(userId = uid))
                 val matchingIngs = ingredients.filter { it.recipeId == r.id }
                 for (ing in matchingIngs) {
-                    repository.insertIngredient(ing.copy(id = 0, recipeId = newRecipeId, userId = uid))
+                    repository.insertIngredient(ing.copy(recipeId = newRecipeId, userId = uid))
                 }
             }
             for (item in inventory) {
-                repository.insertInventoryItem(item.copy(id = 0, userId = uid))
+                repository.insertInventoryItem(item.copy(userId = uid))
             }
             onComplete()
         }
@@ -1698,34 +1698,52 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val uid = _currentUserId.value
             val profile = userProfile.value ?: UserProfileEntity()
-            val bId = profile.bakeryId.ifBlank { generateBakeryId(uid, profile.bakeryName) }
-
-            val customersList = repository.getCustomersByUser(uid).first()
-            val recipesList = repository.getRecipesByUser(uid).first()
-
-            var syncedItems = 0
-            if (WebSyncService.syncProfile(bId, profile)) syncedItems++
-
-            for (cust in customersList) {
-                if (WebSyncService.syncCustomer(bId, cust)) syncedItems++
-            }
-
-            for (rec in recipesList) {
-                val ings = repository.getIngredientsForRecipeOnce(rec.id)
-                if (WebSyncService.syncRecipe(bId, rec, ings)) syncedItems++
+            val bId = profile.bakeryId
+            if (bId.isBlank()) {
+                onComplete(false, "Your Firebase account is missing its bakery workspace ID.")
+                return@launch
             }
 
             try {
-                FirebaseService.backupDataToCloud(
+                // Download website changes first. Room REPLACE uses the stable cloud IDs,
+                // so repeated syncs update records instead of creating duplicates.
+                val restore = FirebaseService.restoreDataFromCloud(bId)
+                if (!restore.success || restore.data == null) {
+                    onComplete(false, restore.message)
+                    return@launch
+                }
+                val cloud = restore.data
+                for (recipe in cloud.recipes) repository.insertRecipe(recipe.copy(userId = uid, bakeryId = bId))
+                for (ingredient in cloud.ingredients) repository.insertIngredient(ingredient.copy(userId = uid))
+                for (item in cloud.inventory) repository.insertInventoryItem(item.copy(userId = uid))
+                for (customer in cloud.customers) repository.insertCustomer(customer.copy(userId = uid, bakeryId = bId))
+                repository.insertPackagingList(cloud.packaging.map { it.copy(userId = uid, bakeryId = bId) })
+
+                // Read the merged Room data and upload local additions/edits using the
+                // same numeric document IDs used by the website importer.
+                val customersList = repository.getCustomersByUser(uid).first()
+                val recipesList = repository.getRecipesByUser(uid).first()
+                val inventoryList = repository.getInventoryByUser(uid).first()
+                val packagingList = repository.getPackagingByUser(uid).first()
+                val ingredientsList = recipesList.flatMap { repository.getIngredientsForRecipeOnce(it.id) }
+
+                val upload = FirebaseService.backupDataToCloud(
                     recipes = recipesList,
-                    ingredients = emptyList(),
-                    inventory = emptyList(),
+                    ingredients = ingredientsList,
+                    inventory = inventoryList,
                     customers = customersList,
+                    packaging = packagingList,
                     bakeryId = bId
                 )
-            } catch (_: Throwable) {}
-
-            onComplete(true, "Synchronized with Website for Bakery ID: $bId ($syncedItems entities updated)")
+                if (!upload.success) {
+                    onComplete(false, upload.message)
+                    return@launch
+                }
+                WebSyncService.syncProfile(bId, profile)
+                onComplete(true, "Sync complete: ${recipesList.size} recipes, ${inventoryList.size} ingredients/stock items, ${customersList.size} customers and ${packagingList.size} packaging items.")
+            } catch (error: Throwable) {
+                onComplete(false, error.localizedMessage ?: "Website synchronisation failed.")
+            }
         }
     }
 }

@@ -72,6 +72,14 @@ object FirebaseService {
     private const val TAG = "FirebaseService"
     const val APPLICATION_ID = "com.aistudio.batchboss.kqwxrv"
 
+    /**
+     * Web records historically used Firestore auto IDs while Android Room uses Long keys.
+     * Keep a stable local key for those documents so every refresh updates the same row
+     * instead of inserting duplicates.
+     */
+    private fun stableDocumentId(documentId: String): Long =
+        documentId.toLongOrNull() ?: ((documentId.hashCode().toLong() and 0x7fffffffL) + 1L)
+
     val isConfigured: Boolean
         get() = try {
             FirebaseApp.getApps(BatchBossApplication.instance).isNotEmpty()
@@ -378,7 +386,7 @@ object FirebaseService {
             val restoredPackaging = mutableListOf<PackagingItemEntity>()
 
             for (doc in packagingColl.documents) {
-                val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: ""
                 val category = doc.getString("category") ?: "Cake boxes"
                 val unit = doc.getString("unit") ?: "pcs"
@@ -422,7 +430,7 @@ object FirebaseService {
             }
 
             for (doc in customersColl.documents) {
-                val id = doc.getLong("id") ?: 0L
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: "Customer"
                 val phone = doc.getString("phone") ?: ""
                 val email = doc.getString("email") ?: ""
@@ -449,7 +457,7 @@ object FirebaseService {
             }
 
             for (doc in recipesColl.documents) {
-                val id = doc.getLong("id") ?: 0L
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: "Unnamed Recipe"
                 val category = doc.getString("category") ?: "Cakes"
                 val description = doc.getString("description") ?: ""
@@ -500,7 +508,7 @@ object FirebaseService {
                 // Fetch ingredients for this recipe
                 val ingDocs = doc.reference.collection("ingredients").get().awaitTask()
                 for (iDoc in ingDocs.documents) {
-                    val ingId = iDoc.getLong("id") ?: 0L
+                    val ingId = iDoc.getLong("id") ?: stableDocumentId(iDoc.id)
                     val ingRecipeId = iDoc.getLong("recipeId") ?: id
                     val ingName = iDoc.getString("name") ?: ""
                     val quantity = iDoc.getDouble("quantity") ?: 0.0
@@ -521,7 +529,7 @@ object FirebaseService {
             }
 
             for (doc in inventoryColl.documents) {
-                val id = doc.getLong("id") ?: 0L
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: "Item"
                 val currentStock = doc.getDouble("currentStock") ?: 0.0
                 val minStock = doc.getDouble("minStock") ?: 0.0
@@ -693,7 +701,7 @@ object FirebaseService {
                     }
                     if (snapshot != null) {
                         val items = snapshot.documents.mapNotNull { doc ->
-                            val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                            val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                             val name = doc.getString("name") ?: return@mapNotNull null
                             val category = doc.getString("category") ?: "Cake boxes"
                             val unit = doc.getString("unit") ?: "pcs"
