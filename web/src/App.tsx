@@ -8,8 +8,9 @@ import {
   createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword,
   signOut, type User,
 } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
+import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
@@ -30,6 +31,7 @@ const modules: ModuleDefinition[] = [
   { key: 'tasks', label: 'Tasks & calendar', icon: CalendarDays, collection: 'tasks' },
   { key: 'customers', label: 'Customers', icon: Users, collection: 'customers' },
   { key: 'orders', label: 'Orders', icon: ClipboardList, collection: 'orders' },
+  { key: 'reports', label: 'Reports', icon: Gauge },
   { key: 'documents', label: 'Documents & templates', icon: Download },
   { key: 'tools', label: 'Bakery tools', icon: WandSparkles },
   { key: 'subscription', label: 'Subscription', icon: Sparkles },
@@ -37,7 +39,7 @@ const modules: ModuleDefinition[] = [
 ]
 const dataModules = modules.filter(module => module.collection)
 
-const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' })
+
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -122,7 +124,7 @@ function AuthScreen() {
       }
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
-      setError(message.replace('Firebase: ', '').replace(/\(auth\/.+\)\.?/, ''))
+      setError(message.includes('invalid-credential') ? 'Email or password not recognised. Please try again.' : message.replace('Firebase: ', ''))
     } finally { setBusy(false) }
   }
 
@@ -162,17 +164,26 @@ function AuthScreen() {
 type WorkspaceItem = { id: string; name?: string; title?: string; description?: string; email?: string; phone?: string; notes?: string; status?: string; total?: number; price?: number; totalOrders?: number; totalSpend?: number; [key: string]: unknown }
 
 function Dashboard({ profile }: { profile: UserProfile }) {
-  const [active, setActive] = useState<ModuleKey>('home')
+  const [active, setActive] = useState<ModuleKey>(new URLSearchParams(location.search).has('payment') ? 'subscription' : 'home')
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [showImporter, setShowImporter] = useState(false)
 
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  async function syncNow() {
+    setSyncing(true); setSyncMessage('')
+    try {
+      const results = await Promise.all(dataModules.map(async m => { const snap = await getDocsFromServer(collection(db, 'bakeries', profile.bakeryId, m.collection!)); return [m.key, snap.docs.map(d => ({...d.data(), localId:d.data().id, id:d.id}))] }));
+      setItems(Object.fromEntries(results)); setSyncMessage('Bakery data refreshed from the cloud. Open Sync in the Android app to refresh that device too.')
+    } catch { setSyncMessage('Could not reach the cloud. Check your connection and try again.') } finally { setSyncing(false) }
+  }
   const subscriptionExpiry = (profile.subscriptionExpiresAt as { toDate?: () => Date } | undefined)?.toDate?.()
-  const promoValid = profile.subscriptionPlan !== 'promo' || (!!subscriptionExpiry && subscriptionExpiry.getTime() > Date.now())
+  const promoValid = subscriptionExpiry ? subscriptionExpiry.getTime() > Date.now() : profile.subscriptionPlan !== 'promo' && profile.subscriptionSource !== 'paystack'
   const isPro = ['active', 'trialing'].includes(profile.subscriptionStatus || '') && promoValid
-  const counts = Object.fromEntries(dataModules.map(module => [module.key, items[module.key]?.length || 0])) as Record<ModuleKey, number>
+  const counts = Object.fromEntries(dataModules.map(module => [module.key, items[module.key]?.filter(i=>!i.archived).length || 0])) as Record<ModuleKey, number>
   const selectedModule = modules.find(module => module.key === active) || modules[0]
   const selectedItems = items[active] || []
 
@@ -185,6 +196,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
           return { ...data, localId: data.id, id: item.id }
         }) }))
       },
+      () => setSyncMessage('Some bakery data could not sync. Check your connection or account permissions, then try Sync now.'),
     ))
     return () => cleanups.forEach(cleanup => cleanup())
   }, [profile.bakeryId])
@@ -321,16 +333,19 @@ function Dashboard({ profile }: { profile: UserProfile }) {
         {modules.map(({ key, label, icon: Icon, collection: collectionName, pro }) => <button key={key} className={active === key ? 'nav-item active' : 'nav-item'} onClick={() => { setActive(key); setMenuOpen(false) }}><Icon />{label}{pro && !isPro ? <span>PRO</span> : collectionName ? <span>{counts[key] || 0}</span> : null}</button>)}
       </nav>
       <div className="sidebar-bottom">
-        <div className="profile-avatar">{profile.firstName.slice(0, 1)}{profile.surname.slice(0, 1)}</div>
-        <div><strong>{profile.firstName} {profile.surname}</strong><small>{profile.role}</small></div>
+        <div className="profile-avatar">{displayName(profile).slice(0, 1)}</div>
+        <div><strong>{displayName(profile)}</strong><small>{profile.role}</small></div>
         <button title="Sign out" onClick={() => signOut(auth)}><LogOut /></button>
       </div>
     </aside>
     <main className="dashboard-main">
-      <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{profile.firstName || 'Baker'} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
-      {active === 'home' && <HomeView counts={counts} onOpen={setActive} />}
+      <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{displayName(profile)} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
+      <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
+      {active === 'reports' && <ReportsView items={items} />}
+      {['orders','receipts'].includes(active) && (active !== 'receipts' || isPro) && <RecordsView kind={active as 'orders'|'receipts'} bakeryId={profile.bakeryId} items={selectedItems} invoices={items.invoices || []} customers={items.customers || []} />}
+      {active === 'home' && <HomeView invoices={items.invoices || []} counts={counts} onOpen={setActive} />}
       {active === 'subscription' && <SubscriptionView isPro={isPro} profile={profile} />}
-      {active === 'tools' && <ToolsView />}
+      {active === 'tools' && <BakeryTools bakeryId={profile.bakeryId} recipes={items.recipes || []} />}
       {active === 'documents' && <DocumentsView onOpen={setActive} />}
       {active === 'settings' && <SettingsView profile={profile} />}
       {active === 'products' && isPro && <ProductsView bakeryId={profile.bakeryId} items={items.products || []} />}
@@ -340,9 +355,9 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {active === 'customers' && <CustomersView bakeryId={profile.bakeryId} items={items.customers || []} />}
       {selectedModule.collection && selectedModule.pro && !isPro
         ? <LockedView title={selectedModule.label} onUpgrade={() => setActive('subscription')} />
-        : selectedModule.collection && !['products','invoices','quotes','tasks','customers'].includes(active) && <section className="content-card">
+        : selectedModule.collection && !['products','invoices','quotes','tasks','customers','orders','receipts'].includes(active) && <section className="content-card">
           <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
-          <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />
+          {['ingredients','inventory','packaging'].includes(active) ? <StockCards items={selectedItems} onEdit={openEditor} bakeryId={profile.bakeryId} collectionName={selectedModule.collection!} /> : <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />}
         </section>}
     </main>
     {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
@@ -362,8 +377,8 @@ function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
   </section>
 }
 
-function HomeView({ counts, onOpen }: { counts: Record<ModuleKey, number>; onOpen: (key: ModuleKey) => void }) {
-  return <><section className="hero-card pro-hero"><div><span className="eyebrow">Bakery overview</span><h2>Your bakery at a glance</h2><p>Manage costing, stock, customers and sales from one connected workspace.</p></div><div className="profit"><small>Estimated profit</small><strong>{money.format(0)}</strong><span>Updates when sales are recorded</span></div></section><section className="stat-grid">{[
+function HomeView({ counts, onOpen, invoices }: { counts: Record<ModuleKey, number>; onOpen: (key: ModuleKey) => void; invoices: WorkspaceItem[] }) {
+  return <><section className="hero-card pro-hero"><div><span className="eyebrow">Bakery overview</span><h2>Your bakery at a glance</h2><p>Manage costing, stock, customers and sales from one connected workspace.</p></div><div className="profit"><small>Estimated profit</small><strong>{money.format(invoices.filter(i => i.status === 'paid').reduce((n,i) => n + Number(i.estimatedProfit || 0),0))}</strong><span>Estimated profit on paid invoices</span></div></section><section className="stat-grid">{[
     ['recipes', 'Recipes', BookOpen], ['inventory', 'Stock items', Boxes], ['customers', 'Customers', Users], ['orders', 'Orders', ClipboardList],
   ].map(([key, label, Icon]) => <button className="stat-card stat-button" key={String(key)} onClick={() => onOpen(key as ModuleKey)}><div className="stat-icon"><Icon /></div><span>{String(label)}</span><strong>{counts[key as ModuleKey] || 0}</strong><small>Live total</small></button>)}</section><section className="content-card quick-access"><div className="section-heading"><div><span className="eyebrow">Quick access</span><h2>Keep your bakery moving</h2></div></div><div className="quick-grid">{[['recipes','Recipes'],['ingredients','Ingredients & stock'],['invoices','Invoicing'],['products','Products & services']].map(([key,label])=><button key={key} onClick={()=>onOpen(key as ModuleKey)}><Sparkles/><strong>{label}</strong><ChevronRight/></button>)}</div></section></>
 }
@@ -406,7 +421,7 @@ function mapImportTable(table: unknown[][]): ImportRow[] {
   const minimumIndex = indexOf('minimumstock','minstock','minimumstockalert','reorderlevel','lowstocklevel')
   const categoryIndex = indexOf('category','type')
   const barcodeIndex = indexOf('barcode','sku','code')
-  if (nameIndex < 0) return []
+  if (nameIndex < 0 || priceIndex < 0 || quantityIndex < 0 || unitIndex < 0) return []
   return table.slice(headerIndex + 1).map(row => ({
     name: String(row[nameIndex] ?? '').trim(),
     unit: String(unitIndex >= 0 ? row[unitIndex] ?? 'g' : 'g').trim() || 'g',
@@ -416,7 +431,7 @@ function mapImportTable(table: unknown[][]): ImportRow[] {
     minimum: importNumber(minimumIndex >= 0 ? row[minimumIndex] : 0),
     category: String(categoryIndex >= 0 ? row[categoryIndex] ?? '' : '').trim(),
     barcode: String(barcodeIndex >= 0 ? row[barcodeIndex] ?? '' : '').trim(),
-  })).filter(row => row.name)
+  })).filter(row => row.name && !isImportHeading(row.name) && row.quantity > 0 && row.price >= 0 && row.stock >= 0 && row.minimum >= 0)
 }
 
 function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:string;label:string;onClose:()=>void}){
@@ -431,13 +446,12 @@ function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:stri
     const sheetName=workbook.SheetNames.find(name=>name.toLowerCase()===preferred.toLowerCase())||workbook.SheetNames.find(name=>name.toLowerCase().includes(collectionName==='packaging'?'packaging':'ingredient'))||workbook.SheetNames[0]
     table=XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:''}) as unknown[][]
    }else{
-    const text=await file.text();const lines=text.split(/\r?\n/).filter(line=>line.trim());
-    table=lines.map(line=>line.split(line.includes(';')?';':',').map(value=>value.trim().replace(/^"|"$/g,'')))
+    const workbook=XLSX.read(await file.text(),{type:'string'}); table=XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]],{header:1,defval:''}) as unknown[][]
    }
    const result=mapImportTable(table);setRows(result);setError(result.length?'':'No valid items found. Use the BatchBoss upload template and keep the column headings.')
   }catch(e){setError(e instanceof Error?e.message:'The selected file could not be read.')}
  }
- async function save(){setSaving(true);try{const batch=writeBatch(db);const now=Date.now();rows.forEach((x,index)=>{const recordId=now+index;const ref=doc(db,'bakeries',bakeryId,collectionName,String(recordId));const normalisedUnit=x.unit.toLowerCase();const isPackaging=collectionName==='packaging';const base=normalisedUnit==='kg'||normalisedUnit==='l'?x.quantity*1000:x.quantity;batch.set(ref,{id:recordId,bakeryId,name:x.name,unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:isPackaging?0:base,unitPrice:base>0?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,alertEnabled:true,category:x.category||(isPackaging?'Other':'Baking Staples'),barcode:x.barcode,status:'active',createdAt:now,updatedAt:now})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed')}finally{setSaving(false)}}
+ async function save(){if(rows.length>450){setError('Import up to 450 rows at a time.');return}setSaving(true);try{const batch=writeBatch(db);const now=Date.now();rows.forEach((x,index)=>{const recordId=now+index;const ref=doc(db,'bakeries',bakeryId,collectionName,String(recordId));const normalisedUnit=x.unit.toLowerCase();const isPackaging=collectionName==='packaging';const base=normalisedUnit==='kg'||normalisedUnit==='l'?x.quantity*1000:x.quantity;batch.set(ref,{id:recordId,bakeryId,name:x.name,unit:x.unit,packagePrice:x.price,packageQuantity:x.quantity,gramsPerUnit:isPackaging?0:base,unitPrice:base>0?x.price/base:0,currentStock:x.stock,minStock:x.minimum,isLowStock:x.stock<=x.minimum,alertEnabled:true,category:x.category||(isPackaging?'Other':'Baking Staples'),barcode:x.barcode,status:'active',createdAt:now,updatedAt:now})});await batch.commit();onClose()}catch(e){setError(e instanceof Error?e.message:'Import failed')}finally{setSaving(false)}}
  return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Upload the BatchBoss Excel workbook, CSV or TXT file. Required headings: Name, Unit, Package Price, Package Quantity, Current Stock and Minimum Stock.</p><input type="file" accept=".xlsx,.xls,.csv,.txt" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note">{error}</div>}{rows.length>0&&<><h3>Preview ({rows.length} items)</h3><div className="catalogue-list">{rows.map((x,i)=><div className="customer-card" key={`${x.name}-${i}`}><div><strong>{x.name}</strong><small>{x.quantity} {x.unit} per pack</small></div><div><span>{money.format(x.price)} pack</span><small>Stock: {x.stock} · Minimum: {x.minimum} · Unit cost: {money.format((x.unit.toLowerCase()==='kg'||x.unit.toLowerCase()==='l'?x.quantity*1000:x.quantity)>0?x.price/(x.unit.toLowerCase()==='kg'||x.unit.toLowerCase()==='l'?x.quantity*1000:x.quantity):0)}</small></div></div>)}</div><button type="button" className="primary-button" disabled={saving} onClick={save}>{saving?'Importing…':`Confirm and import ${rows.length} items`}</button></>}</div></Modal>
 }
 
@@ -590,23 +604,22 @@ function QuotesView({bakeryId,quotes,products}:{bakeryId:string;quotes:Workspace
 }
 
 function TasksView({bakeryId,items}:{bakeryId:string;items:WorkspaceItem[]}){
-  const today=new Date(); const [selected,setSelected]=useState(today.getDate()); const [adding,setAdding]=useState(false);const [filter,setFilter]=useState('all'); const year=today.getFullYear(), month=today.getMonth(); const days=new Date(year,month+1,0).getDate(); const first=new Date(year,month,1).getDay(); const selectedDate=`${year}-${String(month+1).padStart(2,'0')}-${String(selected).padStart(2,'0')}`; const dayItems=items.filter(i=>i.dueDate===selectedDate&&(filter==='all'||i.status===filter));const statusCount=(status:string)=>items.filter(i=>i.status===status).length
+  const today=new Date(); const [viewMonth,setViewMonth]=useState(new Date(today.getFullYear(),today.getMonth(),1)); const [selected,setSelected]=useState(today.getDate()); const [adding,setAdding]=useState(false);const [filter,setFilter]=useState('all'); const year=viewMonth.getFullYear(), month=viewMonth.getMonth(); const days=new Date(year,month+1,0).getDate(); const first=new Date(year,month,1).getDay(); const selectedDate=`${year}-${String(month+1).padStart(2,'0')}-${String(selected).padStart(2,'0')}`; const dayItems=items.filter(i=>i.dueDate===selectedDate&&(filter==='all'||i.status===filter));const statusCount=(status:string)=>items.filter(i=>i.status===status).length
   async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();const data=new FormData(event.currentTarget);await addDoc(collection(db,'bakeries',bakeryId,'tasks'),{name:String(data.get('name')),orderRef:String(data.get('orderRef')||''),description:String(data.get('description')||''),dueDate:String(data.get('dueDate')),dueTime:String(data.get('dueTime')||'12:00'),priority:String(data.get('priority')||'medium'),status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});setAdding(false)}
-  return <section className="app-section tasks-view"><div className="app-page-title"><div><span className="eyebrow">Bakery planner</span><h2>Tasks &amp; Calendar</h2><p>{items.length} total tasks recorded</p></div><button className="primary-button compact" onClick={()=>setAdding(true)}><Plus/> Add task</button></div><div className="calendar-card"><h3>{today.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</h3><div className="weekdays">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=><span key={d}>{d}</span>)}</div><div className="calendar-grid">{Array.from({length:first},(_,i)=><span key={`blank-${i}`}/>)}{Array.from({length:days},(_,i)=>i+1).map(day=><button className={selected===day?'selected':''} onClick={()=>setSelected(day)} key={day}>{day}</button>)}</div><div className="calendar-key"><strong>Viewing: {new Date(year,month,selected).toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</strong><span>● Pending &nbsp; <i>● Done</i></span></div></div><div className="task-counts"><article><strong>{statusCount('pending')}</strong><span>Pending</span></article><article><strong>{statusCount('in-progress')}</strong><span>In progress</span></article><article><strong>{statusCount('completed')}</strong><span>Completed</span></article></div><div className="task-filters">{[['all','All'],['pending','Pending'],['in-progress','In progress'],['completed','Completed']].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{label}</button>)}</div>{dayItems.length?<div className="task-list">{dayItems.map(item=><article key={item.id}><CalendarDays/><div><strong>{String(item.name)}</strong><p>{String(item.orderRef||'')} {String(item.dueTime||'')} · {String(item.description||'')}</p></div><select value={String(item.status||'pending')} onChange={e=>updateDoc(doc(db,'bakeries',bakeryId,'tasks',item.id),{status:e.target.value,updatedAt:serverTimestamp()})}><option value="pending">Pending</option><option value="in-progress">In progress</option><option value="completed">Completed</option></select></article>)}</div>:<EmptyState title={`No tasks scheduled for ${selected} ${today.toLocaleDateString('en-ZA',{month:'short'})}`} text="Schedule cake baking, pastry batches, decorating, ingredient restocking or client order deliveries." action="Add task for this day" onAction={()=>setAdding(true)}/>} {adding&&<Modal title="Add Bakery Task" onClose={()=>setAdding(false)}><form className="modal-form" onSubmit={save}><label>Task name<input name="name" placeholder="e.g. Bake Red Velvet Cake" required/></label><label>Order reference<input name="orderRef" placeholder="e.g. Order #ORD-1028"/></label><label>Details<textarea name="description" rows={2}/></label><div className="split-fields"><label>Due date<input name="dueDate" type="date" defaultValue={selectedDate} required/></label><label>Due time<input name="dueTime" type="time" defaultValue="12:00"/></label></div><label>Priority<select name="priority" defaultValue="high"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label><button className="primary-button">Add task</button></form></Modal>}</section>
+  return <section className="app-section tasks-view"><div className="app-page-title"><div><span className="eyebrow">Bakery planner</span><h2>Tasks &amp; Calendar</h2><p>{items.length} total tasks recorded</p></div><button className="primary-button compact" onClick={()=>setAdding(true)}><Plus/> Add task</button></div><div className="calendar-card"><div className="calendar-toolbar"><button className="outline-button" aria-label="Previous month" onClick={()=>{setViewMonth(new Date(year,month-1,1));setSelected(1)}}>←</button><h3>{viewMonth.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</h3><button className="outline-button" aria-label="Next month" onClick={()=>{setViewMonth(new Date(year,month+1,1));setSelected(1)}}>→</button><button className="outline-button" onClick={()=>{setViewMonth(new Date(today.getFullYear(),today.getMonth(),1));setSelected(today.getDate())}}>Today</button></div><div className="weekdays">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=><span key={d}>{d}</span>)}</div><div className="calendar-grid">{Array.from({length:first},(_,i)=><span key={`blank-${i}`}/>)}{Array.from({length:days},(_,i)=>i+1).map(day=><button className={selected===day?'selected':''} onClick={()=>setSelected(day)} key={day}>{day}{items.some(i=>i.dueDate===`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`)&&<small aria-label="Tasks scheduled">●</small>}</button>)}</div><div className="calendar-key"><strong>Viewing: {new Date(year,month,selected).toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</strong><span>● Pending &nbsp; <i>● Done</i></span></div></div><div className="task-counts"><article><strong>{statusCount('pending')}</strong><span>Pending</span></article><article><strong>{statusCount('in-progress')}</strong><span>In progress</span></article><article><strong>{statusCount('completed')}</strong><span>Completed</span></article></div><div className="task-filters">{[['all','All'],['pending','Pending'],['in-progress','In progress'],['completed','Completed']].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{label}</button>)}</div>{dayItems.length?<div className="task-list">{dayItems.map(item=><article key={item.id}><CalendarDays/><div><strong>{String(item.name)}</strong><p>{String(item.orderRef||'')} {String(item.dueTime||'')} · {String(item.description||'')}</p></div><select value={String(item.status||'pending')} onChange={e=>updateDoc(doc(db,'bakeries',bakeryId,'tasks',item.id),{status:e.target.value,updatedAt:serverTimestamp()})}><option value="pending">Pending</option><option value="in-progress">In progress</option><option value="completed">Completed</option></select></article>)}</div>:<EmptyState title={`No tasks scheduled for ${selected} ${viewMonth.toLocaleDateString('en-ZA',{month:'short'})}`} text="Schedule cake baking, pastry batches, decorating, ingredient restocking or client order deliveries." action="Add task for this day" onAction={()=>setAdding(true)}/>} {adding&&<Modal title="Add Bakery Task" onClose={()=>setAdding(false)}><form className="modal-form" onSubmit={save}><label>Task name<input name="name" placeholder="e.g. Bake Red Velvet Cake" required/></label><label>Order reference<input name="orderRef" placeholder="e.g. Order #ORD-1028"/></label><label>Details<textarea name="description" rows={2}/></label><div className="split-fields"><label>Due date<input name="dueDate" type="date" defaultValue={selectedDate} required/></label><label>Due time<input name="dueTime" type="time" defaultValue="12:00"/></label></div><label>Priority<select name="priority" defaultValue="high"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label><button className="primary-button">Add task</button></form></Modal>}</section>
 }
 
 function LockedView({ title, onUpgrade }: { title: string; onUpgrade: () => void }) { return <section className="content-card locked"><div className="lock-icon"><Sparkles /></div><span className="eyebrow">BatchBoss Pro</span><h2>Unlock {title}</h2><p>Upgrade to create professional invoices, quotes and receipts, save products and work with unlimited recipes and suppliers.</p><button className="primary-button compact" onClick={onUpgrade}>View Pro plans</button></section> }
 
-function ToolsView() { return <section className="content-card"><div className="section-heading"><div><span className="eyebrow">Bakery tools</span><h2>Converter & recipe scaler</h2></div></div><div className="tools-grid"><article><h3>Baking unit converter</h3><p>Ingredient volume weights vary. Use the app converter for ingredient-specific measurements.</p><strong>1 cup cake flour ≈ 125 g</strong></article><article><h3>Batch & recipe scaler</h3><p>Scale a recipe from its original yield to the batch you need.</p><strong>Available in the BatchBoss app</strong></article></div></section> }
 function SettingsView({ profile }: { profile: UserProfile }) {
   const [business,setBusiness]=useState<Record<string,unknown>>({}); const [saved,setSaved]=useState(false); const [logoData,setLogoData]=useState(''); const [logoError,setLogoError]=useState('')
   useEffect(()=>onSnapshot(doc(db,'bakeries',profile.bakeryId),snapshot=>setBusiness(snapshot.exists()?snapshot.data():{})),[profile.bakeryId])
   useEffect(()=>setLogoData(String(business.logoDataUrl||'')),[business.logoDataUrl])
   function chooseLogo(file?:File){if(!file)return;setLogoError('');if(file.size>350000){setLogoError('Please choose a logo smaller than 350 KB.');return}const reader=new FileReader();reader.onload=()=>setLogoData(String(reader.result||''));reader.readAsDataURL(file)}
   async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();const data=new FormData(event.currentTarget);await setDoc(doc(db,'bakeries',profile.bakeryId),{name:String(data.get('name')||''),businessName:String(data.get('name')||''),phone:String(data.get('phone')||''),email:String(data.get('email')||''),address:String(data.get('address')||''),bankName:String(data.get('bankName')||''),accountNumber:String(data.get('accountNumber')||''),branchCode:String(data.get('branchCode')||''),vatNumber:String(data.get('vatNumber')||''),hourlyLaborRate:Number(data.get('hourlyLaborRate')||0),logoDataUrl:logoData,logoEmblem:String(data.get('logoEmblem')||'batchboss'),updatedAt:serverTimestamp()},{merge:true});setSaved(true);setTimeout(()=>setSaved(false),2500)}
-  return <section className="app-section business-settings"><div className="app-page-title"><div><span className="eyebrow">Bakery identity</span><h2>Business Logo &amp; Info</h2><p>Your business details are used on invoices, quotes and receipts.</p></div></div><form className="business-form" onSubmit={save}><section className="logo-panel">{logoData?<img className="logo-preview" src={logoData} alt="Bakery logo"/>:<div className="brand-mark">B</div>}<div><strong>Bakery Logo</strong><p>{logoData?'Logo ready to save':'No logo uploaded'}</p></div><label className="upload-button">Upload<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>chooseLogo(e.target.files?.[0])}/></label></section>{logoError&&<div className="error-message">{logoError}</div>}<div><span className="field-heading">Or select an emblem</span><div className="emblem-row"><label><input type="radio" name="logoEmblem" value="batchboss" defaultChecked/> BatchBoss emblem</label><label><input type="radio" name="logoEmblem" value="toque"/> Chef toque</label><label><input type="radio" name="logoEmblem" value="cake"/> Artisan cake</label></div></div><h3>Bakery &amp; contact information</h3><label>Bakery / Business name<input name="name" defaultValue={String(business.name||business.businessName||'')} required/></label><div className="split-fields"><label>Phone / WhatsApp<input name="phone" defaultValue={String(business.phone||'')}/></label><label>Email<input name="email" type="email" defaultValue={String(business.email||profile.email||'')}/></label></div><label>Bakery physical address<input name="address" defaultValue={String(business.address||'')}/></label><h3>Banking &amp; invoice details</h3><label>Bank name<input name="bankName" defaultValue={String(business.bankName||'')}/></label><div className="split-fields"><label>Account number<input name="accountNumber" defaultValue={String(business.accountNumber||'')}/></label><label>Branch code<input name="branchCode" defaultValue={String(business.branchCode||'')}/></label></div><div className="split-fields"><label>VAT / Registration number<input name="vatNumber" defaultValue={String(business.vatNumber||'')}/></label><label>Hourly labour rate (R)<input name="hourlyLaborRate" type="number" min="0" step=".01" defaultValue={Number(business.hourlyLaborRate||120)}/></label></div>{saved&&<div className="success-note">Business information saved.</div>}<button className="primary-button">Save business information</button></form></section>
+  return <section className="app-section business-settings"><div className="app-page-title"><div><span className="eyebrow">Bakery identity</span><h2>Business Logo &amp; Info</h2><p>Your business details are used on invoices, quotes and receipts.</p></div></div><ProfileName profile={profile} /><form className="business-form" onSubmit={save}><section className="logo-panel">{logoData?<img className="logo-preview" src={logoData} alt="Bakery logo"/>:<div className="brand-mark">B</div>}<div><strong>Bakery Logo</strong><p>{logoData?'Logo ready to save':'No logo uploaded'}</p></div><label className="upload-button">Upload<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>chooseLogo(e.target.files?.[0])}/></label></section>{logoError&&<div className="error-message">{logoError}</div>}<div><span className="field-heading">Or select an emblem</span><div className="emblem-row"><label><input type="radio" name="logoEmblem" value="batchboss" defaultChecked/> BatchBoss emblem</label><label><input type="radio" name="logoEmblem" value="toque"/> Chef toque</label><label><input type="radio" name="logoEmblem" value="cake"/> Artisan cake</label></div></div><h3>Bakery &amp; contact information</h3><label>Bakery / Business name<input name="name" defaultValue={String(business.name||business.businessName||'')} required/></label><div className="split-fields"><label>Phone / WhatsApp<input name="phone" defaultValue={String(business.phone||'')}/></label><label>Email<input name="email" type="email" defaultValue={String(business.email||profile.email||'')}/></label></div><label>Bakery physical address<input name="address" defaultValue={String(business.address||'')}/></label><h3>Banking &amp; invoice details</h3><label>Bank name<input name="bankName" defaultValue={String(business.bankName||'')}/></label><div className="split-fields"><label>Account number<input name="accountNumber" defaultValue={String(business.accountNumber||'')}/></label><label>Branch code<input name="branchCode" defaultValue={String(business.branchCode||'')}/></label></div><div className="split-fields"><label>VAT / Registration number<input name="vatNumber" defaultValue={String(business.vatNumber||'')}/></label><label>Hourly labour rate (R)<input name="hourlyLaborRate" type="number" min="0" step=".01" defaultValue={Number(business.hourlyLaborRate||120)}/></label></div>{saved&&<div className="success-note">Business information saved.</div>}<button className="primary-button">Save business information</button></form></section>
 }
 function EmptyState({ title, text, action, onAction }: { title: string; text: string; action?: string; onAction?: () => void }) { return <div className="empty-state"><div><Sparkles /></div><h3>{title}</h3><p>{text}</p>{action && <button className="primary-button compact" onClick={onAction}><Plus size={17} />{action}</button>}</div> }
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="modal-backdrop"><div className="modal"><div className="modal-title"><h2>{title}</h2><button onClick={onClose}><X /></button></div>{children}</div></div> }
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-title"><h2>{title}</h2><button type="button" aria-label="Close dialog" onClick={onClose}><X /></button></div>{children}</div></div> }
 
 export default App
