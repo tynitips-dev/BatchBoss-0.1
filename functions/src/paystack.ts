@@ -21,7 +21,7 @@ async function api(path:string,body?:unknown){
  const operation=path.startsWith('/plan/')?'plan lookup':path==='/customer'?'customer setup':path==='/transaction/initialize'?'checkout initialization':path.startsWith('/transaction/verify/')?'payment verification':'subscription management';
  let res:Response;
  try{
-  res=await fetch(`https://api.paystack.co${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${secret.value()}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
+    res=await fetch(`https://api.paystack.co${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${secret.value()}`,'Content-Type':'application/json','User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
  }catch{
   console.error('Paystack request failed',{operation,reason:'network-or-timeout'});
   throw new HttpsError('unavailable',`Paystack could not be reached during ${operation}. Please try again shortly.`);
