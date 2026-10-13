@@ -17,3 +17,18 @@ test('failed and wrong-amount payments do not grant access',async()=>{reset();tx
 test('test transactions record success without activating live profile',async()=>{reset();tx.domain='test';records.get('subscriptionPayments/BB-first').domain='test';await api.verifyPaystackPayment(request('baker1'));assert.equal(updates,0);assert.equal(records.get('users/baker1').subscriptionStatus,'free')});
 test('forged webhook never changes data',async()=>{reset();assert.equal((await webhook({event:'charge.success',data:{reference:'BB-first'}},false)).status,401);assert.equal(updates,0)});
 test('verified renewal invoice is mapped without relying on checkout metadata',async()=>{reset();records.set('paystackCustomers/CUS_baker',{uid:'baker1'});records.set('users/baker1',{subscriptionSource:'paystack',subscriptionStatus:'active',paystackSubscriptionCode:'SUB_baker'});tx.reference='renewal-2';tx.paid_at='2026-11-12T10:00:00Z';const event={event:'invoice.update',data:{paid:true,subscription:{subscription_code:'SUB_baker'},transaction:{reference:'renewal-2'}}};assert.equal((await webhook(event)).status,200);assert.equal(records.get('subscriptionPayments/renewal-2').uid,'baker1');assert.equal(records.get('users/baker1').subscriptionExpiresAt.toISOString(),'2026-12-12T10:00:00.000Z');await webhook(event);assert.equal(records.get('users/baker1').subscriptionExpiresAt.toISOString(),'2026-12-12T10:00:00.000Z')});
+
+ test('checkout reports upstream failures without leaking provider payloads',async()=>{
+ const original=global.fetch;
+ try{
+  for(const [status,code,pattern] of [[401,'failed-precondition',/secret key/],[403,'failed-precondition',/denied access/],[404,'failed-precondition',/same Paystack account and test\/live mode/],[429,'resource-exhausted',/too many requests/],[503,'unavailable',/temporarily unavailable/]]){
+   reset();global.fetch=async()=>({ok:false,status,json:async()=>({status:false,message:'private customer email and secret'})});
+   await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code===code&&pattern.test(e.message)&&!e.message.includes('private'));
+   assert.equal(updates,0);
+  }
+  global.fetch=async()=>{throw new Error('private network details')};
+  await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code==='unavailable'&&/could not be reached/.test(e.message));
+  global.fetch=async()=>({ok:false,status:502,json:async()=>{throw new Error('HTML')}});
+  await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code==='unavailable'&&/HTTP 502/.test(e.message));
+ }finally{global.fetch=original;}
+ });

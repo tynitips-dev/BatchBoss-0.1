@@ -16,7 +16,29 @@ const now=()=>FieldValue.serverTimestamp();
 function uidOf(r:any){if(!r.auth)throw new HttpsError('unauthenticated','Please sign in.');return r.auth.uid as string;}
 function mode(){const key=secret.value();if(!/^sk_(test|live)_/.test(key))throw new HttpsError('failed-precondition','Paystack is not configured.');return key.startsWith('sk_live_')?'live':'test';}
 function planFor(interval:string){if(!['monthly','annual'].includes(interval))throw new HttpsError('invalid-argument','Choose monthly or annual.');const planCode=interval==='monthly'?monthly.value():annual.value();if(!/^PLN_[a-zA-Z0-9]+$/.test(planCode))throw new HttpsError('failed-precondition','Payment plans are not configured yet.');return {interval:interval as 'monthly'|'annual',amount:interval==='monthly'?14900:119900,currency:'ZAR',planCode,domain:mode()};}
-async function api(path:string,body?:unknown){const res=await fetch(`https://api.paystack.co${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${secret.value()}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});const json=await res.json() as any;if(!res.ok||!json.status)throw new HttpsError('unavailable','Paystack could not complete this request. Please try again.');return json.data;}
+async function api(path:string,body?:unknown){
+ // Only fixed operation labels and status codes enter logs: never keys or customer data.
+ const operation=path.startsWith('/plan/')?'plan lookup':path==='/customer'?'customer setup':path==='/transaction/initialize'?'checkout initialization':path.startsWith('/transaction/verify/')?'payment verification':'subscription management';
+ let res:Response;
+ try{
+  res=await fetch(`https://api.paystack.co${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${secret.value()}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
+ }catch{
+  console.error('Paystack request failed',{operation,reason:'network-or-timeout'});
+  throw new HttpsError('unavailable',`Paystack could not be reached during ${operation}. Please try again shortly.`);
+ }
+ let json:any;
+ try{json=await res.json();}catch{json=null;}
+ if(!res.ok||json?.status!==true){
+  console.error('Paystack request rejected',{operation,httpStatus:res.status,validResponse:json!==null});
+  if(res.status===401)throw new HttpsError('failed-precondition','Paystack rejected the configured secret key. Check PAYSTACK_SECRET_KEY in Firebase and redeploy the payment functions.');
+  if(res.status===403)throw new HttpsError('failed-precondition',`Paystack denied access during ${operation}. Check the Paystack account permissions and activation status.`);
+  if(res.status===429)throw new HttpsError('resource-exhausted','Paystack received too many requests. Please wait a minute and try again.');
+  if(res.status>=500||!json)throw new HttpsError('unavailable',`Paystack is temporarily unavailable during ${operation} (HTTP ${res.status}). Please try again shortly.`);
+  if(operation==='plan lookup')throw new HttpsError('failed-precondition',`Paystack could not load the configured plan (HTTP ${res.status}). Check that the plan code belongs to the same Paystack account and test/live mode as the secret key.`);
+  throw new HttpsError('failed-precondition',`Paystack rejected ${operation} (HTTP ${res.status}). Contact support to check the payment configuration.`);
+ }
+ return json.data;
+}
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
 export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199};});
 export const createPaystackCheckout=onCall(options,async request=>{
