@@ -20,7 +20,7 @@ service cloud.firestore {
     function hasPro() {
       return signedIn()
         && userDoc().data.subscriptionStatus in ['active', 'trialing']
-        && (userDoc().data.subscriptionPlan != 'promo'
+        && ((!('subscriptionExpiresAt' in userDoc().data) && userDoc().data.get('subscriptionSource', '') != 'paystack' && userDoc().data.subscriptionPlan != 'promo')
           || userDoc().data.subscriptionExpiresAt > request.time);
     }
 
@@ -31,24 +31,30 @@ service cloud.firestore {
     match /users/{uid} {
       allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.uid == uid;
+        && request.resource.data.uid == uid
+        && request.resource.data.subscriptionPlan == 'free'
+        && request.resource.data.subscriptionStatus == 'free'
+        && request.resource.data.role == 'owner'
+        && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode'])
+        && getAfter(/databases/$(database)/documents/bakeries/$(request.resource.data.bakeryId)).data.ownerUid == uid;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow update: if isAdmin()
         || (signedIn()
           && request.auth.uid == uid
-          && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['subscriptionPlan', 'subscriptionStatus', 'subscriptionExpiresAt']));
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['firstName','surname','bakeryName','email','updatedAt','phone','displayName']));
       allow delete: if false;
     }
 
     match /bakeries/{bakeryId} {
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid;
-      allow read, update: if ownsBakery(bakeryId) || isAdmin();
+      allow read: if ownsBakery(bakeryId) || isAdmin();
+      allow update: if isAdmin() || (ownsBakery(bakeryId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid']));
       allow delete: if false;
 
       match /members/{uid} {
-        allow create: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid && getAfter(/databases/$(database)/documents/bakeries/$(bakeryId)).data.ownerUid == uid;
         allow read: if ownsBakery(bakeryId) || isAdmin();
         allow update, delete: if isAdmin()
           || (ownsBakery(bakeryId) && request.auth.uid == uid);

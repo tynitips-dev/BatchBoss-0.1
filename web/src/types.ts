@@ -7,6 +7,9 @@ export type UserProfile = {
   role: 'owner' | 'staff' | 'admin'
   subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo'
   subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
+  subscriptionSource?: string
+  subscriptionBillingInterval?: string
+  paystackSubscriptionCode?: string
   subscriptionExpiresAt?: unknown
 }
 
@@ -25,4 +28,4 @@ export type ModuleKey =
   | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'packaging' | 'suppliers'
   | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
   | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'
-  | 'documents'
+  | 'documents' | 'reports'

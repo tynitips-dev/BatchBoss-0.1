@@ -8,3 +8,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 )
+
+import './batchboss-theme.css'
+import './workspace-extras.css'
