@@ -267,6 +267,30 @@ export const cancelPendingAnnualLaunchRenewal=onCall(options,async request=>{
  });
  return {renewalSetup:'cancelled',refundIssued:false};
 });
+// Request provider-side cancellation without falsely claiming Paystack has cancelled.
+// A separate verified provider action/reconciliation is still required.
+export const requestAnnualLaunchCancellation=onCall(options,async request=>{
+ const uid=uidOf(request);
+ const reference=String(request.data?.reference||'');
+ if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
+  throw new HttpsError('invalid-argument','Invalid launch payment reference.');
+ const ref=db().doc('subscriptionPayments/'+reference);
+ let cancellationStatus='requested';
+ await db().runTransaction(async t=>{
+  const snapshot=await t.get(ref),p=snapshot.data();
+  if(!p||p.uid!==uid||p.offer!=='annual_launch'||p.provider!=='paystack')
+   throw new HttpsError('permission-denied','This payment is not linked to your account.');
+  if(p.domain!==mode())
+   throw new HttpsError('failed-precondition','Payment environment mismatch. Contact support.');
+  if(p.renewalSetup==='cancelled'){cancellationStatus='cancelled_before_scheduling';return;}
+  if(p.renewalCancellationStatus==='requested'){cancellationStatus='requested';return;}
+  if(!['scheduled','submitting','needs_reconciliation'].includes(String(p.renewalSetup)))
+   throw new HttpsError('failed-precondition','No provider renewal is awaiting cancellation. Use the unscheduled renewal cancellation option.');
+  t.update(ref,{renewalCancellationStatus:'requested',
+   renewalCancellationRequestedAt:now(),updatedAt:now()});
+ });
+ return {cancellationStatus,providerCancellationConfirmed:false,refundIssued:false};
+});
 // Read-only subscription setup status for the signed-in baker.
 // Intentionally omits card authorization, provider tokens and customer identifiers.
 export const getAnnualLaunchStatus=onCall(options,async request=>{
