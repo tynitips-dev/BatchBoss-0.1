@@ -166,3 +166,22 @@ test('annual launch submitted cancellation request is owner-only and never claim
  assert.equal(status.renewalCancellationStatus,'requested');
  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
 });
+
+test('revoked pending annual renewal remains cancelled when payment verification is repeated',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ const path='subscriptionPayments/'+reference;
+ records.set(path,{uid:'baker1',provider:'paystack',offer:'annual_launch',
+  domain:'live',status:'payment_verified',renewalSetup:'pending',
+  renewalConsentVersion:'annual-launch-r990-then-r1199-v1'});
+ await api.cancelPendingAnnualLaunchRenewal({auth:{uid:'baker1'},data:{reference}});
+ const original=global.fetch;
+ global.fetch=async()=>{throw new Error('No new payment verification should be requested');};
+ try{
+  const result=await api.verifyAnnualLaunchPayment({auth:{uid:'baker1'},data:{reference}});
+  assert.equal(result.renewalSetup,'cancelled');
+  assert.equal(records.get(path).renewalSetup,'cancelled');
+  assert.ok(records.get(path).renewalConsentRevokedAt);
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+ }finally{global.fetch=original;}
+});
