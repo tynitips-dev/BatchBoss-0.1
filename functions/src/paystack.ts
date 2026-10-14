@@ -323,6 +323,11 @@ export const requestAnnualLaunchCancellation=onCall(options,async request=>{
  });
  return {cancellationStatus,providerCancellationConfirmed:false,refundIssued:false};
 });
+// Paystack uses "non-renewing" when a cancellation has been accepted but
+// the subscriber retains access through their already-paid period.
+function providerStoppedRenewing(status:unknown){
+ return ['non-renewing','not_renewing','cancelled','completed','complete','disabled'].includes(String(status||'').toLowerCase());
+}
 // Test-only provider reconciliation and cancellation. Never infer a provider-side
 // cancellation from our local request flag or an unverified webhook payload.
 export const reconcileAnnualLaunchCancellation=onCall(options,async request=>{
@@ -350,7 +355,7 @@ export const reconcileAnnualLaunchCancellation=onCall(options,async request=>{
   throw new HttpsError('failed-precondition','Provider subscription does not match this payment.');
  const state=String(remote.status||'').toLowerCase();
  // Cancellation is only confirmed when Paystack reports it won't renew.
- if(['not_renewing','cancelled','complete','completed','disabled'].includes(state)){
+ if(providerStoppedRenewing(state)){
   await paymentRef.update({renewalCancellationStatus:'provider_confirmed',
    providerSubscriptionStatus:state,renewalProviderConfirmedAt:now(),updatedAt:now()});
   return {state:'provider_confirmed',providerConfirmed:true};
@@ -370,7 +375,7 @@ export const reconcileAnnualLaunchCancellation=onCall(options,async request=>{
     after.domain!=='test')
   throw new HttpsError('failed-precondition','Cancellation confirmation did not match the original subscription.');
  const afterStatus=String(after.status||'').toLowerCase();
- const confirmed=['not_renewing','cancelled','complete','completed','disabled'].includes(afterStatus);
+ const confirmed=providerStoppedRenewing(afterStatus);
  if(confirmed){
   await paymentRef.update({renewalCancellationStatus:'provider_confirmed',
    providerSubscriptionStatus:afterStatus,renewalProviderConfirmedAt:now(),updatedAt:now()});
