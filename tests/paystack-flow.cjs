@@ -1,9 +1,9 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const Module=require('node:module');const {createHmac}=require('node:crypto');
-const records=new Map();let updates=0;let queue=Promise.resolve();let key='sk_live_fixture_not_a_real_key';
+const records=new Map();let updates=0;let queue=Promise.resolve();let key='sk_live_fixture_not_a_real_key';let promoEnabled=false;
 class Ref{constructor(path){this.path=path;this.id=path.split('/').pop()} async get(){return {exists:records.has(this.path),data:()=>records.get(this.path),id:this.id,ref:this}}async set(data,opt){records.set(this.path,opt?.merge?{...records.get(this.path),...data}:data)}async update(data){updates++;records.set(this.path,{...records.get(this.path),...data})}async delete(){records.delete(this.path)}}
 const db={doc:p=>new Ref(p),collection:p=>({where:(field,op,value)=>({get:async()=>({docs:await Promise.all([...records.keys()].filter(k=>k.startsWith(p+'/')&&records.get(k)[field]===value).map(k=>new Ref(k).get()))})})}),runTransaction:fn=>{const result=queue.then(()=>fn({get:r=>r.get(),set:(r,d,o)=>r.set(d,o),update:(r,d)=>r.update(d)}));queue=result.catch(()=>{});return result}};
 class HttpsError extends Error{constructor(code,message){super(message);this.code=code}}
-const old=Module._load;Module._load=function(id,...args){if(id==='firebase-admin/firestore')return {getFirestore:()=>db,FieldValue:{serverTimestamp:()=>new Date()}};if(id==='firebase-admin/auth')return {getAuth:()=>({getUser:async()=>({email:'fixture@example.com'})})};if(id==='firebase-functions/params')return {defineSecret:()=>({value:()=>key}),defineString:name=>({value:()=>name==='PAYSTACK_ENABLED'?'true':name==='PAYSTACK_MONTHLY_PLAN_CODE'?'PLN_month':'PLN_year'})};if(id==='firebase-functions/v2/https')return {HttpsError,onCall:(o,fn)=>fn,onRequest:(o,fn)=>fn};if(id==='firebase-functions/v2/scheduler')return {onSchedule:(o,fn)=>fn};return old.call(this,id,...args)};
+const old=Module._load;Module._load=function(id,...args){if(id==='firebase-admin/firestore')return {getFirestore:()=>db,FieldValue:{serverTimestamp:()=>new Date()}};if(id==='firebase-admin/auth')return {getAuth:()=>({getUser:async()=>({email:'fixture@example.com'})})};if(id==='firebase-functions/params')return {defineSecret:()=>({value:()=>key}),defineString:name=>({value:()=>name==='PAYSTACK_ANNUAL_LAUNCH_ENABLED'?(promoEnabled?'true':'false'):name==='PAYSTACK_ENABLED'?'true':name==='PAYSTACK_MONTHLY_PLAN_CODE'?'PLN_month':'PLN_year'})};if(id==='firebase-functions/v2/https')return {HttpsError,onCall:(o,fn)=>fn,onRequest:(o,fn)=>fn};if(id==='firebase-functions/v2/scheduler')return {onSchedule:(o,fn)=>fn};return old.call(this,id,...args)};
 const api=require('../functions/lib/paystack.js');Module._load=old;
 const expected={uid:'baker1',provider:'paystack',amount:14900,currency:'ZAR',customer:'CUS_baker',planCode:'PLN_month',domain:'live',interval:'monthly'};
 let tx={reference:'BB-first',status:'success',amount:14900,currency:'ZAR',customer:{customer_code:'CUS_baker'},plan:{plan_code:'PLN_month'},domain:'live',paid_at:'2026-10-12T10:00:00Z',id:123};
@@ -220,5 +220,17 @@ test('test-mode cancellation reconciliation confirms provider state without leak
   );
   assert.equal(disabled,false);
   assert.equal(calls.length,0);
- }finally{key=originalKey;global.fetch=originalFetch;}
+  promoEnabled=true;
+  await assert.rejects(
+   api.reconcileAnnualLaunchCancellation({auth:{uid:'someone-else'},data:{reference}}),
+   e=>e.code==='permission-denied'
+  );
+  const result=await api.reconcileAnnualLaunchCancellation({auth:{uid:'baker1'},data:{reference}});
+  assert.equal(result.providerConfirmed,true);
+  assert.equal(result.state,'provider_confirmed');
+  assert.equal(records.get(path).renewalCancellationStatus,'provider_confirmed');
+  assert.equal(disabled,true);
+  assert.equal(calls.length,3);
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+ }finally{key=originalKey;global.fetch=originalFetch;promoEnabled=false;}
 });
