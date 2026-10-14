@@ -5,6 +5,7 @@ import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
+import {ANNUAL_LAUNCH,validateAnnualLaunchConsent} from './annual-launch';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
@@ -40,13 +41,16 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,annualLaunchOffer:{enabled:false,firstYear:990,renewal:1199,terms:'Pay R990 for your first 12 months. Your subscription will automatically renew at R1,199 every 12 months thereafter unless cancelled before renewal.'}};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const requestedPlan=String(request.data?.plan);
  // This offer has two different annual charges. It MUST NOT use an ordinary
  // recurring plan until a tested customer-specific renewal transition exists.
- if(requestedPlan==='annual_launch')throw new HttpsError('failed-precondition','The annual launch offer is not available for checkout yet. Please choose a standard plan or contact support.');
+ if(requestedPlan==='annual_launch'){
+  if(!validateAnnualLaunchConsent(request.data?.renewalConsent))throw new HttpsError('invalid-argument','You must accept the automatic annual renewal terms before checkout.');
+  throw new HttpsError('failed-precondition','The annual launch offer is not available for checkout yet. Please choose a standard plan or contact support.');
+ }
  const plan=planFor(requestedPlan);
  const user=await getAuth().getUser(uid);if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
  // Backend owns pricing and validates the dashboard plan before opening checkout.
