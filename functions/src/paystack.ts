@@ -187,8 +187,13 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
  let canSchedule=false;
  await db().runTransaction(async t=>{
   const snap=await t.get(ref),p=snap.data();
-  if(p?.uid!==uid||p?.domain!=='test'||!p?.authorizationCode)
-   throw new HttpsError('failed-precondition','Verified test payment required.');
+  if(p?.uid!==uid||p?.domain!=='test'||!p?.authorizationCode||
+     !['payment_verified','success'].includes(String(p.status))||
+     p.renewalConsentVersion!==ANNUAL_LAUNCH.consentVersion||
+     p.renewalAmount!==ANNUAL_LAUNCH.recurringYearCents||
+     p.renewalPlanCode!==annual.value()||
+     !p.renewalDate)
+   throw new HttpsError('failed-precondition','Verified test payment and matching renewal agreement required.');
   if(p.renewalSetup==='scheduled')return;
   if(p.renewalSetup!=='pending')
    throw new HttpsError('failed-precondition','Renewal setup requires manual reconciliation; do not retry the subscription.');
