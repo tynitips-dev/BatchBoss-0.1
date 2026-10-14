@@ -121,3 +121,28 @@ test('annual launch rejects cross-environment verification without changing reco
  assert.deepEqual(records.get('subscriptionPayments/'+reference),previous);
  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
 });
+
+test('customer can revoke a verified annual renewal before submission, but not after',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ const ref='subscriptionPayments/'+reference;
+ records.set(ref,{uid:'baker1',provider:'paystack',offer:'annual_launch',
+  domain:'test',status:'payment_verified',renewalSetup:'pending'});
+ await assert.rejects(
+  api.cancelPendingAnnualLaunchRenewal({auth:{uid:'other'},data:{reference}}),
+  error=>error.code==='permission-denied'
+ );
+ const result=await api.cancelPendingAnnualLaunchRenewal({auth:{uid:'baker1'},data:{reference}});
+ assert.equal(result.renewalSetup,'cancelled');
+ assert.equal(result.refundIssued,false);
+ assert.equal(records.get(ref).renewalSetup,'cancelled');
+ assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+ await api.cancelPendingAnnualLaunchRenewal({auth:{uid:'baker1'},data:{reference}});
+ for(const state of ['submitting','scheduled','needs_reconciliation']){
+  records.get(ref).renewalSetup=state;
+  await assert.rejects(
+   api.cancelPendingAnnualLaunchRenewal({auth:{uid:'baker1'},data:{reference}}),
+   error=>error.code==='failed-precondition'
+  );
+ }
+});
