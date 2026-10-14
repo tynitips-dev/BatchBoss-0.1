@@ -40,7 +40,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,annualLaunchOffer:{enabled:false,firstYear:990,renewal:1199,terms:'Pay R990 for your first 12 months. Your subscription will automatically renew at R1,199 every 12 months thereafter unless cancelled before renewal.'}};});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const plan=planFor(String(request.data?.plan));
