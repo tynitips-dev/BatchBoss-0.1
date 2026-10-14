@@ -6,12 +6,14 @@ import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
 import {ANNUAL_LAUNCH,annualRenewalDate,validateAnnualLaunchConsent} from './annual-launch';
+import {MONTHLY_LAUNCH,monthlyChargeCents,validateMonthlyConsent} from './monthly-launch';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
 // Separate feature gate. Default false; no discounted transaction can start until QA is complete.
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
+const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
 const APP='https://app.batchboss.co.za';
 const options={region:'europe-west1',invoker:'public' as const,secrets:[secret],cors:[APP]};
 const db=()=>getFirestore();
@@ -95,6 +97,23 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
   const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
   await lock.update({checkoutUrl});return {checkoutUrl};
  }catch(e){await lock.delete();await paymentRef.update({status:'checkout_failed',updatedAt:now()});throw e;}
+});
+// This quote only describes the promotion; it never creates a payment.
+export const getMonthlyLaunchQuote=onCall(options,async request=>{
+ uidOf(request);
+ return {enabled:false,offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
+ regular:MONTHLY_LAUNCH.regularCents/100,terms:MONTHLY_LAUNCH.terms,
+ consentVersion:MONTHLY_LAUNCH.consentVersion,offerEndsLocal:MONTHLY_LAUNCH.offerEndsLocal,
+ pricingPreviewCents:monthlyChargeCents(new Date())};
+});
+// Explicit fail-closed until provider-level renewal price transition is implemented.
+export const createMonthlyLaunchCheckout=onCall(options,async request=>{
+ uidOf(request);
+ if(!validateMonthlyConsent(request.data?.renewalConsent))
+  throw new HttpsError('invalid-argument','Accept the monthly renewal pricing terms first.');
+ if(monthlyLaunchEnabled.value()!=='true'||mode()!=='test')
+  throw new HttpsError('failed-precondition','The monthly launch offer is not accepting payments.');
+ throw new HttpsError('unimplemented','The monthly launch billing transition is not implemented.');
 });
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
