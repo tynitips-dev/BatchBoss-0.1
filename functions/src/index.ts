@@ -238,4 +238,4 @@ export const submitDeletionRequest = onCall({ region: "europe-west1", invoker: "
   return { success: true, requestId: requestRef.id };
 });
 
-export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess,createAnnualLaunchCheckout,verifyAnnualLaunchPayment,scheduleAnnualLaunchRenewal,getMonthlyLaunchQuote,createMonthlyLaunchCheckout} from './paystack';
+export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess,createAnnualLaunchCheckout,verifyAnnualLaunchPayment,scheduleAnnualLaunchRenewal,getAnnualLaunchStatus,getMonthlyLaunchQuote,createMonthlyLaunchCheckout} from './paystack';
