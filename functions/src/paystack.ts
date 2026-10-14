@@ -234,9 +234,30 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
   await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,entitlementStatus:'test_verified_only',updatedAt:now()});
   return {status:'success',testMode:true,renewalSetup:'scheduled'};
  }catch{
-  await ref.update({renewalSetup:'needs_reconciliation',updatedAt:now()});
+  await ref.update({renewalSetup:'needs_reconciliation',entitlementStatus:'awaiting_support_review',updatedAt:now()});
   throw new HttpsError('failed-precondition','The payment is verified, but automatic renewal requires a support check. Do not purchase again.');
  }
+});
+
+// Read-only subscription setup status for the signed-in baker.
+// Intentionally omits card authorization, provider tokens and customer identifiers.
+export const getAnnualLaunchStatus=onCall(options,async request=>{
+ const uid=uidOf(request);
+ const reference=String(request.data?.reference||'');
+ if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
+  throw new HttpsError('invalid-argument','Invalid launch payment reference.');
+ const snapshot=await db().doc('subscriptionPayments/'+reference).get();
+ const payment=snapshot.data();
+ if(!payment||payment.uid!==uid||payment.offer!=='annual_launch')
+  throw new HttpsError('permission-denied','This launch payment is not linked to your account.');
+ return {
+  paymentStatus:String(payment.status||'pending'),
+  renewalSetup:String(payment.renewalSetup||'pending'),
+  entitlementStatus:String(payment.entitlementStatus||'not_granted'),
+  testMode:payment.domain==='test',
+  // This is an informational record date, not a grant of paid access.
+  firstYearAccessUntil:typeof payment.firstYearAccessUntil==='string'?payment.firstYearAccessUntil:null,
+ };
 });
 async function settle(reference:string,expectedUid?:string,subscriptionCode?:string){
  if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference))throw new HttpsError('invalid-argument','Invalid payment reference.');
