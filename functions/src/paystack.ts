@@ -162,7 +162,7 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
  if(p.status==='success')return {status:'success',testMode:p.domain==='test',renewalSetup:p.renewalSetup||'pending'};
  // Repeated callbacks must not re-verify or overwrite an already reconciled payment.
  if(p.status==='payment_verified'&&p.renewalSetup==='pending')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
- if(p.renewalSetup==='submitting'||p.renewalSetup==='needs_reconciliation')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:p.renewalSetup};
+ if(['submitting','needs_reconciliation','cancelled'].includes(String(p.renewalSetup)))return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:p.renewalSetup};
  const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
  if(tx.status!=='success')return {status:String(tx.status||'pending')};
  const authorization=String(tx.authorization?.authorization_code||'');
@@ -244,6 +244,30 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
  }
 });
 
+// Cancellation before the provider subscription is submitted.
+// Once submission starts, it is unsafe to claim cancellation without checking Paystack.
+export const cancelPendingAnnualLaunchRenewal=onCall(options,async request=>{
+ const uid=uidOf(request);
+ const reference=String(request.data?.reference||'');
+ if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
+  throw new HttpsError('invalid-argument','Invalid launch payment reference.');
+ const ref=db().doc('subscriptionPayments/'+reference);
+ let state='cancelled';
+ await db().runTransaction(async t=>{
+  const snapshot=await t.get(ref),p=snapshot.data();
+  if(!p||p.uid!==uid||p.offer!=='annual_launch'||p.provider!=='paystack')
+   throw new HttpsError('permission-denied','This payment is not linked to your account.');
+  if(p.renewalSetup==='cancelled')return;
+  if(!['pending','checkout_failed'].includes(String(p.status))&&
+     p.renewalSetup!=='pending')
+   throw new HttpsError('failed-precondition','Renewal submission may have started. Contact support to cancel safely.');
+  if(p.renewalSetup==='scheduled'||p.renewalSetup==='submitting'||p.renewalSetup==='needs_reconciliation')
+   throw new HttpsError('failed-precondition','Renewal needs provider confirmation before cancellation. Contact support.');
+  t.update(ref,{renewalSetup:'cancelled',renewalConsentRevokedAt:now(),
+   entitlementStatus:'renewal_cancelled',updatedAt:now()});
+ });
+ return {renewalSetup:state,refundIssued:false};
+});
 // Read-only subscription setup status for the signed-in baker.
 // Intentionally omits card authorization, provider tokens and customer identifiers.
 export const getAnnualLaunchStatus=onCall(options,async request=>{
