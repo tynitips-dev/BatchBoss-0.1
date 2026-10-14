@@ -156,8 +156,9 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
  const ref=db().doc('subscriptionPayments/'+reference);
  const snapshot=await ref.get();
  const p=snapshot.data();
- if(!p||p.offer!=='annual_launch'||p.provider!=='paystack'||(expectedUid&&expectedUid!==p.uid))
+ if(!p||p.offer!=='annual_launch'||p.provider!=='paystack'||p.domain!==mode()||(expectedUid&&expectedUid!==p.uid))
   throw new HttpsError('permission-denied','This payment is not linked to your account.');
+ // Refuse cross-environment reconciliation even for already processed references.
  if(p.status==='success')return {status:'success',testMode:p.domain==='test',renewalSetup:p.renewalSetup||'pending'};
  // Repeated callbacks must not re-verify or overwrite an already reconciled payment.
  if(p.status==='payment_verified'&&p.renewalSetup==='pending')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
