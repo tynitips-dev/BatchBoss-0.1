@@ -146,3 +146,23 @@ test('customer can revoke a verified annual renewal before submission, but not a
   );
  }
 });
+
+test('annual launch submitted cancellation request is owner-only and never claims provider cancellation',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ const path='subscriptionPayments/'+reference;
+ records.set(path,{uid:'baker1',provider:'paystack',offer:'annual_launch',domain:'live',
+  status:'success',renewalSetup:'scheduled',subscriptionCode:'SUB_annual'});
+ await assert.rejects(api.requestAnnualLaunchCancellation({auth:{uid:'other'},data:{reference}}),
+  e=>e.code==='permission-denied');
+ const result=await api.requestAnnualLaunchCancellation({auth:{uid:'baker1'},data:{reference}});
+ assert.equal(result.cancellationStatus,'requested');
+ assert.equal(result.providerCancellationConfirmed,false);
+ assert.equal(records.get(path).renewalSetup,'scheduled');
+ assert.equal(records.get(path).renewalCancellationStatus,'requested');
+ const again=await api.requestAnnualLaunchCancellation({auth:{uid:'baker1'},data:{reference}});
+ assert.equal(again.cancellationStatus,'requested');
+ const status=await api.getAnnualLaunchStatus({auth:{uid:'baker1'},data:{reference}});
+ assert.equal(status.renewalCancellationStatus,'requested');
+ assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+});
