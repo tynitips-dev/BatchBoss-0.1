@@ -49,3 +49,10 @@
 - After a test-mode renewal subscription is confirmed, the payment record moves to `entitlementStatus: test_verified_only`. This is an audit trail **not** a grant of production Pro access.
 - **Remaining blocking work:** define and implement a production-only, transactional user profile grant after the first payment and confirmed safe renewal arrangement; reconcile cancellation and invoices; ensure already-active, admin-promoted and existing-plan accounts cannot be overwritten; prohibit renewal if authorization is revoked. Current promotional functions deliberately refuse live mode. Never enable production offer flags on this implementation.
 - The new `firstYearAccessUntil` field is only a calculated record value. It must not be treated as an entitlement without a verified live payment and explicit guarded profile update.
+
+## Monthly offer rules, committed 14 October 2026
+- Monthly marketing proposal: R99 per month for eligible monthly charges processed through 31 December 2026 in Africa/Johannesburg; R149 per month for charges on or after 1 January 2027.
+- The pure pricing helper `monthlyChargeCents` computes the amount using the Johannesburg calendar day and `validateMonthlyConsent` enforces versioned renewal disclosure.
+- `getMonthlyLaunchQuote` currently returns `enabled:false` and `createMonthlyLaunchCheckout` refuses checkout even if a caller sets the feature parameter true. **No R99 payments are enabled.**
+- A discounted recurring plan alone does not meet the requirement to charge R149 after the promotion, so provider billing transition plus payment verification must be completed and tested first. Do not adjust the existing standard monthly Paystack plan or its subscribers.
+- Tests: `npm run build --prefix functions && node --test tests/monthly-launch.cjs`.
