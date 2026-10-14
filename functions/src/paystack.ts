@@ -425,7 +425,13 @@ async function syncSubscription(code:string){
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
  const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planFor(interval);
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR')throw new Error('Subscription mismatch');
- await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
+ const subscriptionRef=db().doc(`paystackSubscriptions/${code}`);
+ const existing=(await subscriptionRef.get()).data();
+ // Introductory subscriptions are verified against their own original charge
+ // and agreement. Never reinterpret them as a standard subscription.
+ if(existing?.offer==='annual_launch')
+  return {uid,remote:s,launchReconciliationRequired:true};
+ await subscriptionRef.set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
  if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
  // Never overwrite a later subscription or an administrator's promotion.
  if(p.subscriptionSource!=='paystack'||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
