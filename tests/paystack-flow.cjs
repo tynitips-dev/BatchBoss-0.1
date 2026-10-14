@@ -313,5 +313,13 @@ test('introductory renewal invoice never enters standard payment settlement',asy
   assert.equal(records.has('subscriptionPayments/renewal-launch-1'),false);
   assert.equal(records.get('users/baker1').subscriptionStatus,'free');
   assert.equal(records.get(ref).offer,'annual_launch');
+  const queued=[...records.entries()].filter(([k])=>k.startsWith('paystackLaunchReconciliation/'));
+  assert.equal(queued.length,1);
+  assert.equal(queued[0][1].eventType,'invoice.update');
+  assert.equal(queued[0][1].transactionReference,'renewal-launch-1');
+  await webhook({event:'invoice.update',data:{
+   paid:true,subscription:{subscription_code:code},transaction:{reference:'renewal-launch-1'}
+  }});
+  assert.equal([...records.keys()].filter(k=>k.startsWith('paystackLaunchReconciliation/')).length,1);
  }finally{global.fetch=original;}
 });
