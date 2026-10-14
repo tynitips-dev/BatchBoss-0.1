@@ -162,7 +162,8 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
   const current=await t.get(ref);
   if(current.data()?.status!=='pending')return;
   t.update(ref,{status:'payment_verified',paidAt:tx.paid_at,
-   transactionId:String(tx.id),renewalDate,renewalSetup:'pending',
+   transactionId:String(tx.id),renewalDate,firstYearAccessUntil:renewalDate,
+   entitlementStatus:'awaiting_renewal_setup',renewalSetup:'pending',
    authorizationCode:authorization,updatedAt:now()});
  });
  return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
@@ -206,7 +207,7 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
    offer:'annual_launch',sourceReference:reference,status:String(remote.status||'unknown'),
    renewalDate:payment.renewalDate,updatedAt:now()
   },{merge:true});
-  await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,updatedAt:now()});
+  await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,entitlementStatus:'test_verified_only',updatedAt:now()});
   return {status:'success',testMode:true,renewalSetup:'scheduled'};
  }catch{
   await ref.update({renewalSetup:'needs_reconciliation',updatedAt:now()});
