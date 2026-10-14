@@ -211,6 +211,8 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
      p.renewalPlanCode!==annual.value()||
      !p.renewalDate)
    throw new HttpsError('failed-precondition','Verified test payment and matching renewal agreement required.');
+  if(p.renewalCancellationStatus==='requested'||p.renewalConsentRevokedAt)
+   throw new HttpsError('failed-precondition','Renewal consent has been withdrawn. Do not schedule another charge.');
   if(p.renewalSetup==='scheduled')return;
   if(p.renewalSetup!=='pending')
    throw new HttpsError('failed-precondition','Renewal setup requires manual reconciliation; do not retry the subscription.');
