@@ -32,3 +32,13 @@ test('verified renewal invoice is mapped without relying on checkout metadata',a
   await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code==='unavailable'&&/HTTP 502/.test(e.message));
  }finally{global.fetch=original;}
  });
+
+test('introductory annual checkout remains disabled unless explicitly enabled',async()=>{
+ reset();
+ const before=[...records.keys()];
+ await assert.rejects(
+  api.createAnnualLaunchCheckout({auth:{uid:'baker1'},data:{renewalConsent:{accepted:true,version:'annual-launch-r990-then-r1199-v1'}}}),
+  error=>error.code==='failed-precondition'
+ );
+ assert.deepEqual([...records.keys()],before);
+});
