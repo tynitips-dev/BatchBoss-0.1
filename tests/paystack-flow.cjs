@@ -209,7 +209,7 @@ test('test-mode cancellation reconciliation confirms provider state without leak
   return {ok:true,json:async()=>({status:true,data:{
    subscription_code:'SUB_annual',customer:{customer_code:'CUS_baker'},
    plan:{plan_code:'PLN_year'},domain:'test',
-   status:disabled?'not_renewing':'active',email_token:'private-token'
+   status:disabled?'non-renewing':'active',email_token:'private-token'
   }})};
  };
  try{
