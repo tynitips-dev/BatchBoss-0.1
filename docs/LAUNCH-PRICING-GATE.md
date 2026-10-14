@@ -69,3 +69,37 @@
 6. Before release: run `npm run lint --prefix functions && npm run build --prefix functions && node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs && npm run build --prefix web`, inspect any failures, and validate against real Paystack test-mode transactions. No promotion switch or production deploy until those gates pass.
 
 Relevant Paystack docs: https://paystack.com/docs/api/subscription/ and https://paystack.com/docs/payments/subscriptions/.
+
+## Single-release decision record (14 October 2026)
+
+User requested one consolidated implementation and review, not incremental approval of micro-patches.
+
+### Decisions already confirmed
+- Normal plans: R149/month and R1,199/year, leave currently paying customers and provider plans alone.
+- Introductory monthly: R99 for qualifying payments up to 31 December 2026 (Johannesburg date), transitioning to R149 for renewals from 1 January 2027.
+- Introductory annual: R990 for the initial 12 months, then opt-in automatic renewal at R1,199 annually, cancellable beforehand.
+- Use **only Paystack**; remove PayFast checkout options.
+- Never unlock paid tools for test transactions.
+
+### Release blockers that must be completed together
+1. **Monthly payment transition:** Do not change the existing R149 plan to R99. Implement and integration-test either a provider-supported dedicated promotional subscription with proven price migration, or a separately secured one-off/authorization renewal architecture. The current monthly endpoint is deliberately disabled and throws `unimplemented`.
+2. **Annual full lifecycle:** Complete reliable recovery of unknown `POST /subscription` results without another charge; confirm provider scheduled first charge exactly one year after R990 payment. Complete asynchronous signed event processing and strict amount/plan/customer matching. Prevent renewal after consent withdrawal, including provider-side disable when submission was already accepted.
+3. **Paid entitlement:** Idempotently grant first-year live Pro only following independently verified live first charge, with expiry and subscription source recorded on the user profile; honor admin grants and deny cross-account/cross-mode activation. Extend only on verified renewal charge. Cancellation must stop billing without removing already-paid access prematurely.
+4. **Reconciliation:** Durable review records for duplicate/out-of-order events, distinct invoice attempts (invoice code), failed renewal, charge timeout, Firestore persistence failure, and provider events that do not yet map to a known subscription. Acknowledgement is not the same as successful reconciliation.
+5. **Customer UI:** Display both launch offers accurately, explicit recurring consent, confirmation/management screens and cancellation outcomes; never advertise an unavailable checkout.
+6. **Regression and provider QA:** Automated tests for all state transitions, plus real Paystack **test-mode** transactions verifying initial charge, delayed first renewal, cancellation and failed invoice; validate Firestore rules and existing standard billing separately.
+7. **Production rollout:** Keep launch flags disabled until reviews pass, then intentionally deploy only reviewed code with rollback/monitoring and separately enable configured launch offers. Do not deploy this draft PR as-is.
+
+### Changes in this round
+- Promotional reconciliation task identifiers now include the provider invoice identifier so unrelated failed recurring invoices cannot collapse into one review case.
+- Added a test to distinguish two failed invoices.
+- Existing Paystack API reference: https://paystack.com/docs/payments/subscriptions/ and https://paystack.com/docs/api/subscription/.
+
+### One-time local validation (not proof of Paystack integration)
+```sh
+git pull origin codex/launch-pricing-prep
+npm run lint --prefix functions &&
+npm run build --prefix functions &&
+node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs &&
+npm run build --prefix web
+```
