@@ -362,6 +362,13 @@ export const reconcileAnnualLaunchCancellation=onCall(options,async request=>{
  await api('/subscription/disable',{code,token:String(remote.email_token)});
  // A successful API response alone isn't evidence of final subscription state.
  const after=await api('/subscription/'+encodeURIComponent(code));
+ // Verify the second provider response belongs to the same subscription.
+ // Never mark cancellation confirmed on an unrelated or malformed lookup.
+ if(String(after.subscription_code||'')!==code||
+    String(after.customer?.customer_code||'')!==record.customer||
+    String(after.plan?.plan_code||'')!==record.renewalPlanCode||
+    after.domain!=='test')
+  throw new HttpsError('failed-precondition','Cancellation confirmation did not match the original subscription.');
  const afterStatus=String(after.status||'').toLowerCase();
  const confirmed=['not_renewing','cancelled','complete','completed','disabled'].includes(afterStatus);
  if(confirmed){
