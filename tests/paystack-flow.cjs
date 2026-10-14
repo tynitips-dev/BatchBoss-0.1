@@ -103,3 +103,19 @@ test('verified first-year launch payment is recorded independently of renewal pl
   assert.equal(requests.some(x=>x.includes('/plan/')),false);
  }finally{global.fetch=original;}
 });
+
+test('annual launch rejects cross-environment verification without changing records',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ records.set('subscriptionPayments/'+reference,{
+  uid:'baker1',offer:'annual_launch',provider:'paystack',status:'payment_verified',
+  domain:'test',renewalSetup:'pending',customer:'CUS_baker',amount:99000
+ });
+ const previous=structuredClone(records.get('subscriptionPayments/'+reference));
+ await assert.rejects(
+  api.verifyAnnualLaunchPayment({auth:{uid:'baker1'},data:{reference}}),
+  error=>error.code==='permission-denied'
+ );
+ assert.deepEqual(records.get('subscriptionPayments/'+reference),previous);
+ assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+});
