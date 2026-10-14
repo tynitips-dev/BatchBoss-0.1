@@ -42,3 +42,13 @@ test('introductory annual checkout remains disabled unless explicitly enabled',a
  );
  assert.deepEqual([...records.keys()],before);
 });
+
+test('introductory monthly checkout remains disabled and does not create a payment',async()=>{
+ reset();
+ const before=[...records.keys()];
+ await assert.rejects(
+  api.createMonthlyLaunchCheckout({auth:{uid:'baker1'},data:{renewalConsent:{accepted:true,version:'monthly-r99-through-2026-then-r149-v1'}}}),
+  error=>error.code==='failed-precondition'
+ );
+ assert.deepEqual([...records.keys()],before);
+});
