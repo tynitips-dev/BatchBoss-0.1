@@ -451,7 +451,14 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
   }
  }else if(['subscription.create','subscription.not_renew','subscription.disable','invoice.payment_failed','invoice.update'].includes(event.event)){
   const code=String(data.subscription?.subscription_code||data.subscription_code||'');const linked=await syncSubscription(code);
-  if(linked&&event.event==='invoice.update'&&data.paid&&data.transaction?.reference)await settle(String(data.transaction.reference),undefined,code);
+  // Introductory subscriptions require their own invoice amount and expiry
+  // reconciliation. Never settle a promotional invoice using standard-plan logic.
+  if(linked?.launchReconciliationRequired){
+   response.status(200).send('Launch subscription requires dedicated reconciliation');
+   return;
+  }
+  if(linked&&event.event==='invoice.update'&&data.paid&&data.transaction?.reference)
+   await settle(String(data.transaction.reference),undefined,code);
  }
  response.status(200).send('OK');
  }catch(error){console.error('Paystack event could not be processed',error instanceof HttpsError?error.code:'processing-error');response.status(500).send('Retry later');}
