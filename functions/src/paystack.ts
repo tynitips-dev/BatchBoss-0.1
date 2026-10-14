@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 import {defineSecret,defineString} from 'firebase-functions/params';
@@ -454,7 +454,22 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
   // Introductory subscriptions require their own invoice amount and expiry
   // reconciliation. Never settle a promotional invoice using standard-plan logic.
   if(linked?.launchReconciliationRequired){
-   response.status(200).send('Launch subscription requires dedicated reconciliation');
+   // Persist a minimal, idempotently keyed reconciliation task before acknowledging
+   // a signed Paystack webhook. Do not run ordinary entitlement settlement.
+   const reference=String(data.transaction?.reference||data.reference||'');
+   if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)&&event.event==='invoice.update'&&data.paid)
+    throw new HttpsError('failed-precondition','Paid launch invoice lacks a transaction reference.');
+   const id=createHash('sha256').update(code+'|'+event.event+'|'+reference).digest('hex');
+   const taskRef=db().doc('paystackLaunchReconciliation/'+id);
+   await taskRef.set({
+    subscriptionCode:code,
+    eventType:String(event.event),
+    transactionReference:reference||null,
+    customerUid:linked.uid,
+    provider:'paystack',status:'needs_review',
+    updatedAt:now()
+   },{merge:true});
+   response.status(200).send('Queued for launch reconciliation');
    return;
   }
   if(linked&&event.event==='invoice.update'&&data.paid&&data.transaction?.reference)
