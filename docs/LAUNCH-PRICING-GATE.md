@@ -56,3 +56,16 @@
 - `getMonthlyLaunchQuote` currently returns `enabled:false` and `createMonthlyLaunchCheckout` refuses checkout even if a caller sets the feature parameter true. **No R99 payments are enabled.**
 - A discounted recurring plan alone does not meet the requirement to charge R149 after the promotion, so provider billing transition plus payment verification must be completed and tested first. Do not adjust the existing standard monthly Paystack plan or its subscribers.
 - Tests: `npm run build --prefix functions && node --test tests/monthly-launch.cjs`.
+
+## Integrated billing audit, 14 October 2026
+
+**Release remains blocked.** This PR is a development-only preparation, not a complete payment launch.
+
+1. Test-only Paystack cancellation reconciliation now looks up the subscription by code, compares its customer, plan and environment with the payment record, calls Paystack's `POST /subscription/disable` using the provider-issued email token if needed, then fetches the subscription again before marking provider confirmation. It never claims success based solely on our own cancellation request. No live promotional cancellation is permitted.
+2. Annual launch Pro activation is not implemented. Verified test transactions must never set users to paid. Production activation must run as an idempotent Firestore transaction only after verified live charge and carefully reconciled renewal arrangement, preserving admin promotional access and existing subscriptions.
+3. Monthly R99 to R149 transition is **not implemented** at Paystack. The existing monthly R149 recurring plan must not be changed to R99. A testable transition mechanism is required before offering monthly discounts.
+4. Full tests needed for duplicate webhooks, webhook order reversals, Paystack network timeouts, provider accepted/local write failed, cancellation concurrent with subscription POST, subscription end states, expiry and renewals, impersonation, and missing/invalid email token.
+5. Test-mode integration must verify Paystack actually respects `start_date` for deferred first renewal on the relevant account, and that provider `status` values match our confirmation logic.
+6. Before release: run `npm run lint --prefix functions && npm run build --prefix functions && node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs && npm run build --prefix web`, inspect any failures, and validate against real Paystack test-mode transactions. No promotion switch or production deploy until those gates pass.
+
+Relevant Paystack docs: https://paystack.com/docs/api/subscription/ and https://paystack.com/docs/payments/subscriptions/.
