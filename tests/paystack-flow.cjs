@@ -289,3 +289,29 @@ test('standard webhook synchronization cannot overwrite introductory subscriptio
   assert.equal(records.get('users/baker1').subscriptionStatus,'free');
  }finally{global.fetch=original;}
 });
+
+test('introductory renewal invoice never enters standard payment settlement',async()=>{
+ reset();
+ const code='SUB_annual';
+ const ref='paystackSubscriptions/'+code;
+ records.set('paystackCustomers/CUS_baker',{uid:'baker1'});
+ records.set(ref,{uid:'baker1',provider:'paystack',offer:'annual_launch',
+  sourceReference:'BBL-12345678-1234-1234-1234-123456789abc',
+  customer:'CUS_baker',domain:'live',interval:'annual',planCode:'PLN_year',
+  status:'active'});
+ const original=global.fetch;
+ global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
+  subscription_code:code,status:'active',domain:'live',
+  customer:{customer_code:'CUS_baker'},
+  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:119900
+ }})});
+ try{
+  const result=await webhook({event:'invoice.update',data:{
+   paid:true,subscription:{subscription_code:code},transaction:{reference:'renewal-launch-1'}
+  }});
+  assert.equal(result.status,200);
+  assert.equal(records.has('subscriptionPayments/renewal-launch-1'),false);
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+  assert.equal(records.get(ref).offer,'annual_launch');
+ }finally{global.fetch=original;}
+});
