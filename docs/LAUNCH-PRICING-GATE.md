@@ -25,3 +25,20 @@
 ## Current change
 - SubscriptionView now displays regular monthly and annual prices from getPaystackPlans() (with existing regular-price fallback), so future verified prices can be returned safely.
 - This commit does not create promo plans, alter live prices, or activate an offer.
+
+## Verified Paystack approach (documentation reviewed 14 October 2026)
+
+- Paystack supports a **one-off transaction** without a plan code, then a separate `POST /subscription` using the customer's paid card authorization, the **existing regular R1,199 annual plan**, and `start_date` set to the first anniversary. See https://paystack.com/docs/payments/subscriptions/ and https://paystack.com/docs/api/subscription/.
+- This is a **proposed architecture, not yet deployed**. A one-off charge by itself is not proof the future subscription was scheduled. Never claim automatic renewal is configured until Paystack returns a confirmed annual subscription and the backend records its code/status.
+- Step 1: record consent, offer terms, price, account UID, reference and expected renewal date on the server BEFORE initiating a R990 **no-plan** checkout. Reject any client-supplied amount.
+- Step 2: verify the paid transaction through Paystack server-side; validate amount=99000, currency=ZAR, live/test domain, customer mapping, reference and successful card authorization. Use a separate reconciliation path from the existing plan-coded settlement, which deliberately rejects mismatched plans.
+- Step 3: create a future-start R1,199/year Paystack subscription with `start_date` on the anniversary and explicit authorization chosen from the initial verified payment. Check with Paystack that annual scheduling and date semantics behave as expected in the SA account before activation.
+- Step 4: record subscription code and payment reference in a durable, retry-safe state machine; handle Paystack API failure, duplicate webhook delivery, cancellation before future debit and partial setup. **Do not** schedule multiple subscriptions on retries. A user who has paid R990 but whose auto-renew setup failed must be surfaced to support, not silently considered fully set up.
+- Step 5: grant first-year Pro only once first-year payment settles successfully, while accurately showing renewal-setup status to the customer. Don't imply all renewal setup is complete if it isn't.
+- Step 6: reconcile charge.success and invoice events with the correct plan, billing interval and subscription owner, including reminders before the first higher-price renewal and expiry if payment fails.
+- Existing paid monthly/annual plans and subscriptions must remain unaffected. Avoid changing the price of any existing Paystack plan.
+
+## API citations
+- https://paystack.com/docs/payments/subscriptions/
+- https://paystack.com/docs/api/subscription/
+- https://paystack.com/docs/payments/recurring-charges/
