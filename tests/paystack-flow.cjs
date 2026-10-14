@@ -266,3 +266,26 @@ test('provider cancellation cannot be confirmed from a mismatched follow-up look
   assert.equal(records.get(path).renewalCancellationStatus,'requested');
  }finally{key=oldKey;global.fetch=oldFetch;promoEnabled=oldFlag;}
 });
+
+test('standard webhook synchronization cannot overwrite introductory subscription mapping',async()=>{
+ reset();
+ records.set('paystackCustomers/CUS_baker',{uid:'baker1'});
+ const path='paystackSubscriptions/SUB_annual';
+ records.set(path,{uid:'baker1',provider:'paystack',offer:'annual_launch',
+  sourceReference:'BBL-12345678-1234-1234-1234-123456789abc',
+  customer:'CUS_baker',domain:'live',interval:'annual',planCode:'PLN_year',
+  status:'active'});
+ const before=structuredClone(records.get(path));
+ const original=global.fetch;
+ global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
+  subscription_code:'SUB_annual',status:'active',domain:'live',
+  customer:{customer_code:'CUS_baker'},
+  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:119900
+ }})});
+ try{
+  const result=await webhook({event:'subscription.create',data:{subscription_code:'SUB_annual'}});
+  assert.equal(result.status,200);
+  assert.deepEqual(records.get(path),before);
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+ }finally{global.fetch=original;}
+});
