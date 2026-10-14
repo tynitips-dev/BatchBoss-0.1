@@ -5,7 +5,7 @@ import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
-import {ANNUAL_LAUNCH,validateAnnualLaunchConsent} from './annual-launch';
+import {ANNUAL_LAUNCH,annualRenewalDate,validateAnnualLaunchConsent} from './annual-launch';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
@@ -129,6 +129,43 @@ export const createPaystackCheckout=onCall(options,async request=>{
   await lockRef.update({checkoutUrl});return {checkoutUrl};
  }catch(e){await lockRef.delete();throw e;}
 });
+// Reconcile first-year payment separately: the one-off transaction deliberately
+// has no Paystack plan code, unlike the normal recurring plan settlements.
+async function settleAnnualLaunch(reference:string, expectedUid?:string){
+ if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
+  throw new HttpsError('invalid-argument','Invalid launch payment reference.');
+ const ref=db().doc('subscriptionPayments/'+reference);
+ const snapshot=await ref.get();
+ const p=snapshot.data();
+ if(!p||p.offer!=='annual_launch'||p.provider!=='paystack'||(expectedUid&&expectedUid!==p.uid))
+  throw new HttpsError('permission-denied','This payment is not linked to your account.');
+ if(p.status==='success')return {status:'success',testMode:p.domain==='test',renewalSetup:p.renewalSetup||'pending'};
+ const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
+ if(tx.status!=='success')return {status:String(tx.status||'pending')};
+ const authorization=String(tx.authorization?.authorization_code||'');
+ if(tx.reference!==reference||tx.amount!==ANNUAL_LAUNCH.firstYearCents||
+    tx.currency!=='ZAR'||tx.domain!==p.domain||
+    tx.customer?.customer_code!==p.customer||!tx.paid_at||
+    !/^AUTH_[a-zA-Z0-9]+$/.test(authorization)||tx.authorization?.reusable!==true)
+  throw new HttpsError('failed-precondition','Launch payment verification failed; contact support.');
+ const renewalDate=annualRenewalDate(String(tx.paid_at));
+ const renewalPlan=planFor('annual');
+ const remotePlan=await api('/plan/'+encodeURIComponent(renewalPlan.planCode));
+ if(remotePlan.amount!==ANNUAL_LAUNCH.recurringYearCents||remotePlan.currency!=='ZAR'||
+    remotePlan.interval!=='annually'||remotePlan.domain!==p.domain)
+  throw new HttpsError('failed-precondition','Renewal billing configuration could not be verified.');
+ // Mark verified first. Never start an external subscription twice after an unknown response.
+ await db().runTransaction(async t=>{
+  const current=await t.get(ref);
+  if(current.data()?.status!=='pending')return;
+  t.update(ref,{status:'payment_verified',paidAt:tx.paid_at,
+   transactionId:String(tx.id),renewalDate,renewalSetup:'pending',
+   authorizationCode:authorization,updatedAt:now()});
+ });
+ return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
+}
+export const verifyAnnualLaunchPayment=onCall(options,async request=>
+ settleAnnualLaunch(String(request.data?.reference||''),uidOf(request)));
 async function settle(reference:string,expectedUid?:string,subscriptionCode?:string){
  if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference))throw new HttpsError('invalid-argument','Invalid payment reference.');
  const paymentRef=db().doc(`subscriptionPayments/${reference}`);const payment=await paymentRef.get();let expected=payment.data();
@@ -164,7 +201,7 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
  try{const event=request.body;const data=event.data||{};
  if(event.event==='charge.success'){
   const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
-  if(known.exists){await settle(reference);const customer=known.data()?.customer;
+  if(known.exists){if(known.data()?.offer==='annual_launch'){await settleAnnualLaunch(reference);response.status(200).send('OK');return;}await settle(reference);const customer=known.data()?.customer;
    // subscription.create may have arrived before charge.success.
    const subs=await db().collection('paystackSubscriptions').where('customer','==',customer).get();for(const sub of subs.docs)if(sub.data().planCode===known.data()?.planCode)await syncSubscription(sub.id);
   }
