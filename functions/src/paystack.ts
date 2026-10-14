@@ -228,6 +228,11 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
      remotePlan.currency!==ANNUAL_LAUNCH.currency||
      remotePlan.interval!=='annually'||remotePlan.domain!==payment.domain)
    throw new HttpsError('failed-precondition','Annual renewal plan configuration does not match agreed pricing.');
+  // Recheck after network plan validation, before attempting an irreversible POST.
+  // This reduces the window for submission after a customer cancels.
+  const latest=(await ref.get()).data();
+  if(latest?.renewalCancellationStatus==='requested'||latest?.renewalConsentRevokedAt)
+   throw new HttpsError('failed-precondition','Renewal cancellation was requested; provider reconciliation required.');
   const remote=await api('/subscription',{customer:payment.customer,plan:payment.renewalPlanCode,
    authorization:payment.authorizationCode,start_date:payment.renewalDate});
   const code=String(remote.subscription_code||'');
