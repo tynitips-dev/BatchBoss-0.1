@@ -10,6 +10,8 @@ const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
+// Separate feature gate. Default false; no discounted transaction can start until QA is complete.
+const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
 const APP='https://app.batchboss.co.za';
 const options={region:'europe-west1',invoker:'public' as const,secrets:[secret],cors:[APP]};
 const db=()=>getFirestore();
@@ -42,6 +44,58 @@ async function api(path:string,body?:unknown){
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
 export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+// Phase 1: one-off first-year checkout. This is never a recurring-plan transaction,
+// because Paystack ignores the specified amount when a plan code is supplied.
+export const createAnnualLaunchCheckout=onCall(options,async request=>{
+ const uid=uidOf(request);
+ if(enabled.value()!=='true'||annualLaunchEnabled.value()!=='true')
+  throw new HttpsError('failed-precondition','The annual launch offer is not accepting payments.');
+ if(!validateAnnualLaunchConsent(request.data?.renewalConsent))
+  throw new HttpsError('invalid-argument','Accept the annual automatic-renewal agreement first.');
+ if(mode()!=='test')
+  throw new HttpsError('failed-precondition','Annual launch checkouts are restricted to test mode until end-to-end testing is complete.');
+ const user=await getAuth().getUser(uid);
+ if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
+ const reference='BBL-'+randomUUID();
+ const lock=db().doc('paystackCheckouts/'+uid);
+ const profileRef=db().doc('users/'+uid);
+ const paymentRef=db().doc('subscriptionPayments/'+reference);
+ const customer=await api('/customer',{email:user.email});
+ const customerCode=String(customer.customer_code||'');
+ if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new HttpsError('failed-precondition','Payment customer could not be created.');
+ const customerRef=db().doc('paystackCustomers/'+customerCode);
+ const reused=await db().runTransaction(async t=>{
+  const [current,profile,mapped]=await Promise.all([t.get(lock),t.get(profileRef),t.get(customerRef)]);
+  if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');
+  const p=profile.data()!;
+  if((p.subscriptionStatus==='active'&&p.subscriptionExpiresAt?.toMillis?.()>Date.now())||
+     (p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode))
+   throw new HttpsError('failed-precondition','You already have a subscription. Contact support before purchasing another.');
+  if(mapped.exists&&mapped.data()?.uid!==uid)throw new HttpsError('permission-denied','Payment customer is linked to another account.');
+  const old=current.data();
+  if(old&&old.expiresAtMs>Date.now()){
+   if(old.interval==='annual_launch'&&old.checkoutUrl)return String(old.checkoutUrl);
+   throw new HttpsError('failed-precondition','A checkout is already pending. Please complete it or try again in 30 minutes.');
+  }
+  t.set(customerRef,{uid,domain:mode(),updatedAt:now()},{merge:true});
+  t.set(lock,{reference,interval:'annual_launch',expiresAtMs:Date.now()+1800000});
+  t.create(paymentRef,{uid,provider:'paystack',offer:'annual_launch',interval:'annual',
+   amount:ANNUAL_LAUNCH.firstYearCents,currency:ANNUAL_LAUNCH.currency,domain:mode(),
+   customer:customerCode,status:'pending',renewalAmount:ANNUAL_LAUNCH.recurringYearCents,
+   renewalPlanCode:annual.value(),renewalConsentVersion:ANNUAL_LAUNCH.consentVersion,
+   renewalConsentAt:now(),createdAt:now()});
+  return null;
+ });
+ if(reused)return {checkoutUrl:reused};
+ try{
+  const result=await api('/transaction/initialize',{email:user.email,
+   amount:ANNUAL_LAUNCH.firstYearCents,currency:ANNUAL_LAUNCH.currency,
+   reference,channels:['card'],callback_url:APP+'/?payment=paystack',
+   metadata:{batchbossReference:reference,offer:'annual_launch'}});
+  const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
+  await lock.update({checkoutUrl});return {checkoutUrl};
+ }catch(e){await lock.delete();await paymentRef.update({status:'checkout_failed',updatedAt:now()});throw e;}
+});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const requestedPlan=String(request.data?.plan);
