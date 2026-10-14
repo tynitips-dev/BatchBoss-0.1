@@ -231,8 +231,12 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
   // Recheck after network plan validation, before attempting an irreversible POST.
   // This reduces the window for submission after a customer cancels.
   const latest=(await ref.get()).data();
-  if(latest?.renewalCancellationStatus==='requested'||latest?.renewalConsentRevokedAt)
-   throw new HttpsError('failed-precondition','Renewal cancellation was requested; provider reconciliation required.');
+  if(latest?.renewalCancellationStatus==='requested'||latest?.renewalConsentRevokedAt){
+   await ref.update({renewalSetup:'needs_reconciliation',
+    entitlementStatus:'awaiting_support_review',updatedAt:now()});
+   return {status:'payment_verified',renewalSetup:'needs_reconciliation',
+    cancellationStatus:'requested',testMode:true};
+  }
   const remote=await api('/subscription',{customer:payment.customer,plan:payment.renewalPlanCode,
    authorization:payment.authorizationCode,start_date:payment.renewalDate});
   const code=String(remote.subscription_code||'');
