@@ -323,3 +323,27 @@ test('introductory renewal invoice never enters standard payment settlement',asy
   assert.equal([...records.keys()].filter(k=>k.startsWith('paystackLaunchReconciliation/')).length,1);
  }finally{global.fetch=original;}
 });
+
+test('separate failed annual launch invoices create separate review records',async()=>{
+ reset();
+ const code='SUB_annual';
+ records.set('paystackCustomers/CUS_baker',{uid:'baker1'});
+ records.set('paystackSubscriptions/'+code,{
+  uid:'baker1',offer:'annual_launch',provider:'paystack',customer:'CUS_baker',
+  domain:'live',interval:'annual',planCode:'PLN_year'});
+ const original=global.fetch;
+ global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
+  subscription_code:code,status:'active',domain:'live',amount:119900,
+  customer:{customer_code:'CUS_baker'},
+  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'}
+ }})});
+ try{
+  for(const invoice of ['INV_first','INV_second']){
+   const result=await webhook({event:'invoice.payment_failed',data:{
+    invoice_code:invoice,subscription:{subscription_code:code}
+   }});
+   assert.equal(result.status,200);
+  }
+  assert.equal([...records.keys()].filter(k=>k.startsWith('paystackLaunchReconciliation/')).length,2);
+ }finally{global.fetch=original;}
+});
