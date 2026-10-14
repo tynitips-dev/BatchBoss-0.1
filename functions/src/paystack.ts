@@ -305,6 +305,7 @@ export const getAnnualLaunchStatus=onCall(options,async request=>{
  return {
   paymentStatus:String(payment.status||'pending'),
   renewalSetup:String(payment.renewalSetup||'pending'),
+  renewalCancellationStatus:String(payment.renewalCancellationStatus||'none'),
   entitlementStatus:String(payment.entitlementStatus||'not_granted'),
   testMode:payment.domain==='test',
   // This is an informational record date, not a grant of paid access.
