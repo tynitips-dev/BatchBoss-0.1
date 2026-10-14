@@ -166,6 +166,50 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
 }
 export const verifyAnnualLaunchPayment=onCall(options,async request=>
  settleAnnualLaunch(String(request.data?.reference||''),uidOf(request)));
+/**
+ * Test-only scheduled renewal setup. A failed or uncertain remote POST is held
+ * for human reconciliation. We never retry the POST automatically and risk a
+ * second future subscription.
+ */
+export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
+ const uid=uidOf(request);
+ if(annualLaunchEnabled.value()!=='true'||mode()!=='test')
+  throw new HttpsError('failed-precondition','Launch renewal scheduling is disabled.');
+ const reference=String(request.data?.reference||'');
+ const verification=await settleAnnualLaunch(reference,uid);
+ if(verification.status!=='payment_verified'&&verification.status!=='success')
+  return verification;
+ const ref=db().doc('subscriptionPayments/'+reference);
+ let canSchedule=false;
+ await db().runTransaction(async t=>{
+  const snap=await t.get(ref),p=snap.data();
+  if(p?.uid!==uid||p?.domain!=='test'||!p?.authorizationCode)
+   throw new HttpsError('failed-precondition','Verified test payment required.');
+  if(p.renewalSetup==='scheduled')return;
+  if(p.renewalSetup!=='pending')
+   throw new HttpsError('failed-precondition','Renewal setup requires manual reconciliation; do not retry the subscription.');
+  t.update(ref,{renewalSetup:'submitting',renewalStartedAt:now()});canSchedule=true;
+ });
+ if(!canSchedule)return {status:'success',renewalSetup:'scheduled',testMode:true};
+ const payment=(await ref.get()).data()!;
+ try{
+  const remote=await api('/subscription',{customer:payment.customer,plan:payment.renewalPlanCode,
+   authorization:payment.authorizationCode,start_date:payment.renewalDate});
+  const code=String(remote.subscription_code||'');
+  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Missing scheduled subscription code');
+  await db().doc('paystackSubscriptions/'+code).set({
+   uid,customer:payment.customer,provider:'paystack',domain:'test',interval:'annual',
+   amount:ANNUAL_LAUNCH.recurringYearCents,planCode:payment.renewalPlanCode,
+   offer:'annual_launch',sourceReference:reference,status:String(remote.status||'unknown'),
+   renewalDate:payment.renewalDate,updatedAt:now()
+  },{merge:true});
+  await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,updatedAt:now()});
+  return {status:'success',testMode:true,renewalSetup:'scheduled'};
+ }catch{
+  await ref.update({renewalSetup:'needs_reconciliation',updatedAt:now()});
+  throw new HttpsError('failed-precondition','The payment is verified, but automatic renewal requires a support check. Do not purchase again.');
+ }
+});
 async function settle(reference:string,expectedUid?:string,subscriptionCode?:string){
  if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference))throw new HttpsError('invalid-argument','Invalid payment reference.');
  const paymentRef=db().doc(`subscriptionPayments/${reference}`);const payment=await paymentRef.get();let expected=payment.data();
