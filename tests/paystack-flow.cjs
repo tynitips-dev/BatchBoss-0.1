@@ -73,3 +73,33 @@ test('annual launch status is owner-only and omits card and customer details',as
   error=>error.code==='permission-denied'
  );
 });
+
+test('verified first-year launch payment is recorded independently of renewal plan lookup',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ records.set('subscriptionPayments/'+reference,{
+  uid:'baker1',offer:'annual_launch',provider:'paystack',status:'pending',
+  domain:'test',currency:'ZAR',customer:'CUS_baker',interval:'annual',
+  amount:99000,renewalAmount:119900,
+  renewalConsentVersion:'annual-launch-r990-then-r1199-v1',
+  renewalPlanCode:'PLN_year'
+ });
+ tx={reference,status:'success',amount:99000,currency:'ZAR',
+  customer:{customer_code:'CUS_baker'},domain:'test',paid_at:'2026-10-14T09:00:00Z',
+  authorization:{authorization_code:'AUTH_test',reusable:true},id:777};
+ const original=global.fetch;
+ const requests=[];
+ global.fetch=async(url)=>{
+  requests.push(String(url));
+  if(String(url).includes('/plan/'))throw new Error('Unexpected future plan lookup');
+  return {ok:true,json:async()=>({status:true,data:tx})};
+ };
+ try{
+  const result=await api.verifyAnnualLaunchPayment({auth:{uid:'baker1'},data:{reference}});
+  assert.equal(result.status,'payment_verified');
+  assert.equal(records.get('subscriptionPayments/'+reference).firstYearAccessUntil,'2027-10-14T09:00:00.000Z');
+  assert.equal(records.get('subscriptionPayments/'+reference).entitlementStatus,'awaiting_renewal_setup');
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+  assert.equal(requests.some(x=>x.includes('/plan/')),false);
+ }finally{global.fetch=original;}
+});
