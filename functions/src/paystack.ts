@@ -171,12 +171,9 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
     !/^AUTH_[a-zA-Z0-9]+$/.test(authorization)||tx.authorization?.reusable!==true)
   throw new HttpsError('failed-precondition','Launch payment verification failed; contact support.');
  const renewalDate=annualRenewalDate(String(tx.paid_at));
- const renewalPlan=planFor('annual');
- const remotePlan=await api('/plan/'+encodeURIComponent(renewalPlan.planCode));
- if(remotePlan.amount!==ANNUAL_LAUNCH.recurringYearCents||remotePlan.currency!=='ZAR'||
-    remotePlan.interval!=='annually'||remotePlan.domain!==p.domain)
-  throw new HttpsError('failed-precondition','Renewal billing configuration could not be verified.');
- // Mark verified first. Never start an external subscription twice after an unknown response.
+ // Record the verified first-year charge independently of renewal-plan availability.
+ // A future-plan lookup failure must never hide the fact that the customer paid.
+ // Future renewal configuration is checked just before scheduling that subscription.
  await db().runTransaction(async t=>{
   const current=await t.get(ref);
   if(current.data()?.status!=='pending')return;
@@ -221,6 +218,13 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
  if(!canSchedule)return {status:'success',renewalSetup:'scheduled',testMode:true};
  const payment=(await ref.get()).data()!;
  try{
+  const renewalPlan=planFor('annual');
+  const remotePlan=await api('/plan/'+encodeURIComponent(renewalPlan.planCode));
+  if(payment.renewalPlanCode!==renewalPlan.planCode||
+     remotePlan.amount!==ANNUAL_LAUNCH.recurringYearCents||
+     remotePlan.currency!==ANNUAL_LAUNCH.currency||
+     remotePlan.interval!=='annually'||remotePlan.domain!==payment.domain)
+   throw new HttpsError('failed-precondition','Annual renewal plan configuration does not match agreed pricing.');
   const remote=await api('/subscription',{customer:payment.customer,plan:payment.renewalPlanCode,
    authorization:payment.authorizationCode,start_date:payment.renewalDate});
   const code=String(remote.subscription_code||'');
