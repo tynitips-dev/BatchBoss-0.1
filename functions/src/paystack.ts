@@ -241,14 +241,21 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
    authorization:payment.authorizationCode,start_date:payment.renewalDate});
   const code=String(remote.subscription_code||'');
   if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Missing scheduled subscription code');
-  await db().doc('paystackSubscriptions/'+code).set({
-   uid,customer:payment.customer,provider:'paystack',domain:'test',interval:'annual',
-   amount:ANNUAL_LAUNCH.recurringYearCents,planCode:payment.renewalPlanCode,
-   offer:'annual_launch',sourceReference:reference,status:String(remote.status||'unknown'),
-   renewalDate:payment.renewalDate,updatedAt:now()
-  },{merge:true});
-  await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,entitlementStatus:'test_verified_only',updatedAt:now()});
-  return {status:'success',testMode:true,renewalSetup:'scheduled'};
+  // Provider accepted the subscription. Keep the code even if local persistence
+  // fails, and never submit a second subscription automatically.
+  try{
+   await ref.update({renewalSetup:'provider_accepted',subscriptionCode:code,updatedAt:now()});
+   await db().doc('paystackSubscriptions/'+code).set({
+    uid,customer:payment.customer,provider:'paystack',domain:'test',interval:'annual',
+    amount:ANNUAL_LAUNCH.recurringYearCents,planCode:payment.renewalPlanCode,
+    offer:'annual_launch',sourceReference:reference,status:String(remote.status||'unknown'),
+    renewalDate:payment.renewalDate,updatedAt:now()
+   },{merge:true});
+   await ref.update({renewalSetup:'scheduled',status:'success',subscriptionCode:code,entitlementStatus:'test_verified_only',updatedAt:now()});
+   return {status:'success',testMode:true,renewalSetup:'scheduled'};
+  }catch{
+   throw new HttpsError('failed-precondition','Paystack accepted the renewal, but local records require support reconciliation. Do not retry checkout.');
+  }
  }catch{
   await ref.update({renewalSetup:'needs_reconciliation',entitlementStatus:'awaiting_support_review',updatedAt:now()});
   throw new HttpsError('failed-precondition','The payment is verified, but automatic renewal requires a support check. Do not purchase again.');
