@@ -140,6 +140,9 @@ async function settleAnnualLaunch(reference:string, expectedUid?:string){
  if(!p||p.offer!=='annual_launch'||p.provider!=='paystack'||(expectedUid&&expectedUid!==p.uid))
   throw new HttpsError('permission-denied','This payment is not linked to your account.');
  if(p.status==='success')return {status:'success',testMode:p.domain==='test',renewalSetup:p.renewalSetup||'pending'};
+ // Repeated callbacks must not re-verify or overwrite an already reconciled payment.
+ if(p.status==='payment_verified'&&p.renewalSetup==='pending')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
+ if(p.renewalSetup==='submitting'||p.renewalSetup==='needs_reconciliation')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:p.renewalSetup};
  const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
  if(tx.status!=='success')return {status:String(tx.status||'pending')};
  const authorization=String(tx.authorization?.authorization_code||'');
