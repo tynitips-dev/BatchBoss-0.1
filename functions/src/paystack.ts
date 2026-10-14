@@ -323,6 +323,54 @@ export const requestAnnualLaunchCancellation=onCall(options,async request=>{
  });
  return {cancellationStatus,providerCancellationConfirmed:false,refundIssued:false};
 });
+// Test-only provider reconciliation and cancellation. Never infer a provider-side
+// cancellation from our local request flag or an unverified webhook payload.
+export const reconcileAnnualLaunchCancellation=onCall(options,async request=>{
+ const uid=uidOf(request);
+ if(mode()!=='test'||annualLaunchEnabled.value()!=='true')
+  throw new HttpsError('failed-precondition','Promotional cancellation reconciliation is disabled.');
+ const reference=String(request.data?.reference||'');
+ if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
+  throw new HttpsError('invalid-argument','Invalid payment reference.');
+ const paymentRef=db().doc('subscriptionPayments/'+reference);
+ const record=(await paymentRef.get()).data();
+ if(!record||record.uid!==uid||record.offer!=='annual_launch'||record.domain!=='test')
+  throw new HttpsError('permission-denied','This payment is not linked to your account.');
+ if(record.renewalCancellationStatus!=='requested')
+  throw new HttpsError('failed-precondition','There is no cancellation request to reconcile.');
+ const code=String(record.subscriptionCode||'');
+ if(!/^SUB_[a-zA-Z0-9]+$/.test(code))
+  return {state:'needs_support',providerConfirmed:false};
+ const remote=await api('/subscription/'+encodeURIComponent(code));
+ const remoteCode=String(remote.subscription_code||'');
+ const remoteCustomer=String(remote.customer?.customer_code||'');
+ const remotePlan=String(remote.plan?.plan_code||'');
+ if(remoteCode!==code||remoteCustomer!==record.customer||
+    remotePlan!==record.renewalPlanCode||remote.domain!=='test')
+  throw new HttpsError('failed-precondition','Provider subscription does not match this payment.');
+ const state=String(remote.status||'').toLowerCase();
+ // Cancellation is only confirmed when Paystack reports it won't renew.
+ if(['not_renewing','cancelled','complete','completed','disabled'].includes(state)){
+  await paymentRef.update({renewalCancellationStatus:'provider_confirmed',
+   providerSubscriptionStatus:state,renewalProviderConfirmedAt:now(),updatedAt:now()});
+  return {state:'provider_confirmed',providerConfirmed:true};
+ }
+ // Paystack requires an email token to disable, and we never guess it.
+ // If the token is missing, ask the customer to use Paystack's management link.
+ if(!/^SUB_[a-zA-Z0-9]+$/.test(code)||!String(remote.email_token||'').trim())
+  return {state:'needs_support',providerConfirmed:false};
+ await api('/subscription/disable',{code,token:String(remote.email_token)});
+ // A successful API response alone isn't evidence of final subscription state.
+ const after=await api('/subscription/'+encodeURIComponent(code));
+ const afterStatus=String(after.status||'').toLowerCase();
+ const confirmed=['not_renewing','cancelled','complete','completed','disabled'].includes(afterStatus);
+ if(confirmed){
+  await paymentRef.update({renewalCancellationStatus:'provider_confirmed',
+   providerSubscriptionStatus:afterStatus,renewalProviderConfirmedAt:now(),updatedAt:now()});
+ }
+ return {state:confirmed?'provider_confirmed':'awaiting_provider_confirmation',
+  providerConfirmed:confirmed};
+});
 // Read-only subscription setup status for the signed-in baker.
 // Intentionally omits card authorization, provider tokens and customer identifiers.
 export const getAnnualLaunchStatus=onCall(options,async request=>{
