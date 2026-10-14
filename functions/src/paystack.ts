@@ -459,7 +459,12 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
    const reference=String(data.transaction?.reference||data.reference||'');
    if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)&&event.event==='invoice.update'&&data.paid)
     throw new HttpsError('failed-precondition','Paid launch invoice lacks a transaction reference.');
-   const id=createHash('sha256').update(code+'|'+event.event+'|'+reference).digest('hex');
+   // Invoice references vary by event. Include provider invoice identity so that
+   // separate failed payments are never merged into one review task.
+   const invoiceId=String(data.invoice_code||data.invoice?.invoice_code||data.id||'');
+   if(!reference&&!invoiceId&&['invoice.payment_failed','invoice.update'].includes(event.event))
+    throw new HttpsError('failed-precondition','Launch invoice needs a provider identifier for reconciliation.');
+   const id=createHash('sha256').update(code+'|'+event.event+'|'+reference+'|'+invoiceId).digest('hex');
    const taskRef=db().doc('paystackLaunchReconciliation/'+id);
    await taskRef.set({
     subscriptionCode:code,
