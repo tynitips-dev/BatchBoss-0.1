@@ -220,6 +220,7 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
  });
  if(!canSchedule)return {status:'success',renewalSetup:'scheduled',testMode:true};
  const payment=(await ref.get()).data()!;
+ let providerAccepted=false;
  try{
   const renewalPlan=planFor('annual');
   const remotePlan=await api('/plan/'+encodeURIComponent(renewalPlan.planCode));
@@ -240,6 +241,7 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
   const remote=await api('/subscription',{customer:payment.customer,plan:payment.renewalPlanCode,
    authorization:payment.authorizationCode,start_date:payment.renewalDate});
   const code=String(remote.subscription_code||'');
+  providerAccepted=true;
   if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Missing scheduled subscription code');
   // Provider accepted the subscription. Keep the code even if local persistence
   // fails, and never submit a second subscription automatically.
@@ -257,8 +259,20 @@ export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
    throw new HttpsError('failed-precondition','Paystack accepted the renewal, but local records require support reconciliation. Do not retry checkout.');
   }
  }catch{
-  await ref.update({renewalSetup:'needs_reconciliation',entitlementStatus:'awaiting_support_review',updatedAt:now()});
-  throw new HttpsError('failed-precondition','The payment is verified, but automatic renewal requires a support check. Do not purchase again.');
+  // Never turn a confirmed provider acceptance back into an apparent pre-submission failure.
+  // If this write fails as well, preserve the original reconciliation error rather than retrying Paystack.
+  try{
+   if(providerAccepted){
+    await ref.update({renewalSetup:'needs_reconciliation',providerSubmissionAccepted:true,
+     entitlementStatus:'awaiting_support_review',updatedAt:now()});
+   }else{
+    await ref.update({renewalSetup:'needs_reconciliation',
+     entitlementStatus:'awaiting_support_review',updatedAt:now()});
+   }
+  }catch{ /* Support must reconcile directly with the provider. */ }
+  throw new HttpsError('failed-precondition',
+   providerAccepted?'Paystack accepted the renewal but Firebase records need support review. Do not retry.':
+    'Renewal status needs support review before another attempt. Do not purchase again.');
  }
 });
 
