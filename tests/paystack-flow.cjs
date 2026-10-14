@@ -185,3 +185,40 @@ test('revoked pending annual renewal remains cancelled when payment verification
   assert.equal(records.get('users/baker1').subscriptionStatus,'free');
  }finally{global.fetch=original;}
 });
+
+test('test-mode cancellation reconciliation confirms provider state without leaking tokens',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ const path='subscriptionPayments/'+reference;
+ records.set(path,{uid:'baker1',provider:'paystack',offer:'annual_launch',
+  domain:'test',status:'success',renewalSetup:'scheduled',
+  renewalCancellationStatus:'requested',subscriptionCode:'SUB_annual',
+  customer:'CUS_baker',renewalPlanCode:'PLN_year'});
+ const originalKey=key;const originalFetch=global.fetch;
+ key='sk_test_fixture_not_a_real_key';
+ let disabled=false;const calls=[];
+ global.fetch=async(url,options)=>{
+  calls.push(String(url));
+  if(String(url).endsWith('/subscription/disable')){
+   const body=JSON.parse(options.body);
+   assert.equal(body.code,'SUB_annual');
+   assert.equal(body.token,'private-token');
+   disabled=true;
+   return {ok:true,json:async()=>({status:true,data:{}})};
+  }
+  return {ok:true,json:async()=>({status:true,data:{
+   subscription_code:'SUB_annual',customer:{customer_code:'CUS_baker'},
+   plan:{plan_code:'PLN_year'},domain:'test',
+   status:disabled?'not_renewing':'active',email_token:'private-token'
+  }})};
+ };
+ try{
+  // Feature flag is intentionally disabled, even in test mode.
+  await assert.rejects(
+   api.reconcileAnnualLaunchCancellation({auth:{uid:'baker1'},data:{reference}}),
+   e=>e.code==='failed-precondition'
+  );
+  assert.equal(disabled,false);
+  assert.equal(calls.length,0);
+ }finally{key=originalKey;global.fetch=originalFetch;}
+});
