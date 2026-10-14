@@ -1,5 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const Module=require('node:module');const {createHmac}=require('node:crypto');
-const records=new Map();let updates=0;let queue=Promise.resolve();const key='sk_live_fixture_not_a_real_key';
+const records=new Map();let updates=0;let queue=Promise.resolve();let key='sk_live_fixture_not_a_real_key';
 class Ref{constructor(path){this.path=path;this.id=path.split('/').pop()} async get(){return {exists:records.has(this.path),data:()=>records.get(this.path),id:this.id,ref:this}}async set(data,opt){records.set(this.path,opt?.merge?{...records.get(this.path),...data}:data)}async update(data){updates++;records.set(this.path,{...records.get(this.path),...data})}async delete(){records.delete(this.path)}}
 const db={doc:p=>new Ref(p),collection:p=>({where:(field,op,value)=>({get:async()=>({docs:await Promise.all([...records.keys()].filter(k=>k.startsWith(p+'/')&&records.get(k)[field]===value).map(k=>new Ref(k).get()))})})}),runTransaction:fn=>{const result=queue.then(()=>fn({get:r=>r.get(),set:(r,d,o)=>r.set(d,o),update:(r,d)=>r.update(d)}));queue=result.catch(()=>{});return result}};
 class HttpsError extends Error{constructor(code,message){super(message);this.code=code}}
@@ -88,6 +88,8 @@ test('verified first-year launch payment is recorded independently of renewal pl
   customer:{customer_code:'CUS_baker'},domain:'test',paid_at:'2026-10-14T09:00:00Z',
   authorization:{authorization_code:'AUTH_test',reusable:true},id:777};
  const original=global.fetch;
+ const originalKey=key;
+ key='sk_test_fixture_not_a_real_key';
  const requests=[];
  global.fetch=async(url)=>{
   requests.push(String(url));
@@ -101,7 +103,7 @@ test('verified first-year launch payment is recorded independently of renewal pl
   assert.equal(records.get('subscriptionPayments/'+reference).entitlementStatus,'awaiting_renewal_setup');
   assert.equal(records.get('users/baker1').subscriptionStatus,'free');
   assert.equal(requests.some(x=>x.includes('/plan/')),false);
- }finally{global.fetch=original;}
+ }finally{global.fetch=original;key=originalKey;}
 });
 
 test('annual launch rejects cross-environment verification without changing records',async()=>{
