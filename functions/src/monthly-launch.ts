@@ -13,12 +13,12 @@ export const MONTHLY_LAUNCH = Object.freeze({
 export function monthlyChargeCents(at: string | Date): number {
   const date = new Date(at);
   if (!Number.isFinite(date.getTime())) throw new Error('Invalid billing timestamp');
-  const day = new Intl.DateTimeFormat('en-CA', {
+  const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: MONTHLY_LAUNCH.timezone,
     year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(date);
-  const [year,month,dayOfMonth] = day.split('/').length===3 ? day.split('/') : day.split('-');
-  const localDate = year+'-'+month+'-'+dayOfMonth;
+  }).formatToParts(date);
+  const part = (type: string) => parts.find(x => x.type === type)?.value ?? '';
+  const localDate = part('year')+'-'+part('month')+'-'+part('day');
   return localDate <= MONTHLY_LAUNCH.offerEndsLocal ?
     MONTHLY_LAUNCH.introductoryCents : MONTHLY_LAUNCH.regularCents;
 }
