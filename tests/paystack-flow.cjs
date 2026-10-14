@@ -52,3 +52,24 @@ test('introductory monthly checkout remains disabled and does not create a payme
  );
  assert.deepEqual([...records.keys()],before);
 });
+
+test('annual launch status is owner-only and omits card and customer details',async()=>{
+ reset();
+ const reference='BBL-12345678-1234-1234-1234-123456789abc';
+ records.set('subscriptionPayments/'+reference,{
+  uid:'baker1',offer:'annual_launch',status:'payment_verified',domain:'test',
+  renewalSetup:'needs_reconciliation',entitlementStatus:'awaiting_support_review',
+  firstYearAccessUntil:'2027-10-14T09:00:00.000Z',
+  authorizationCode:'AUTH_private',customer:'CUS_private'
+ });
+ const status=await api.getAnnualLaunchStatus({auth:{uid:'baker1'},data:{reference}});
+ assert.equal(status.renewalSetup,'needs_reconciliation');
+ assert.equal(status.testMode,true);
+ assert.equal(status.firstYearAccessUntil,'2027-10-14T09:00:00.000Z');
+ assert.equal('authorizationCode' in status,false);
+ assert.equal('customer' in status,false);
+ await assert.rejects(
+  api.getAnnualLaunchStatus({auth:{uid:'other'},data:{reference}}),
+  error=>error.code==='permission-denied'
+ );
+});
