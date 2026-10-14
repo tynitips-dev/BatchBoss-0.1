@@ -42,3 +42,10 @@
 - https://paystack.com/docs/payments/subscriptions/
 - https://paystack.com/docs/api/subscription/
 - https://paystack.com/docs/payments/recurring-charges/
+
+## Entitlement-state separation added on 14 October 2026
+
+- When the first-year R990 transaction is independently verified, its payment record now stores `firstYearAccessUntil` (the first anniversary) and `entitlementStatus: awaiting_renewal_setup`.
+- After a test-mode renewal subscription is confirmed, the payment record moves to `entitlementStatus: test_verified_only`. This is an audit trail **not** a grant of production Pro access.
+- **Remaining blocking work:** define and implement a production-only, transactional user profile grant after the first payment and confirmed safe renewal arrangement; reconcile cancellation and invoices; ensure already-active, admin-promoted and existing-plan accounts cannot be overwritten; prohibit renewal if authorization is revoked. Current promotional functions deliberately refuse live mode. Never enable production offer flags on this implementation.
+- The new `firstYearAccessUntil` field is only a calculated record value. It must not be treated as an entitlement without a verified live payment and explicit guarded profile update.
