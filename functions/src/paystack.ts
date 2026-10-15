@@ -183,37 +183,49 @@ export const createPaystackCheckout=onCall(options,createCheckout);
 async function settleAnnualLaunch(reference:string, expectedUid?:string){
  if(!/^BBL-[a-f0-9-]{36}$/i.test(reference))
   throw new HttpsError('invalid-argument','Invalid launch payment reference.');
- const ref=db().doc('subscriptionPayments/'+reference);
- const snapshot=await ref.get();
- const p=snapshot.data();
- if(!p||p.offer!=='annual_launch'||p.provider!=='paystack'||p.domain!==mode()||(expectedUid&&expectedUid!==p.uid))
+ const paymentRef=db().doc('subscriptionPayments/'+reference);
+ const original=(await paymentRef.get()).data();
+ if(!original||original.offer!=='annual_launch'||original.provider!=='paystack'||
+    original.domain!==mode()||(expectedUid&&expectedUid!==original.uid))
   throw new HttpsError('permission-denied','This payment is not linked to your account.');
- // Refuse cross-environment reconciliation even for already processed references.
- if(p.status==='success')return {status:'success',testMode:p.domain==='test',renewalSetup:p.renewalSetup||'pending'};
- // Repeated callbacks must not re-verify or overwrite an already reconciled payment.
- if(p.status==='payment_verified'&&p.renewalSetup==='pending')return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
- if(['submitting','needs_reconciliation','cancelled'].includes(String(p.renewalSetup)))return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:p.renewalSetup};
+ if(original.status==='success'&&original.entitlementStatus==='granted')
+  return {status:'success',testMode:original.domain==='test',renewalSetup:'not_required'};
  const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
  if(tx.status!=='success')return {status:String(tx.status||'pending')};
- const authorization=String(tx.authorization?.authorization_code||'');
  if(tx.reference!==reference||tx.amount!==ANNUAL_LAUNCH.firstYearCents||
-    tx.currency!=='ZAR'||tx.domain!==p.domain||
-    tx.customer?.customer_code!==p.customer||!tx.paid_at||
-    !/^AUTH_[a-zA-Z0-9]+$/.test(authorization)||tx.authorization?.reusable!==true)
+    tx.currency!=='ZAR'||tx.domain!==original.domain||
+    tx.customer?.customer_code!==original.customer||!tx.paid_at||!Number.isFinite(Date.parse(String(tx.paid_at))))
   throw new HttpsError('failed-precondition','Launch payment verification failed; contact support.');
- const renewalDate=annualRenewalDate(String(tx.paid_at));
- // Record the verified first-year charge independently of renewal-plan availability.
- // A future-plan lookup failure must never hide the fact that the customer paid.
- // Future renewal configuration is checked just before scheduling that subscription.
+ const expiresAt=new Date(annualRenewalDate(String(tx.paid_at)));
+ if(!Number.isFinite(expiresAt.getTime())||expiresAt.getTime()<=Date.parse(String(tx.paid_at)))
+  throw new HttpsError('failed-precondition','Invalid annual access expiry.');
+ const userRef=db().doc('users/'+original.uid);
  await db().runTransaction(async t=>{
-  const current=await t.get(ref);
-  if(current.data()?.status!=='pending')return;
-  t.update(ref,{status:'payment_verified',paidAt:tx.paid_at,
-   transactionId:String(tx.id),renewalDate,firstYearAccessUntil:renewalDate,
-   entitlementStatus:'awaiting_renewal_setup',renewalSetup:'pending',
-   authorizationCode:authorization,updatedAt:now()});
+  const [paymentSnap,userSnap]=await Promise.all([t.get(paymentRef),t.get(userRef)]);
+  const payment=paymentSnap.data(),profile=userSnap.data();
+  if(!payment||payment.uid!==original.uid||payment.customer!==original.customer||
+     payment.offer!=='annual_launch'||payment.domain!==original.domain||
+     !profile)throw new HttpsError('failed-precondition','Payment or user profile changed. Contact support.');
+  if(payment.status==='success'&&payment.entitlementStatus==='granted')return;
+  if(!['pending','payment_verified'].includes(String(payment.status)))
+   throw new HttpsError('failed-precondition','Payment needs manual review before activation.');
+  t.update(paymentRef,{status:'success',paidAt:tx.paid_at,transactionId:String(tx.id),
+   processedAt:now(),firstYearAccessUntil:expiresAt.toISOString(),
+   entitlementStatus:original.domain==='live'?'granted':'test_verified_only',
+   renewalSetup:'not_required',updatedAt:now()});
+  // Paystack test payments never activate production Pro.
+  // Do not replace an existing, later entitlement or an active admin promotion.
+  if(original.domain==='live'&&!(profile.subscriptionSource==='admin_promotion'&&
+     profile.subscriptionExpiresAt?.toMillis?.()>Date.now())){
+   const existing=profile.subscriptionExpiresAt?.toDate?.();
+   const expiry=existing&&existing>expiresAt?existing:expiresAt;
+   t.update(userRef,{subscriptionPlan:'pro',subscriptionStatus:'active',
+    subscriptionSource:'paystack',subscriptionBillingInterval:'annual',
+    subscriptionExpiresAt:expiry,subscriptionRenews:false,
+    paystackCustomerCode:original.customer,updatedAt:now()});
+  }
  });
- return {status:'payment_verified',testMode:p.domain==='test',renewalSetup:'pending'};
+ return {status:'success',testMode:original.domain==='test',renewalSetup:'not_required'};
 }
 export const verifyAnnualLaunchPayment=onCall(options,async request=>
  settleAnnualLaunch(String(request.data?.reference||''),uidOf(request)));
