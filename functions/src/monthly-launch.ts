@@ -28,3 +28,20 @@ export function validateMonthlyConsent(data: unknown): boolean {
   const consent = data as {accepted?: unknown;version?: unknown};
   return consent.accepted===true && consent.version===MONTHLY_LAUNCH.consentVersion;
 }
+
+/**
+ * First regular-price monthly debit after an independently verified one-off
+ * introductory charge. Always derive this from the confirmed paid-at timestamp,
+ * never from the checkout initiation date.
+ */
+export function monthlyRenewalDate(paidAt:string):string {
+ const payment=new Date(paidAt);
+ if(!Number.isFinite(payment.getTime()))throw new Error('Invalid payment timestamp');
+ const day=payment.getUTCDate();
+ const next=new Date(payment.getTime());
+ next.setUTCDate(1);
+ next.setUTCMonth(next.getUTCMonth()+1);
+ const lastDay=new Date(Date.UTC(next.getUTCFullYear(),next.getUTCMonth()+1,0)).getUTCDate();
+ next.setUTCDate(Math.min(day,lastDay));
+ return next.toISOString();
+}
