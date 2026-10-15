@@ -8,6 +8,7 @@ import {validSignature,periodEnd,matchesPayment} from './paystack-core';
 import {ANNUAL_LAUNCH,annualRenewalDate,validateAnnualLaunchConsent} from './annual-launch';
 import {MONTHLY_LAUNCH,monthlyChargeCents,validateMonthlyConsent} from './monthly-launch';
 import {matchesConfiguredPaystackPlan} from './paystack-plan-validation';
+import {confirmsDeferredFirstDebit} from './paystack-renewal-safety';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
