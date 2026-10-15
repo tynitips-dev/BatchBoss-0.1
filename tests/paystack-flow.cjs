@@ -12,6 +12,29 @@ const request=uid=>({auth:{uid},data:{reference:'BB-first'}});
 function reset(){records.clear();updates=0;records.set('users/baker1',{subscriptionStatus:'free'});records.set('subscriptionPayments/BB-first',{...expected,status:'pending'});tx={...tx,status:'success',amount:14900,domain:'live',reference:'BB-first',paid_at:'2026-10-12T10:00:00Z'}}
 async function webhook(event,valid=true){const body=Buffer.from(JSON.stringify(event));let status;let output;await api.paystackWebhook({method:'POST',body:event,rawBody:body,headers:{'x-paystack-signature':valid?createHmac('sha512',key).update(body).digest('hex'):'bad'}},{status(s){status=s;return this},send(s){output=s}});return {status,output}}
 test('callback and concurrent duplicate verification grant exactly once',async()=>{reset();await Promise.all([api.verifyPaystackPayment(request('baker1')),api.verifyPaystackPayment(request('baker1'))]);assert.equal(updates,1);assert.equal(records.get('users/baker1').subscriptionExpiresAt.toISOString(),'2026-11-12T10:00:00.000Z');assert.equal(records.get('subscriptionPayments/BB-first').status,'success')});
+
+test('R990 annual launch payment grants twelve months of Pro exactly once',async()=>{
+ reset();
+ const payment=records.get('subscriptionPayments/BB-first');
+ Object.assign(payment,{offer:'annual_launch',interval:'annual',amount:99000,planCode:'PLN_annualpromo',invoiceLimit:1});
+ Object.assign(tx,{amount:99000,plan:{plan_code:'PLN_annualpromo'}});
+ await Promise.all([api.verifyPaystackPayment(request('baker1')),api.verifyPaystackPayment(request('baker1'))]);
+ const user=records.get('users/baker1');
+ assert.equal(user.subscriptionStatus,'active');
+ assert.equal(user.subscriptionPlan,'pro');
+ assert.equal(user.subscriptionExpiresAt.toISOString(),'2027-10-12T10:00:00.000Z');
+ assert.equal(updates,1);
+ assert.equal(records.get('subscriptionPayments/BB-first').status,'success');
+});
+
+test('R990 annual launch rejects wrong amount without granting Pro',async()=>{
+ reset();
+ Object.assign(records.get('subscriptionPayments/BB-first'),{offer:'annual_launch',interval:'annual',amount:99000,planCode:'PLN_annualpromo',invoiceLimit:1});
+ Object.assign(tx,{amount:119900,plan:{plan_code:'PLN_annualpromo'}});
+ await assert.rejects(api.verifyPaystackPayment(request('baker1')));
+ assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+});
+
 test('another account cannot verify this checkout',async()=>{reset();await assert.rejects(api.verifyPaystackPayment(request('other')),e=>e.code==='permission-denied');assert.equal(updates,0)});
 test('failed and wrong-amount payments do not grant access',async()=>{reset();tx.status='failed';assert.equal((await api.verifyPaystackPayment(request('baker1'))).status,'failed');assert.equal(updates,0);tx.status='success';tx.amount=1;await assert.rejects(api.verifyPaystackPayment(request('baker1')));assert.equal(updates,0)});
 test('test transactions record success without activating live profile',async()=>{reset();tx.domain='test';records.get('subscriptionPayments/BB-first').domain='test';await api.verifyPaystackPayment(request('baker1'));assert.equal(updates,0);assert.equal(records.get('users/baker1').subscriptionStatus,'free')});
