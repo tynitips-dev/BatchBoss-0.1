@@ -471,7 +471,7 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
  try{const event=request.body;const data=event.data||{};
  if(event.event==='charge.success'){
   const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
-  if(known.exists){if(known.data()?.offer==='annual_launch'){await settleAnnualLaunch(reference);response.status(200).send('OK');return;}await settle(reference);const customer=known.data()?.customer;
+  if(known.exists){if(reference.startsWith('BBL-')&&known.data()?.offer==='annual_launch'){await settleAnnualLaunch(reference);response.status(200).send('OK');return;}await settle(reference);const customer=known.data()?.customer;
    // subscription.create may have arrived before charge.success.
    const subs=await db().collection('paystackSubscriptions').where('customer','==',customer).get();for(const sub of subs.docs)if(sub.data().planCode===known.data()?.planCode)await syncSubscription(sub.id);
   }
