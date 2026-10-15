@@ -14,6 +14,7 @@ const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
+const adminEmail=defineString('ADMIN_EMAIL',{default:''});
 // Separate feature gate. Default false; no discounted transaction can start until QA is complete.
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
@@ -57,7 +58,7 @@ export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(e
 export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
  const uid=uidOf(request);
  const user=await getAuth().getUser(uid);
- if(!user.customClaims?.admin)throw new HttpsError('permission-denied','Only a BatchBoss administrator can verify billing plans.');
+ if(!user.customClaims?.admin && !(user.emailVerified && adminEmail.value() && user.email?.toLowerCase()===adminEmail.value().toLowerCase()))throw new HttpsError('permission-denied','Only a BatchBoss administrator can verify billing plans.');
  const expected=[
   {kind:'monthly_launch',code:monthlyPromo.value(),amount:9900,interval:'monthly'},
   {kind:'annual_launch',code:annualPromo.value(),amount:99000,interval:'annually'},
