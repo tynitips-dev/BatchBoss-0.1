@@ -27,7 +27,7 @@ jobs:
         working-directory: functions
         run: npm run build
       - name: Run backend billing regression tests
-        run: node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs tests/payment-core.cjs tests/paystack-plan-validation.cjs
+        run: node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs tests/payment-core.cjs tests/paystack-plan-validation.cjs tests/monthly-renewal-date.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest
