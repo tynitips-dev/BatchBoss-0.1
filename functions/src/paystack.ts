@@ -121,9 +121,9 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
   t.set(lock,{reference,interval:'annual_launch',expiresAtMs:Date.now()+1800000});
   t.create(paymentRef,{uid,provider:'paystack',offer:'annual_launch',interval:'annual',
    amount:ANNUAL_LAUNCH.firstYearCents,currency:ANNUAL_LAUNCH.currency,domain:mode(),
-   customer:customerCode,status:'pending',renewalAmount:ANNUAL_LAUNCH.recurringYearCents,
-   renewalPlanCode:annual.value(),renewalConsentVersion:ANNUAL_LAUNCH.consentVersion,
-   renewalConsentAt:now(),createdAt:now()});
+   customer:customerCode,status:'pending',renewalSetup:'not_required',
+   renewalConsentVersion:ANNUAL_LAUNCH.consentVersion,
+   subscriptionRenews:false,createdAt:now()});
   return null;
  });
  if(reused)return {checkoutUrl:reused};
@@ -235,6 +235,9 @@ export const verifyAnnualLaunchPayment=onCall(options,async request=>
  * second future subscription.
  */
 export const scheduleAnnualLaunchRenewal=onCall(options,async request=>{
+ // This legacy endpoint is deliberately disabled for the non-renewing R990 offer.
+ // Standard R1,199 Paystack subscriptions continue through their separate flow.
+ throw new HttpsError('failed-precondition','R990 launch purchases never auto-renew. Choose a standard plan manually after expiry.');
  const uid=uidOf(request);
  if(annualLaunchEnabled.value()!=='true'||mode()!=='test')
   throw new HttpsError('failed-precondition','Launch renewal scheduling is disabled.');
