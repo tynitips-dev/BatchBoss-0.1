@@ -455,7 +455,7 @@ async function syncSubscription(code:string){
  const existing=(await subscriptionRef.get()).data();
  // Introductory subscriptions are verified against their own original charge
  // and agreement. Never reinterpret them as a standard subscription.
- if(existing?.offer==='annual_launch'&&existing?.renewalSetup)
+ if(existing?.offer==='annual_launch'&&String(existing?.sourceReference||'').startsWith('BBL-'))
   return {uid,remote:s,launchReconciliationRequired:true};
  await subscriptionRef.set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
  if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
