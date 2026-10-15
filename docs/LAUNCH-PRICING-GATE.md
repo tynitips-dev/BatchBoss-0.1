@@ -2,7 +2,7 @@
 
 ## Existing verified billing
 - Monthly: R149 per recurring month, plan code configured through PAYSTACK_MONTHLY_PLAN_CODE.
-- Annual: R1,490 per recurring year, plan code configured through PAYSTACK_ANNUAL_PLAN_CODE.
+- Annual: R1,199 per recurring year, plan code configured through PAYSTACK_ANNUAL_PLAN_CODE.
 - Keep both existing plans and subscriptions intact.
 
 ## Proposed launch campaign (requires approval before launch)
@@ -28,11 +28,11 @@
 
 ## Verified Paystack approach (documentation reviewed 14 October 2026)
 
-- Paystack supports a **one-off transaction** without a plan code, then a separate `POST /subscription` using the customer's paid card authorization, the **existing regular R1,490 annual plan**, and `start_date` set to the first anniversary. See https://paystack.com/docs/payments/subscriptions/ and https://paystack.com/docs/api/subscription/.
+- Paystack supports a **one-off transaction** without a plan code, then a separate `POST /subscription` using the customer's paid card authorization, a **new, verified R1,490 annual renewal plan** (not the existing R1,199 plan), and `start_date` set to the first anniversary. See https://paystack.com/docs/payments/subscriptions/ and https://paystack.com/docs/api/subscription/.
 - This is a **proposed architecture, not yet deployed**. A one-off charge by itself is not proof the future subscription was scheduled. Never claim automatic renewal is configured until Paystack returns a confirmed annual subscription and the backend records its code/status.
 - Step 1: record consent, offer terms, price, account UID, reference and expected renewal date on the server BEFORE initiating a R990 **no-plan** checkout. Reject any client-supplied amount.
 - Step 2: verify the paid transaction through Paystack server-side; validate amount=99000, currency=ZAR, live/test domain, customer mapping, reference and successful card authorization. Use a separate reconciliation path from the existing plan-coded settlement, which deliberately rejects mismatched plans.
-- Step 3: create a future-start R1,490/year Paystack subscription with `start_date` on the anniversary and explicit authorization chosen from the initial verified payment. Check with Paystack that annual scheduling and date semantics behave as expected in the SA account before activation.
+- Step 3: only after adding a separate, verified R1,490 annual renewal plan code and backend configuration, create a future-start R1,490/year Paystack subscription with `start_date` on the anniversary and explicit authorization chosen from the initial verified payment. Check with Paystack that annual scheduling and date semantics behave as expected in the SA account before activation.
 - Step 4: record subscription code and payment reference in a durable, retry-safe state machine; handle Paystack API failure, duplicate webhook delivery, cancellation before future debit and partial setup. **Do not** schedule multiple subscriptions on retries. A user who has paid R990 but whose auto-renew setup failed must be surfaced to support, not silently considered fully set up.
 - Step 5: grant first-year Pro only once first-year payment settles successfully, while accurately showing renewal-setup status to the customer. Don't imply all renewal setup is complete if it isn't.
 - Step 6: reconcile charge.success and invoice events with the correct plan, billing interval and subscription owner, including reminders before the first higher-price renewal and expiry if payment fails.
@@ -75,7 +75,7 @@ Relevant Paystack docs: https://paystack.com/docs/api/subscription/ and https://
 User requested one consolidated implementation and review, not incremental approval of micro-patches.
 
 ### Decisions already confirmed
-- Normal plans: R149/month and R1,490/year, leave currently paying customers and provider plans alone.
+- Normal plans: R149/month and R1,199/year, leave currently paying customers and provider plans alone.
 - Introductory monthly: R99 for qualifying payments up to 31 December 2026 (Johannesburg date), transitioning to R149 for renewals from 1 January 2027.
 - Introductory annual: R990 for the initial 12 months, then opt-in automatic renewal at R1,490 annually, cancellable beforehand.
 - Use **only Paystack**; remove PayFast checkout options.
@@ -103,3 +103,6 @@ npm run build --prefix functions &&
 node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs &&
 npm run build --prefix web
 ```
+
+## 15 October review
+The R990 first-year / R1,490 subsequent-year offer is a **draft**, not a purchasable product. The original production annual plan stays R1,199 and its code must NOT be used to promise an R1,490 renewal. Create and independently verify a separate R1,490 renewal plan before implementing promotional renewal scheduling. Monthly R99 is also draft-only; keep existing R149 checkouts clearly labelled as regular plans until payment processing is implemented and tested.
