@@ -37,7 +37,7 @@ test('introductory annual checkout remains disabled unless explicitly enabled',a
  reset();
  const before=[...records.keys()];
  await assert.rejects(
-  api.createAnnualLaunchCheckout({auth:{uid:'baker1'},data:{renewalConsent:{accepted:true,version:'annual-launch-r990-then-r1490-v1'}}}),
+  api.createAnnualLaunchCheckout({auth:{uid:'baker1'},data:{renewalConsent:{accepted:true,version:'annual-launch-r990-then-r1199-v1'}}}),
   error=>error.code==='failed-precondition'
  );
  assert.deepEqual([...records.keys()],before);
@@ -80,8 +80,8 @@ test('verified first-year launch payment is recorded independently of renewal pl
  records.set('subscriptionPayments/'+reference,{
   uid:'baker1',offer:'annual_launch',provider:'paystack',status:'pending',
   domain:'test',currency:'ZAR',customer:'CUS_baker',interval:'annual',
-  amount:99000,renewalAmount:149000,
-  renewalConsentVersion:'annual-launch-r990-then-r1490-v1',
+  amount:99000,renewalAmount:119900,
+  renewalConsentVersion:'annual-launch-r990-then-r1199-v1',
   renewalPlanCode:'PLN_year'
  });
  tx={reference,status:'success',amount:99000,currency:'ZAR',
@@ -173,7 +173,7 @@ test('revoked pending annual renewal remains cancelled when payment verification
  const path='subscriptionPayments/'+reference;
  records.set(path,{uid:'baker1',provider:'paystack',offer:'annual_launch',
   domain:'live',status:'payment_verified',renewalSetup:'pending',
-  renewalConsentVersion:'annual-launch-r990-then-r1490-v1'});
+  renewalConsentVersion:'annual-launch-r990-then-r1199-v1'});
  await api.cancelPendingAnnualLaunchRenewal({auth:{uid:'baker1'},data:{reference}});
  const original=global.fetch;
  global.fetch=async()=>{throw new Error('No new payment verification should be requested');};
@@ -280,7 +280,7 @@ test('standard webhook synchronization cannot overwrite introductory subscriptio
  global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
   subscription_code:'SUB_annual',status:'active',domain:'live',
   customer:{customer_code:'CUS_baker'},
-  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:149000
+  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:119900
  }})});
  try{
   const result=await webhook({event:'subscription.create',data:{subscription_code:'SUB_annual'}});
@@ -303,7 +303,7 @@ test('introductory renewal invoice never enters standard payment settlement',asy
  global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
   subscription_code:code,status:'active',domain:'live',
   customer:{customer_code:'CUS_baker'},
-  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:149000
+  plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'},amount:119900
  }})});
  try{
   const result=await webhook({event:'invoice.update',data:{
@@ -333,7 +333,7 @@ test('separate failed annual launch invoices create separate review records',asy
   domain:'live',interval:'annual',planCode:'PLN_year'});
  const original=global.fetch;
  global.fetch=async()=>({ok:true,json:async()=>({status:true,data:{
-  subscription_code:code,status:'active',domain:'live',amount:149000,
+  subscription_code:code,status:'active',domain:'live',amount:119900,
   customer:{customer_code:'CUS_baker'},
   plan:{plan_code:'PLN_year',interval:'annually',currency:'ZAR'}
  }})});
