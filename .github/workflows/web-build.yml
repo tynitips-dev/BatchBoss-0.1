@@ -3,11 +3,12 @@ name: Build BatchBoss web portals
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, codex/launch-pricing-prep]
     paths:
       - "web/**"
       - "admin-web/**"
       - "functions/**"
+      - "tests/**"
       - "firebase.json"
       - ".github/workflows/web-build.yml"
 
@@ -25,6 +26,8 @@ jobs:
       - name: Compile Firebase functions
         working-directory: functions
         run: npm run build
+      - name: Run backend billing regression tests
+        run: node --test tests/annual-launch.cjs tests/monthly-launch.cjs tests/paystack-flow.cjs tests/payment-core.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest

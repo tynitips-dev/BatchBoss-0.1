@@ -10,10 +10,16 @@ import {MONTHLY_LAUNCH,monthlyChargeCents,validateMonthlyConsent} from './monthl
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
+// Reserved for separate promotional plans; never substitute these for existing subscriber plans.
+const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
+const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
 // Separate feature gate. Default false; no discounted transaction can start until QA is complete.
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
+// The promotional codes are not yet used for checkout. They must be independently verified
+// against Paystack pricing and mode before the launch gates can be enabled.
+function promotionalPlanCodesConfigured(){return /^PLN_[a-zA-Z0-9]+$/.test(monthlyPromo.value()) && /^PLN_[a-zA-Z0-9]+$/.test(annualPromo.value());}
 const APP='https://app.batchboss.co.za';
 const options={region:'europe-west1',invoker:'public' as const,secrets:[secret],cors:[APP]};
 const db=()=>getFirestore();
@@ -45,7 +51,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
 // Phase 1: one-off first-year checkout. This is never a recurring-plan transaction,
 // because Paystack ignores the specified amount when a plan code is supplied.
 export const createAnnualLaunchCheckout=onCall(options,async request=>{

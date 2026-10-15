@@ -356,20 +356,33 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {selectedModule.collection && selectedModule.pro && !isPro
         ? <LockedView title={selectedModule.label} onUpgrade={() => setActive('subscription')} />
         : selectedModule.collection && !['products','invoices','quotes','tasks','customers','orders','receipts'].includes(active) && <section className="content-card">
-          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
+          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging','customers','recipes'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
           {['ingredients','inventory','packaging'].includes(active) ? <StockCards items={selectedItems} onEdit={openEditor} bakeryId={profile.bakeryId} collectionName={selectedModule.collection!} /> : <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />}
         </section>}
     </main>
     {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}
-    {showImporter&&selectedModule.collection&&<BulkListImporter bakeryId={profile.bakeryId} collectionName={selectedModule.collection} label={selectedModule.label} onClose={()=>setShowImporter(false)}/>}
+    {showImporter&&selectedModule.collection&&(['customers','recipes'].includes(active)?<RecordListImporter bakeryId={profile.bakeryId} collectionName={active as 'customers'|'recipes'} label={selectedModule.label} onClose={()=>setShowImporter(false)}/>:<BulkListImporter bakeryId={profile.bakeryId} collectionName={selectedModule.collection} label={selectedModule.label} onClose={()=>setShowImporter(false)}/>)}
   </div>
+}
+
+function downloadStarterSheet(kind: 'ingredients' | 'packaging' | 'customers' | 'recipes') {
+  const columns: Record<typeof kind, string[]> = {
+    ingredients: ['Name','Unit','Package Price','Package Quantity','Current Stock','Minimum Stock','Category','Barcode'],
+    packaging: ['Name','Unit','Package Price','Package Quantity','Current Stock','Minimum Stock','Category','Barcode'],
+    customers: ['Name','Email','Phone','Address','Notes'],
+    recipes: ['Name','Description','Batch Size','Servings','Selling Price']
+  }
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([columns[kind]]), kind === 'ingredients' ? 'Ingredients Upload' : kind === 'packaging' ? 'Packaging Upload' : kind === 'customers' ? 'Customers Upload' : 'Recipes Upload')
+  XLSX.writeFile(workbook, `BatchBoss_${kind}_template.xlsx`)
 }
 
 function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
   return <section className="content-card documents-view">
     <div className="section-heading"><div><span className="eyebrow">Downloads & uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Download the BatchBoss starter workbook, edit your prices and pack sizes, then upload each list into your private bakery workspace.</p></div></div>
     <div className="template-grid">
-      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Ingredients &amp; Packaging Starter Workbook</h3><p>Includes editable ingredients and packaging lists, plus BatchBoss-ready upload sheets.</p><small>Excel workbook · Prices are reference prices and can be changed.</small></div><a className="primary-button compact" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download workbook</a></article>
+      {(['ingredients','packaging','customers','recipes'] as const).map(kind=><article className="template-card" key={kind}><div className="template-icon"><Download /></div><div><h3>{kind[0].toUpperCase()+kind.slice(1)} template</h3><p>Separate blank Excel sheet with BatchBoss-compatible column headings.</p><small>Excel workbook · No sample customer or recipe data.</small></div><button className="primary-button compact" onClick={()=>downloadStarterSheet(kind)}>Download {kind}</button></article>)}
+      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Combined reference workbook</h3><p>Original ingredients and packaging workbook for reference.</p></div><a className="outline-button" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download combined workbook</a></article>
       <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Save the workbook.</li><li>Open the matching BatchBoss tab and select <strong>Upload list</strong>.</li><li>Select the Excel workbook, check every value in the preview and confirm.</li></ol></article>
     </div>
     <div className="document-actions"><button className="outline-button" onClick={() => onOpen('ingredients')}>Open Ingredients</button><button className="outline-button" onClick={() => onOpen('packaging')}>Open Packaging</button></div>
@@ -432,6 +445,43 @@ function mapImportTable(table: unknown[][]): ImportRow[] {
     category: String(categoryIndex >= 0 ? row[categoryIndex] ?? '' : '').trim(),
     barcode: String(barcodeIndex >= 0 ? row[barcodeIndex] ?? '' : '').trim(),
   })).filter(row => row.name && !isImportHeading(row.name) && row.quantity > 0 && row.price >= 0 && row.stock >= 0 && row.minimum >= 0)
+}
+
+function RecordListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:'customers'|'recipes';label:string;onClose:()=>void}) {
+ const [records,setRecords]=useState<Record<string,string>[]>([]),[error,setError]=useState(''),[saving,setSaving]=useState(false)
+ const headings=collectionName==='customers'?['name','email','phone','address','notes']:['name','description','batch size','servings','selling price']
+ async function read(file:File) {
+  setRecords([]);setError('')
+  try {
+   const workbook=XLSX.read(await file.arrayBuffer(),{type:'array'})
+   const preferred=collectionName==='customers'?'Customers Upload':'Recipes Upload'
+   const sheet=workbook.Sheets[workbook.SheetNames.find(x=>x.toLowerCase()===preferred.toLowerCase())||workbook.SheetNames[0]]
+   const table=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,defval:''})
+   if(!table.length)throw new Error('The sheet is empty.')
+   const headers=(table[0]||[]).map(x=>String(x).trim().toLowerCase())
+   if(!headings.every((h,i)=>i===0?headers.includes(h):true))throw new Error('A Name column is required. Download the matching BatchBoss template.')
+   const result=table.slice(1).map(line=>Object.fromEntries(headings.map(h=>[h,String(line[headers.indexOf(h)]??'').trim()])))
+     .filter(row=>row.name&&!/^(name|customer|recipe)$/i.test(row.name))
+   if(result.length>450)throw new Error('Import up to 450 records at a time.')
+   if(!result.length)throw new Error('No valid records found.')
+   setRecords(result)
+  }catch(e){setError(e instanceof Error?e.message:'Could not read the Excel or CSV file.')}
+ }
+ async function save() {
+  setSaving(true);setError('')
+  try {
+   const batch=writeBatch(db),now=Date.now()
+   for(const [i,r] of records.entries()){
+    const numeric=(key:string,fallback:number)=>{const v=r[key];if(!v)return fallback;const parsed=Number(v);if(!Number.isFinite(parsed)||parsed<0)throw new Error(`Invalid ${key} in row ${i+2}.`);return parsed}
+    const id=String(now+i),ref=doc(db,'bakeries',bakeryId,collectionName,id)
+    const common={name:r.name,bakeryId,createdAt:now,updatedAt:now}
+    batch.set(ref,collectionName==='customers'?{...common,email:r.email,phone:r.phone,address:r.address,notes:r.notes}
+     :{...common,id:now+i,description:r.description,batchSize:numeric('batch size',1),servings:numeric('servings',1),sellingPrice:numeric('selling price',0)})
+   }
+   await batch.commit();onClose()
+  }catch(e){setError(e instanceof Error?e.message:'Import failed. No records were saved.')}finally{setSaving(false)}
+ }
+ return <Modal title={`Upload ${label} list`} onClose={onClose}><div className="modal-form"><p>Import a BatchBoss template (.xlsx, .xls, or .csv). Check the preview before saving. Existing records are not overwritten.</p><input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)void read(f)}}/>{error&&<div className="warning-note" role="alert">{error}</div>}{records.length>0&&<><h3>Preview ({records.length} records)</h3><div className="catalogue-list">{records.slice(0,30).map((r,i)=><div className="customer-card" key={i}><strong>{r.name}</strong><small>{collectionName==='customers'?r.email:r.description}</small></div>)}</div>{records.length>30&&<p>Showing first 30 of {records.length} records.</p>}<button className="primary-button" disabled={saving} onClick={()=>void save()}>{saving?'Importing…':`Confirm and import ${records.length} records`}</button></>}</div></Modal>
 }
 
 function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:string;collectionName:string;label:string;onClose:()=>void}){
