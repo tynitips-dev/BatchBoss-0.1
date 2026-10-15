@@ -52,6 +52,33 @@ async function api(path:string,body?:unknown){
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
 export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+// Read-only verification of configured Paystack plan values and API mode.
+// No subscription is created and no promotional feature is enabled.
+export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
+ const uid=uidOf(request);
+ const user=await getAuth().getUser(uid);
+ if(!user.customClaims?.admin)throw new HttpsError('permission-denied','Only a BatchBoss administrator can verify billing plans.');
+ const expected=[
+  {kind:'monthly_launch',code:monthlyPromo.value(),amount:9900,interval:'monthly'},
+  {kind:'annual_launch',code:annualPromo.value(),amount:99000,interval:'annually'},
+  {kind:'regular_monthly',code:monthly.value(),amount:14900,interval:'monthly'},
+  {kind:'regular_annual',code:annual.value(),amount:119900,interval:'annually'},
+ ];
+ const domain=mode();
+ const plans=[];
+ for(const item of expected){
+  if(!/^PLN_[a-zA-Z0-9]+$/.test(item.code)){plans.push({kind:item.kind,valid:false,reason:'not_configured'});continue;}
+  try{
+   const info=await api('/plan/'+encodeURIComponent(item.code));
+   const valid=info?.plan_code===item.code&&Number(info.amount)===item.amount&&
+     info.interval===item.interval&&info.currency==='ZAR'&&info.domain===domain;
+   plans.push({kind:item.kind,valid,reason:valid?'verified':'amount_interval_currency_or_mode_mismatch'});
+  }catch{
+   plans.push({kind:item.kind,valid:false,reason:'provider_lookup_failed'});
+  }
+ }
+ return {allVerified:plans.every(x=>x.valid),mode:domain,plans,promotionalCheckoutEnabled:false};
+});
 // Phase 1: one-off first-year checkout. This is never a recurring-plan transaction,
 // because Paystack ignores the specified amount when a plan code is supplied.
 export const createAnnualLaunchCheckout=onCall(options,async request=>{
