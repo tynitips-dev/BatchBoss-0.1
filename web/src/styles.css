@@ -222,3 +222,29 @@ td small { display:block; color:var(--muted); margin-top:4px; }
 .subscription-view .plans.promo-plans .launch-offer button { margin-top:auto; }
 .subscription-view .plans.standard-plans article button { margin-top:auto; }
 @media(max-width:600px){.subscription-view .plans.promo-plans .launch-offer{padding:22px}.subscription-view .plans.promo-plans .launch-offer > strong{font-size:30px}}
+
+
+/* Bakery-owned document palette: the selected accent controls the full printable
+   invoice design, while body copy remains high-contrast for readability. */
+.invoice-preview{
+  --document-accent:#db2777;
+  border-top:5px solid var(--document-accent);
+  padding-top:14px;
+}
+.invoice-preview .invoice-brand{border-bottom-color:var(--document-accent)}
+.invoice-preview .invoice-brand h3,
+.invoice-preview .preview-heading>div>strong,
+.invoice-preview .preview-total strong,
+.invoice-preview .payment-box>strong,
+.invoice-preview .quick-share button{color:var(--document-accent)}
+.invoice-preview .billed{background:color-mix(in srgb,var(--document-accent) 9%,white);border-left:4px solid var(--document-accent)}
+.invoice-preview .preview-heading{border-bottom:1px solid color-mix(in srgb,var(--document-accent) 32%,white);padding-bottom:12px}
+.invoice-preview .preview-line{border-bottom-color:color-mix(in srgb,var(--document-accent) 24%,white)}
+.invoice-preview .preview-total{background:color-mix(in srgb,var(--document-accent) 9%,white);border-left:4px solid var(--document-accent);padding:16px;border-radius:10px}
+.invoice-preview .payment-box{border-color:color-mix(in srgb,var(--document-accent) 42%,white);border-top:3px solid var(--document-accent)}
+.invoice-preview .invoice-brand img{border-color:var(--document-accent)}
+.invoice-preview .preview-heading .status-pill{border:1px solid var(--document-accent)}
+@media print{
+ .invoice-preview{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+ .invoice-preview .billed,.invoice-preview .preview-total{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
