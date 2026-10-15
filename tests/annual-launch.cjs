@@ -4,7 +4,7 @@ const {ANNUAL_LAUNCH,annualRenewalDate,validateAnnualLaunchConsent}=require('../
 
 test('launch amounts and consent version are fixed on the server',()=>{
  assert.equal(ANNUAL_LAUNCH.firstYearCents,99000);
- assert.equal(ANNUAL_LAUNCH.recurringYearCents,149000);
+ assert.equal(ANNUAL_LAUNCH.recurringYearCents,119900);
  assert.equal(ANNUAL_LAUNCH.currency,'ZAR');
  assert.equal(validateAnnualLaunchConsent({accepted:true,version:ANNUAL_LAUNCH.consentVersion}),true);
  for(const consent of [null,{},false,{accepted:false,version:ANNUAL_LAUNCH.consentVersion},{accepted:true,version:'old-terms'}])
