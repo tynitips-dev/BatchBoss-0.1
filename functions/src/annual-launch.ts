@@ -1,11 +1,10 @@
-// Pure helpers for the proposed annual introductory checkout.
-// No payment action should call these until the renewal flow is implemented.
+// Helpers for one-time annual launch access; standard annual subscriptions are separate.
 export const ANNUAL_LAUNCH = Object.freeze({
   firstYearCents: 99000,
   recurringYearCents: 119900,
   currency: 'ZAR',
-  consentVersion: 'annual-launch-r990-then-r1199-v1',
-  terms: 'Pay R990 for your first 12 months. Your subscription will automatically renew at R1,199 every 12 months thereafter unless cancelled before renewal.',
+  consentVersion: 'annual-launch-r990-manual-renewal-v2',
+  terms: 'Pay R990 for 12 months of Pro. This offer does not renew automatically. After access expires, you may choose a new plan at the then-current price.',
 });
 
 export function annualRenewalDate(paidAt: string): string {
