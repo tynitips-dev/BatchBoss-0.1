@@ -2,10 +2,10 @@
 // No payment action should call these until the renewal flow is implemented.
 export const ANNUAL_LAUNCH = Object.freeze({
   firstYearCents: 99000,
-  recurringYearCents: 149000,
+  recurringYearCents: 119900,
   currency: 'ZAR',
-  consentVersion: 'annual-launch-r990-then-r1490-v1',
-  terms: 'Pay R990 for your first 12 months. Your subscription will automatically renew at R1,490 every 12 months thereafter unless cancelled before renewal.',
+  consentVersion: 'annual-launch-r990-then-r1199-v1',
+  terms: 'Pay R990 for your first 12 months. Your subscription will automatically renew at R1,199 every 12 months thereafter unless cancelled before renewal.',
 });
 
 export function annualRenewalDate(paidAt: string): string {
