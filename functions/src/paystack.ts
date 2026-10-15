@@ -87,8 +87,10 @@ export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
 // because Paystack ignores the specified amount when a plan code is supplied.
 export const createAnnualLaunchCheckout=onCall(options,async request=>{
  const uid=uidOf(request);
- if(enabled.value()!=='true'||annualLaunchEnabled.value()!=='true')
-  throw new HttpsError('failed-precondition','The annual launch offer is not accepting payments.');
+ // Use the same server-enforced pilot gate as monthly checkout, never the UI alone.
+ // The general launch flag remains off for non-pilot customers.
+ if(enabled.value()!=='true'||!promoAllowed(uid,'annual_launch'))
+  throw new HttpsError('failed-precondition','The annual launch offer is not accepting payments for this account.');
  // Manual opt-in after the paid promotional period: no future renewal authorization.
  if(mode()!=='test')
   throw new HttpsError('failed-precondition','Annual launch checkouts are restricted to test mode until end-to-end testing is complete.');
