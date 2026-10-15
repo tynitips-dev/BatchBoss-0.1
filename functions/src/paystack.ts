@@ -53,7 +53,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:ANNUAL_LAUNCH.terms,consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:'R990 covers the first 12 months. Access expires unless you manually choose a new plan. No automatic upgrade to R1,199.',consentVersion:ANNUAL_LAUNCH.consentVersion}};});
 // Read-only verification of configured Paystack plan values and API mode.
 // No subscription is created and no promotional feature is enabled.
 export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
@@ -86,8 +86,7 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
  const uid=uidOf(request);
  if(enabled.value()!=='true'||annualLaunchEnabled.value()!=='true')
   throw new HttpsError('failed-precondition','The annual launch offer is not accepting payments.');
- if(!validateAnnualLaunchConsent(request.data?.renewalConsent))
-  throw new HttpsError('invalid-argument','Accept the annual automatic-renewal agreement first.');
+ // Manual opt-in after the paid promotional period: no future renewal authorization.
  if(mode()!=='test')
   throw new HttpsError('failed-precondition','Annual launch checkouts are restricted to test mode until end-to-end testing is complete.');
  const user=await getAuth().getUser(uid);
@@ -136,7 +135,7 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
 export const getMonthlyLaunchQuote=onCall(options,async request=>{
  uidOf(request);
  return {enabled:false,offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
- regular:MONTHLY_LAUNCH.regularCents/100,terms:MONTHLY_LAUNCH.terms,
+ regular:MONTHLY_LAUNCH.regularCents/100,terms:'R99 per month for a maximum of two payments. The promotional subscription stops afterward. Renew at R149 only if you choose to.',
  consentVersion:MONTHLY_LAUNCH.consentVersion,offerEndsLocal:MONTHLY_LAUNCH.offerEndsLocal,
  pricingPreviewCents:monthlyChargeCents(new Date())};
 });
