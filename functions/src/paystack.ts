@@ -448,7 +448,7 @@ export const verifyPaystackPayment=onCall(options,async request=>settle(String(r
 async function syncSubscription(code:string){
  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Invalid subscription');
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
- const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const promo=s.plan?.plan_code===monthlyPromo.value()?'monthly_launch':s.plan?.plan_code===annualPromo.value()?'annual_launch':null;
+ const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const promo=s.plan?.plan_code===monthlyPromo.value()&&monthlyPromo.value()!==monthly.value()&&monthlyPromo.value()!==annual.value()?'monthly_launch':s.plan?.plan_code===annualPromo.value()&&annualPromo.value()!==monthly.value()&&annualPromo.value()!==annual.value()?'annual_launch':null;
  const plan=promo?{interval:interval as 'annual'|'monthly',amount:promo==='monthly_launch'?9900:99000,currency:'ZAR',planCode:String(s.plan.plan_code),domain:mode(),offer:promo,invoiceLimit:promo==='monthly_launch'?2:1}:{...planFor(interval),offer:null as string|null,invoiceLimit:0};
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(promo&&Number(s.invoice_limit)!==plan.invoiceLimit))throw new Error('Subscription mismatch');
  const subscriptionRef=db().doc(`paystackSubscriptions/${code}`);
