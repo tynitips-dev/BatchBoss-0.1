@@ -356,7 +356,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {selectedModule.collection && selectedModule.pro && !isPro
         ? <LockedView title={selectedModule.label} onUpgrade={() => setActive('subscription')} />
         : selectedModule.collection && !['products','invoices','quotes','tasks','customers','orders','receipts'].includes(active) && <section className="content-card">
-          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
+          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging','customers','recipes'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
           {['ingredients','inventory','packaging'].includes(active) ? <StockCards items={selectedItems} onEdit={openEditor} bakeryId={profile.bakeryId} collectionName={selectedModule.collection!} /> : <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />}
         </section>}
     </main>
@@ -365,11 +365,24 @@ function Dashboard({ profile }: { profile: UserProfile }) {
   </div>
 }
 
+function downloadStarterSheet(kind: 'ingredients' | 'packaging' | 'customers' | 'recipes') {
+  const columns: Record<typeof kind, string[]> = {
+    ingredients: ['Name','Unit','Package Price','Package Quantity','Current Stock','Minimum Stock','Category','Barcode'],
+    packaging: ['Name','Unit','Package Price','Package Quantity','Current Stock','Minimum Stock','Category','Barcode'],
+    customers: ['Name','Email','Phone','Address','Notes'],
+    recipes: ['Name','Description','Batch Size','Servings','Selling Price']
+  }
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([columns[kind]]), kind === 'ingredients' ? 'Ingredients Upload' : kind === 'packaging' ? 'Packaging Upload' : kind === 'customers' ? 'Customers Upload' : 'Recipes Upload')
+  XLSX.writeFile(workbook, `BatchBoss_${kind}_template.xlsx`)
+}
+
 function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
   return <section className="content-card documents-view">
     <div className="section-heading"><div><span className="eyebrow">Downloads & uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Download the BatchBoss starter workbook, edit your prices and pack sizes, then upload each list into your private bakery workspace.</p></div></div>
     <div className="template-grid">
-      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Ingredients &amp; Packaging Starter Workbook</h3><p>Includes editable ingredients and packaging lists, plus BatchBoss-ready upload sheets.</p><small>Excel workbook · Prices are reference prices and can be changed.</small></div><a className="primary-button compact" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download workbook</a></article>
+      {(['ingredients','packaging','customers','recipes'] as const).map(kind=><article className="template-card" key={kind}><div className="template-icon"><Download /></div><div><h3>{kind[0].toUpperCase()+kind.slice(1)} template</h3><p>Separate blank Excel sheet with BatchBoss-compatible column headings.</p><small>Excel workbook · No sample customer or recipe data.</small></div><button className="primary-button compact" onClick={()=>downloadStarterSheet(kind)}>Download {kind}</button></article>)}
+      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Combined reference workbook</h3><p>Original ingredients and packaging workbook for reference.</p></div><a className="outline-button" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download combined workbook</a></article>
       <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Save the workbook.</li><li>Open the matching BatchBoss tab and select <strong>Upload list</strong>.</li><li>Select the Excel workbook, check every value in the preview and confirm.</li></ol></article>
     </div>
     <div className="document-actions"><button className="outline-button" onClick={() => onOpen('ingredients')}>Open Ingredients</button><button className="outline-button" onClick={() => onOpen('packaging')}>Open Packaging</button></div>
