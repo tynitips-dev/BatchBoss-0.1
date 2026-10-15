@@ -7,6 +7,7 @@ import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
 import {ANNUAL_LAUNCH,annualRenewalDate,validateAnnualLaunchConsent} from './annual-launch';
 import {MONTHLY_LAUNCH,monthlyChargeCents,validateMonthlyConsent} from './monthly-launch';
+import {matchesConfiguredPaystackPlan} from './paystack-plan-validation';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
@@ -71,8 +72,7 @@ export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
   if(!/^PLN_[a-zA-Z0-9]+$/.test(item.code)){plans.push({kind:item.kind,valid:false,reason:'not_configured'});continue;}
   try{
    const info=await api('/plan/'+encodeURIComponent(item.code));
-   const valid=info?.plan_code===item.code&&Number(info.amount)===item.amount&&
-     info.interval===item.interval&&info.currency==='ZAR'&&info.domain===domain;
+   const valid=matchesConfiguredPaystackPlan(info,{code:item.code,amount:item.amount,interval:item.interval as 'monthly'|'annually',domain});
    plans.push({kind:item.kind,valid,reason:valid?'verified':'amount_interval_currency_or_mode_mismatch'});
   }catch{
    plans.push({kind:item.kind,valid:false,reason:'provider_lookup_failed'});
