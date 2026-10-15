@@ -53,7 +53,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:false,firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:'R990 covers the first 12 months. Access expires unless you manually choose a new plan. No automatic upgrade to R1,199.',consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:annualLaunchEnabled.value()==='true'&&mode()==='live',firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:'R990 covers the first 12 months. Access expires unless you manually choose a new plan. No automatic upgrade to R1,199.',consentVersion:ANNUAL_LAUNCH.consentVersion}};});
 // Read-only verification of configured Paystack plan values and API mode.
 // No subscription is created and no promotional feature is enabled.
 export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
@@ -134,34 +134,25 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
 // This quote only describes the promotion; it never creates a payment.
 export const getMonthlyLaunchQuote=onCall(options,async request=>{
  uidOf(request);
- return {enabled:false,offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
+ return {enabled:enabled.value()==='true'&&monthlyLaunchEnabled.value()==='true'&&mode()==='live',offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
  regular:MONTHLY_LAUNCH.regularCents/100,terms:'R99 per month for a maximum of two payments. The promotional subscription stops afterward. Renew at R149 only if you choose to.',
  consentVersion:MONTHLY_LAUNCH.consentVersion,offerEndsLocal:MONTHLY_LAUNCH.offerEndsLocal,
  pricingPreviewCents:monthlyChargeCents(new Date())};
 });
 // Explicit fail-closed until provider-level renewal price transition is implemented.
-export const createMonthlyLaunchCheckout=onCall(options,async request=>{
- uidOf(request);
- if(!validateMonthlyConsent(request.data?.renewalConsent))
-  throw new HttpsError('invalid-argument','Accept the monthly renewal pricing terms first.');
- if(monthlyLaunchEnabled.value()!=='true'||mode()!=='test')
-  throw new HttpsError('failed-precondition','The monthly launch offer is not accepting payments.');
- throw new HttpsError('unimplemented','The monthly launch billing transition is not implemented.');
-});
-export const createPaystackCheckout=onCall(options,async request=>{
+export const createMonthlyLaunchCheckout=onCall(options,async request=>createCheckout({...request,data:{...request.data,plan:'monthly_launch'}}));
+async function createCheckout(request:any){
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const requestedPlan=String(request.data?.plan);
- // This offer has two different annual charges. It MUST NOT use an ordinary
- // recurring plan until a tested customer-specific renewal transition exists.
- if(requestedPlan==='annual_launch'){
-  if(!validateAnnualLaunchConsent(request.data?.renewalConsent))throw new HttpsError('invalid-argument','You must accept the automatic annual renewal terms before checkout.');
-  throw new HttpsError('failed-precondition','The annual launch offer is not available for checkout yet. Please choose a standard plan or contact support.');
- }
- const plan=planFor(requestedPlan);
+ const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
+ if(promotional&&(requestedPlan==='monthly_launch'?monthlyLaunchEnabled.value():annualLaunchEnabled.value())!=='true')throw new HttpsError('failed-precondition','Launch checkout is not enabled.');
+ if(promotional&&!request.data?.renewalConsent?.accepted)throw new HttpsError('invalid-argument','Please accept the promotional terms.');
+ const plan=promotional?{interval:(requestedPlan==='annual_launch'?'annual':'monthly') as 'annual'|'monthly',amount:requestedPlan==='annual_launch'?99000:9900,currency:'ZAR',planCode:requestedPlan==='annual_launch'?annualPromo.value():monthlyPromo.value(),domain:mode(),offer:requestedPlan,invoiceLimit:requestedPlan==='annual_launch'?1:2}:{...planFor(requestedPlan),offer:null as string|null,invoiceLimit:0};
+ if(!/^PLN_[a-zA-Z0-9]+$/.test(plan.planCode))throw new HttpsError('failed-precondition','Promotional plan is missing.');
  const user=await getAuth().getUser(uid);if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
  // Backend owns pricing and validates the dashboard plan before opening checkout.
  const remotePlan=await api(`/plan/${encodeURIComponent(plan.planCode)}`);
- if(remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':'monthly')||remotePlan.domain!==plan.domain)throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
+ if(remotePlan.plan_code!==plan.planCode||remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':'monthly')||remotePlan.domain!==plan.domain||(promotional&&Number(remotePlan.invoice_limit)!==plan.invoiceLimit))throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
  let previousEnded=false;
  const previous=(await db().doc(`users/${uid}`).get()).data();
  if(previous?.subscriptionSource==='paystack' && previous.paystackSubscriptionCode){
@@ -169,18 +160,19 @@ export const createPaystackCheckout=onCall(options,async request=>{
   previousEnded=!!linked&&['cancelled','completed','complete'].includes(linked.remote.status)&&previous.subscriptionExpiresAt?.toMillis?.()<=Date.now();
  }
  const lockRef=db().doc(`paystackCheckouts/${uid}`);const profileRef=db().doc(`users/${uid}`);const reference=`BB-${randomUUID()}`;
- const existing=await db().runTransaction(async t=>{const [lock,profile]=await Promise.all([t.get(lockRef),t.get(profileRef)]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode&&!previousEnded)throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const old=lock.data();if(old&&old.expiresAtMs>Date.now()){if(old.interval===plan.interval&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or wait 30 minutes before starting another.');}t.set(lockRef,{reference,interval:plan.interval,expiresAtMs:Date.now()+30*60*1000});return null;});
+ const existing=await db().runTransaction(async t=>{const [lock,profile]=await Promise.all([t.get(lockRef),t.get(profileRef)]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode&&!previousEnded)throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const old=lock.data();if(old&&old.expiresAtMs>Date.now()){if(old.interval===requestedPlan&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or wait 30 minutes before starting another.');}t.set(lockRef,{reference,interval:requestedPlan,expiresAtMs:Date.now()+30*60*1000});return null;});
  if(existing)return {checkoutUrl:existing};
  try{
   const customer=await api('/customer',{email:user.email});const customerCode=String(customer.customer_code);if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new Error('Invalid customer');
   const customerRef=db().doc(`paystackCustomers/${customerCode}`);
   await db().runTransaction(async t=>{const mapped=await t.get(customerRef);if(mapped.exists&&mapped.data()?.uid!==uid)throw new HttpsError('failed-precondition','This payment customer is linked to another account. Contact support.');t.set(customerRef,{uid,domain:plan.domain,updatedAt:now()},{merge:true});});
   await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',createdAt:now()});
-  const result=await api('/transaction/initialize',{email:user.email,amount:plan.amount,currency:'ZAR',plan:plan.planCode,reference,channels:['card'],callback_url:`${APP}/?payment=paystack`,metadata:{batchbossReference:reference}});
+  const result=await api('/transaction/initialize',{email:user.email,amount:plan.amount,currency:'ZAR',plan:plan.planCode,...(promotional?{invoice_limit:plan.invoiceLimit}:{}),reference,channels:['card'],callback_url:`${APP}/?payment=paystack`,metadata:{batchbossReference:reference}});
   const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
   await lockRef.update({checkoutUrl});return {checkoutUrl};
  }catch(e){await lockRef.delete();throw e;}
-});
+}
+export const createPaystackCheckout=onCall(options,createCheckout);
 // Reconcile first-year payment separately: the one-off transaction deliberately
 // has no Paystack plan code, unlike the normal recurring plan settlements.
 async function settleAnnualLaunch(reference:string, expectedUid?:string){
@@ -456,13 +448,14 @@ export const verifyPaystackPayment=onCall(options,async request=>settle(String(r
 async function syncSubscription(code:string){
  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Invalid subscription');
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
- const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planFor(interval);
- if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR')throw new Error('Subscription mismatch');
+ const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const promo=s.plan?.plan_code===monthlyPromo.value()?'monthly_launch':s.plan?.plan_code===annualPromo.value()?'annual_launch':null;
+ const plan=promo?{interval:interval as 'annual'|'monthly',amount:promo==='monthly_launch'?9900:99000,currency:'ZAR',planCode:String(s.plan.plan_code),domain:mode(),offer:promo,invoiceLimit:promo==='monthly_launch'?2:1}:{...planFor(interval),offer:null as string|null,invoiceLimit:0};
+ if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(promo&&Number(s.invoice_limit)!==plan.invoiceLimit))throw new Error('Subscription mismatch');
  const subscriptionRef=db().doc(`paystackSubscriptions/${code}`);
  const existing=(await subscriptionRef.get()).data();
  // Introductory subscriptions are verified against their own original charge
  // and agreement. Never reinterpret them as a standard subscription.
- if(existing?.offer==='annual_launch')
+ if(existing?.offer==='annual_launch'&&existing?.renewalSetup)
   return {uid,remote:s,launchReconciliationRequired:true};
  await subscriptionRef.set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
  if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
