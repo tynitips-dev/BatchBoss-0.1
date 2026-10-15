@@ -61,10 +61,10 @@ export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
  const user=await getAuth().getUser(uid);
  if(!user.customClaims?.admin && !(user.emailVerified && adminEmail.value() && user.email?.toLowerCase()===adminEmail.value().toLowerCase()))throw new HttpsError('permission-denied','Only a BatchBoss administrator can verify billing plans.');
  const expected=[
-  {kind:'monthly_launch',code:monthlyPromo.value(),amount:9900,interval:'monthly'},
-  {kind:'annual_launch',code:annualPromo.value(),amount:99000,interval:'annually'},
-  {kind:'regular_monthly',code:monthly.value(),amount:14900,interval:'monthly'},
-  {kind:'regular_annual',code:annual.value(),amount:119900,interval:'annually'},
+  {kind:'monthly_launch',code:monthlyPromo.value(),amount:9900,interval:'monthly',invoiceLimit:2},
+  {kind:'annual_launch',code:annualPromo.value(),amount:99000,interval:'annually',invoiceLimit:1},
+  {kind:'regular_monthly',code:monthly.value(),amount:14900,interval:'monthly',invoiceLimit:null},
+  {kind:'regular_annual',code:annual.value(),amount:119900,interval:'annually',invoiceLimit:null},
  ];
  const domain=mode();
  const plans=[];
@@ -72,7 +72,7 @@ export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
   if(!/^PLN_[a-zA-Z0-9]+$/.test(item.code)){plans.push({kind:item.kind,valid:false,reason:'not_configured'});continue;}
   try{
    const info=await api('/plan/'+encodeURIComponent(item.code));
-   const valid=matchesConfiguredPaystackPlan(info,{code:item.code,amount:item.amount,interval:item.interval as 'monthly'|'annually',domain});
+   const valid=matchesConfiguredPaystackPlan(info,{code:item.code,amount:item.amount,interval:item.interval as 'monthly'|'annually',domain})&&(item.invoiceLimit===null||Number(info.invoice_limit)===item.invoiceLimit);
    plans.push({kind:item.kind,valid,reason:valid?'verified':'amount_interval_currency_or_mode_mismatch'});
   }catch{
    plans.push({kind:item.kind,valid:false,reason:'provider_lookup_failed'});
