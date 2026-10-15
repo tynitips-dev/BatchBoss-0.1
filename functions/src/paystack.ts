@@ -19,6 +19,9 @@ const adminEmail=defineString('ADMIN_EMAIL',{default:''});
 // Separate feature gate. Default false; no discounted transaction can start until QA is complete.
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
+// Restrict live promotional pilot to a single Firebase UID without opening public checkout.
+const promoPilotUid=defineString('PAYSTACK_PROMO_PILOT_UID',{default:''});
+function promoAllowed(uid:string,kind:'monthly_launch'|'annual_launch'){return mode()==='live'&&((kind==='monthly_launch'?monthlyLaunchEnabled.value():annualLaunchEnabled.value())==='true'||(promoPilotUid.value().length>=20&&uid===promoPilotUid.value()));}
 // The promotional codes are not yet used for checkout. They must be independently verified
 // against Paystack pricing and mode before the launch gates can be enabled.
 function promotionalPlanCodesConfigured(){return /^PLN_[a-zA-Z0-9]+$/.test(monthlyPromo.value()) && /^PLN_[a-zA-Z0-9]+$/.test(annualPromo.value());}
@@ -53,7 +56,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:annualLaunchEnabled.value()==='true'&&mode()==='live',firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:'R990 covers the first 12 months. Access expires unless you manually choose a new plan. No automatic upgrade to R1,199.',consentVersion:ANNUAL_LAUNCH.consentVersion}};});
+export const getPaystackPlans=onCall(options,async request=>{const uid=uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,promoPlanCodesConfigured:promotionalPlanCodesConfigured(),annualLaunchOffer:{enabled:promoAllowed(uid,'annual_launch'),firstYear:ANNUAL_LAUNCH.firstYearCents/100,renewal:ANNUAL_LAUNCH.recurringYearCents/100,terms:'R990 covers the first 12 months. Access expires unless you manually choose a new plan. No automatic upgrade to R1,199.',consentVersion:ANNUAL_LAUNCH.consentVersion}};});
 // Read-only verification of configured Paystack plan values and API mode.
 // No subscription is created and no promotional feature is enabled.
 export const verifyPromotionalPaystackPlans=onCall(options,async request=>{
@@ -133,8 +136,8 @@ export const createAnnualLaunchCheckout=onCall(options,async request=>{
 });
 // This quote only describes the promotion; it never creates a payment.
 export const getMonthlyLaunchQuote=onCall(options,async request=>{
- uidOf(request);
- return {enabled:enabled.value()==='true'&&monthlyLaunchEnabled.value()==='true'&&mode()==='live',offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
+ const uid=uidOf(request);
+ return {enabled:enabled.value()==='true'&&promoAllowed(uid,'monthly_launch'),offer:'monthly_launch',introductory:MONTHLY_LAUNCH.introductoryCents/100,
  regular:MONTHLY_LAUNCH.regularCents/100,terms:'R99 per month for a maximum of two payments. The promotional subscription stops afterward. Renew at R149 only if you choose to.',
  consentVersion:MONTHLY_LAUNCH.consentVersion,offerEndsLocal:MONTHLY_LAUNCH.offerEndsLocal,
  pricingPreviewCents:monthlyChargeCents(new Date())};
@@ -145,7 +148,7 @@ async function createCheckout(request:any){
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const requestedPlan=String(request.data?.plan);
  const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
- if(promotional&&(requestedPlan==='monthly_launch'?monthlyLaunchEnabled.value():annualLaunchEnabled.value())!=='true')throw new HttpsError('failed-precondition','Launch checkout is not enabled.');
+ if(promotional&&!promoAllowed(uid,requestedPlan as 'monthly_launch'|'annual_launch'))throw new HttpsError('failed-precondition','Launch checkout is not enabled for this account.');
  if(promotional&&!request.data?.renewalConsent?.accepted)throw new HttpsError('invalid-argument','Please accept the promotional terms.');
  const plan=promotional?{interval:(requestedPlan==='annual_launch'?'annual':'monthly') as 'annual'|'monthly',amount:requestedPlan==='annual_launch'?99000:9900,currency:'ZAR',planCode:requestedPlan==='annual_launch'?annualPromo.value():monthlyPromo.value(),domain:mode(),offer:requestedPlan,invoiceLimit:requestedPlan==='annual_launch'?1:2}:{...planFor(requestedPlan),offer:null as string|null,invoiceLimit:0};
  if(!/^PLN_[a-zA-Z0-9]+$/.test(plan.planCode))throw new HttpsError('failed-precondition','Promotional plan is missing.');
