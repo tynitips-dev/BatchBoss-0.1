@@ -14,6 +14,7 @@ import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, 
 import SubscriptionView from './SubscriptionView'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
+import { extractRecipePdf } from './recipePdfImport'
 import * as XLSX from 'xlsx'
 
 type ModuleDefinition = { key: ModuleKey; label: string; icon: typeof BookOpen; collection?: string; pro?: boolean }
@@ -506,6 +507,28 @@ function BulkListImporter({bakeryId,collectionName,label,onClose}:{bakeryId:stri
 
 function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
   const [rows, setRows] = useState<IngredientRow[]>([{ name: '', quantity: 0, unit: 'g', cost: 0 }])
+  const [importName, setImportName] = useState<string | null>(null)
+  const [importInstructions, setImportInstructions] = useState<string | null>(null)
+  const [importError, setImportError] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+  async function importPdf(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setImportBusy(true)
+    setImportError('')
+    try {
+      const imported = await extractRecipePdf(file)
+      if (!window.confirm(`Import ${imported.ingredients.length} ingredient lines from ${file.name}? Review every quantity and cost before saving.`)) return
+      setRows(imported.ingredients)
+      setImportName(imported.name)
+      setImportInstructions(imported.instructions)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Could not read this PDF.')
+    } finally {
+      setImportBusy(false)
+      event.target.value = ''
+    }
+  }
   const [inventory, setInventory] = useState<WorkspaceItem[]>([])
   const [laborHours, setLaborHours] = useState(Number(item?.laborHours || 1.5))
   const [laborRate, setLaborRate] = useState(Number(item?.laborRatePerHour || 120))
@@ -541,7 +564,15 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     }))
 
   return <Modal title={`${item ? 'Edit' : 'Create new'} recipe`} onClose={onClose}><form className="modal-form recipe-form" onSubmit={onSave}>
-    <label>Recipe name<input name="name" defaultValue={String(item?.name || '')} placeholder="e.g. Vanilla Cupcakes" required /></label>
+    <section className="content-card">
+      <h3>Import recipe from PDF</h3>
+      <p>Upload a text-based PDF (up to 10 MB, 30 pages). Review all extracted values before saving. Scanned PDFs are not supported yet.</p>
+      <label>Choose recipe PDF<input type="file" accept=".pdf,application/pdf" onChange={importPdf} disabled={importBusy} /></label>
+      {importBusy && <p role="status">Reading recipe PDF…</p>}
+      {importError && <p role="alert">{importError}</p>}
+      {importName !== null && <p role="status">Recipe imported for review. Confirm ingredient names, quantities, prices and instructions before saving.</p>}
+    </section>
+    <label>Recipe name<input name="name" key={importName ?? "original"} defaultValue={importName ?? String(item?.name || '')} placeholder="e.g. Vanilla Cupcakes" required /></label>
     <label>Category<select name="category" defaultValue={String(item?.category || 'Cupcakes')}><option>Cupcakes</option><option>Cakes</option><option>Cookies</option><option>Breads</option><option>Pastries</option><option>Other</option></select></label>
     <label>Description<textarea name="description" rows={3} defaultValue={String(item?.description || '')} /></label>
     <div className="split-fields"><label>Servings<input name="servings" type="number" min="1" defaultValue={Number(item?.servings || 1)} /></label><label>Batch size<input name="batchSize" type="number" min="1" value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} /></label></div>
