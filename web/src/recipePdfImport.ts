@@ -48,7 +48,7 @@ export async function extractRecipePdf(file: File): Promise<ImportedRecipe> {
   let section: 'other' | 'ingredients' | 'method' = 'other'
   const ingredients: ImportedRecipe['ingredients'] = []
   const instructions: string[] = []
-  const pattern = /^(?:[-•*]\s*)?(?:(\d+(?:[.,]\d+)?|\d+\/\d+)\s*)(kg|grams?|g|ml|l|litres?|liters?|tsp|teaspoons?|tbsp|tablespoons?|cups?|eggs?|pieces?|pcs)?\s+(?:of\s+)?(.+)$/i
+  const pattern = /^(?:[-•*]\s*)?(?:(\d+(?:[.,]\d+)?|\d+\/\d+|[¼½¾⅓⅔⅛⅜⅝⅞])\s*)(kg|grams?|g|ml|l|litres?|liters?|tsp|teaspoons?|tbsp|tablespoons?|cups?|eggs?|pieces?|pcs)?\s+(?:of\s+)?(.+)$/i
   for (const line of clean) {
     if (ingredientHeading.test(line)) { section = 'ingredients'; continue }
     if (methodHeading.test(line)) { section = 'method'; continue }
