@@ -511,6 +511,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
   const [importInstructions, setImportInstructions] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
   const [importBusy, setImportBusy] = useState(false)
+  const [needsImportedCostRefresh, setNeedsImportedCostRefresh] = useState(false)
   async function importPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -520,6 +521,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
       const imported = await extractRecipePdf(file)
       if (!window.confirm(`Import ${imported.ingredients.length} ingredient lines from ${file.name}? Review every quantity and cost before saving.`)) return
       setRows(imported.ingredients.map(row => ({ ...row, cost: calculateIngredientUsageCost(row, inventory) ?? 0 })))
+      setNeedsImportedCostRefresh(true)
       setImportName(imported.name)
       setImportInstructions(imported.instructions)
     } catch (error) {
@@ -549,6 +551,12 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     })
   }, [bakeryId, item])
 
+  useEffect(() => {
+    if (!needsImportedCostRefresh || !inventory.length) return
+    setRows(current => current.map(row => ({...row, cost: calculateIngredientUsageCost(row, inventory) ?? 0})))
+    setNeedsImportedCostRefresh(false)
+  }, [inventory, needsImportedCostRefresh])
+
   const ingredientsCost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0)
   const labourCost = laborHours * laborRate
   const totalBatchCost = ingredientsCost + labourCost + overheads + utilities + packaging
@@ -560,7 +568,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
       const shouldCalculate = 'name' in patch || 'quantity' in patch || 'unit' in patch
       if (!shouldCalculate) return updatedRow
       const calculatedCost = calculateIngredientUsageCost(updatedRow, inventory)
-      return calculatedCost === null ? updatedRow : { ...updatedRow, cost: calculatedCost }
+      return { ...updatedRow, cost: calculatedCost ?? 0 }
     }))
 
   return <Modal title={`${item ? 'Edit' : 'Create new'} recipe`} onClose={onClose}><form className="modal-form recipe-form" onSubmit={onSave}>
@@ -570,7 +578,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
       <label>Choose recipe PDF<input type="file" accept=".pdf,application/pdf" onChange={importPdf} disabled={importBusy} /></label>
       {importBusy && <p role="status">Reading recipe PDF…</p>}
       {importError && <p role="alert">{importError}</p>}
-      {importName !== null && <p role="status">Recipe imported for review. Confirm ingredient names, quantities, prices and instructions before saving.</p>}
+      {importName !== null && <p role="status">Recipe imported for review. Confirm ingredient names, quantities, prices and instructions before saving.</p>}{importName !== null && <p className="warning-note">Costs display as R0.00 when ingredients have no saved inventory price or require a mass-to-volume conversion. Check each ingredient, especially cups, before saving.</p>}
     </section>
     <label>Recipe name<input name="name" key={importName ?? "original"} defaultValue={importName ?? String(item?.name || '')} placeholder="e.g. Vanilla Cupcakes" required /></label>
     <label>Category<select name="category" defaultValue={String(item?.category || 'Cupcakes')}><option>Cupcakes</option><option>Cakes</option><option>Cookies</option><option>Breads</option><option>Pastries</option><option>Other</option></select></label>
@@ -578,7 +586,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     <label>Method / instructions<textarea name="instructions" rows={5} key={importInstructions ?? "original"} defaultValue={importInstructions ?? String(item?.instructions || '')} placeholder="Preparation steps and baking instructions" /></label>
     <div className="split-fields"><label>Servings<input name="servings" type="number" min="1" defaultValue={Number(item?.servings || 1)} /></label><label>Batch size<input name="batchSize" type="number" min="1" value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} /></label></div>
     <section className="costing-panel"><div className="mini-heading"><div><h3>Operations, Overheads & Labour</h3><p>Configure complete batch-costing details.</p></div><span>Fully editable</span></div><div className="cost-grid"><label>Labour hours<input name="laborHours" type="number" min="0" step="0.25" value={laborHours} onChange={event => setLaborHours(Number(event.target.value))} /></label><label>Rate/hour<input name="laborRatePerHour" type="number" min="0" step="0.01" value={laborRate} onChange={event => setLaborRate(Number(event.target.value))} /></label><label>Overheads cost<input name="overheadsCost" type="number" min="0" step="0.01" value={overheads} onChange={event => setOverheads(Number(event.target.value))} /></label><label>Utilities cost<input name="utilitiesCost" type="number" min="0" step="0.01" value={utilities} onChange={event => setUtilities(Number(event.target.value))} /></label><label>Packaging cost<input name="packagingCost" type="number" min="0" step="0.01" value={packaging} onChange={event => setPackaging(Number(event.target.value))} /></label><label>Profit margin %<input name="profitMarginPercent" type="number" min="0" step="0.1" defaultValue={Number(item?.profitMarginPercent || 40)} /></label></div><p className="calculated-line">Calculated labour cost <strong>{money.format(labourCost)}</strong></p></section>
-    <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Add quantities in g, kg, ml, L, tsp, tbsp or units.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="0.01" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option>tsp</option><option>tbsp</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="0.01" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
+    <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Add quantities in g, kg, ml, L, tsp, tbsp or units.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="0.01" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option>tsp</option><option>tbsp</option><option>cup</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="0.01" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
     <section className="cost-summary"><div><span>Ingredients cost</span><strong>{money.format(ingredientsCost)}</strong></div><div><span>Operations & labour</span><strong>{money.format(labourCost)}</strong></div><div><span>Overheads</span><strong>{money.format(overheads)}</strong></div><div><span>Utilities</span><strong>{money.format(utilities)}</strong></div><div><span>Packaging</span><strong>{money.format(packaging)}</strong></div><div className="summary-total"><span>Total batch cost</span><strong>{money.format(totalBatchCost)}</strong></div><div><span>Cost per unit ({batchSize} units)</span><strong>{money.format(costPerUnit)}</strong></div></section>
     <button className="primary-button">Save recipe</button>
   </form></Modal>
