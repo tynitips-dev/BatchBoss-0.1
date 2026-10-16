@@ -1,6 +1,24 @@
 export type IngredientUsage={name:string;quantity:number;unit:string;cost:number}
 type StockItem=Record<string,unknown>
 const norm=(s:unknown)=>String(s??'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')
+// Only use conservative aliases. A generic "flour" stock item can price cake
+// flour, but never substitute self-raising, bread, almond or gluten-free flour.
+const aliases:Record<string,string>={
+ 'cake flour':'flour','plain flour':'flour','all purpose flour':'flour',
+ 'white cake flour':'flour','white flour':'flour',
+ 'castor sugar':'caster sugar','confectioners sugar':'icing sugar',
+ 'powdered sugar':'icing sugar','bicarbonate of soda':'baking soda'
+}
+const canonical=(name:unknown)=>aliases[norm(name)]||norm(name)
+export function findMatchingStock(name:string, inventory:StockItem[]):StockItem|null{
+ const wanted=norm(name)
+ const active=inventory.filter(item=>!item.archived)
+ const exact=active.filter(item=>norm(item.name)===wanted)
+ if(exact.length===1)return exact[0]
+ if(exact.length>1)return null
+ const matched=active.filter(item=>canonical(item.name)===canonical(name))
+ return matched.length===1?matched[0]:null
+}
 const qty=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)&&n>0?n:0}
 const baseUnit=(s:unknown)=>{
  const x=String(s??'').trim().toLowerCase()
@@ -21,8 +39,7 @@ const toBase=(quantity:number,unit:string)=>quantity*({kg:1000,L:1000,tsp:5,tbsp
  * conversions from volume to mass (e.g. flour cups to grams).
  */
 export function calculateIngredientUsageCost(row:IngredientUsage,inventory:StockItem[]):number|null{
- const name=norm(row.name)
- const stock=inventory.find(item=>norm(item.name)===name&&!item.archived)
+ const stock=findMatchingStock(row.name,inventory)
  if(!stock||qty(row.quantity)===0)return null
  const stockUnit=baseUnit(stock.unit||'unit'),recipeUnit=baseUnit(row.unit)
  if(dimension(stockUnit)!==dimension(recipeUnit)||dimension(stockUnit)==='unknown')return null
