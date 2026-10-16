@@ -321,8 +321,50 @@ function Dashboard({ profile }: { profile: UserProfile }) {
   }
 
   async function removeItem(item: WorkspaceItem) {
-    if (!selectedModule.collection || !window.confirm(`Delete ${item.name || item.title || 'this item'}?`)) return
-    await deleteDoc(doc(db, 'bakeries', profile.bakeryId, selectedModule.collection, item.id))
+    if (!selectedModule.collection || !window.confirm(`Permanently delete ${item.name || item.title || 'this item'}? This cannot be undone.`)) return
+    try {
+      // Recipe ingredient lines are stored as subcollection documents and must be
+      // removed explicitly; Firestore does not cascade deletion to subcollections.
+      if (selectedModule.collection === 'recipes') {
+        const lines = await getDocs(collection(db, 'bakeries', profile.bakeryId, 'recipes', item.id, 'ingredients'))
+        for (const ingredientLine of lines.docs) await deleteDoc(ingredientLine.ref)
+      }
+      await deleteDoc(doc(db, 'bakeries', profile.bakeryId, selectedModule.collection, item.id))
+    } catch {
+      window.alert('This item could not be deleted. Please retry or contact support.')
+    }
+  }
+
+  const [resettingBakeryData, setResettingBakeryData] = useState(false)
+  async function resetBakeryCostingData() {
+    if (profile.role !== 'owner' || resettingBakeryData) return
+    if (!window.confirm('Permanently delete ALL recipes, their ingredient lines, stock/ingredients and packaging from YOUR bakery? Orders, invoices, customers, account and subscription will be preserved. This cannot be undone.')) return
+    if (window.prompt('Type DELETE to confirm permanently clearing your bakery recipes, ingredients and packaging:') !== 'DELETE') return
+    setResettingBakeryData(true)
+    try {
+      const paths = ['recipes', 'inventory', 'packaging'] as const
+      const documents: Array<ReturnType<typeof doc>> = []
+      for (const path of paths) {
+        const snapshot = await getDocs(collection(db, 'bakeries', profile.bakeryId, path))
+        for (const record of snapshot.docs) {
+          if (path === 'recipes') {
+            const lines = await getDocs(collection(db, 'bakeries', profile.bakeryId, 'recipes', record.id, 'ingredients'))
+            for (const line of lines.docs) documents.push(line.ref)
+          }
+          documents.push(record.ref)
+        }
+      }
+      for (let index = 0; index < documents.length; index += 400) {
+        const batch = writeBatch(db)
+        for (const reference of documents.slice(index, index + 400)) batch.delete(reference)
+        await batch.commit()
+      }
+      window.alert('Bakery recipes, ingredients, and packaging were permanently cleared.')
+    } catch {
+      window.alert('Reset did not fully complete. Some records may already be deleted. Please check your lists before trying again.')
+    } finally {
+      setResettingBakeryData(false)
+    }
   }
 
   return <div className="dashboard-shell">
@@ -348,6 +390,13 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {active === 'tools' && <BakeryTools bakeryId={profile.bakeryId} recipes={items.recipes || []} />}
       {active === 'documents' && <DocumentsView onOpen={setActive} />}
       {active === 'settings' && <SettingsView profile={profile} />}
+      {active === 'settings' && profile.role === 'owner' && <section className="content-card" aria-label="Reset bakery costing data">
+        <h2>Reset bakery costing data</h2>
+        <p>Permanently delete all recipes, their ingredient lines, ingredients/stock and packaging for this bakery only. Your customers, orders, invoices, subscription and login remain unchanged.</p>
+        <button className="danger-link" type="button" disabled={resettingBakeryData} onClick={resetBakeryCostingData}>
+          <Trash2 size={18} /> {resettingBakeryData ? 'Deleting bakery data…' : 'Reset recipes, ingredients & packaging'}
+        </button>
+      </section>}
       {active === 'products' && isPro && <ProductsView bakeryId={profile.bakeryId} items={items.products || []} />}
       {active === 'invoices' && isPro && <InvoicesView bakeryId={profile.bakeryId} invoices={items.invoices || []} products={items.products || []} packaging={items.packaging || []} />}
       {active === 'quotes' && isPro && <QuotesView bakeryId={profile.bakeryId} quotes={items.quotes || []} products={items.products || []} />}
