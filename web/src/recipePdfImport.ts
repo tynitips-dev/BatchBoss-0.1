@@ -12,7 +12,7 @@ export type ImportedRecipe = {
 const unitMap: Record<string, string> = {
   g: 'g', gram: 'g', grams: 'g', kg: 'kg', ml: 'ml', l: 'L', litre: 'L', liter: 'L',
   tsp: 'tsp', teaspoon: 'tsp', tbsp: 'tbsp', tablespoon: 'tbsp',
-  cup: 'unit', cups: 'unit', egg: 'unit', eggs: 'unit', pcs: 'unit', pieces: 'unit'
+  cup: 'cup', cups: 'cup', egg: 'unit', eggs: 'unit', pcs: 'unit', pieces: 'unit'
 }
 const headings = /^(ingredients?|method|directions|instructions?|steps?|preparation|recipe|yield|servings?)\s*:?$/i
 const ingredientHeading = /^ingredients?\s*:?$/i
@@ -56,7 +56,7 @@ export async function extractRecipePdf(file: File): Promise<ImportedRecipe> {
     if (section !== 'ingredients') continue
     const match = line.match(pattern)
     if (!match) continue
-    const raw = match[1]; const quantity = raw.includes('/') ? Number(raw.split('/')[0]) / Number(raw.split('/')[1]) : Number(raw.replace(',', '.'))
+    const raw = match[1]; const fractions: Record<string,number> = {'¼':0.25,'½':0.5,'¾':0.75,'⅓':1/3,'⅔':2/3,'⅛':0.125,'⅜':0.375,'⅝':0.625,'⅞':0.875}; const quantity = fractions[raw] ?? (raw.includes('/') ? Number(raw.split('/')[0]) / Number(raw.split('/')[1]) : Number(raw.replace(',', '.')))
     if (!Number.isFinite(quantity) || quantity <= 0) continue
     const unit = unitMap[(match[2] || '').toLowerCase()] || 'unit'
     ingredients.push({ name: match[3].trim(), quantity, unit, cost: 0 })
