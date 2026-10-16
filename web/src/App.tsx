@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen, Boxes, CalendarDays, ChevronRight, ClipboardList,
   Download, Edit3, Eye, FileCheck2, Gauge, LogOut, Mail, Menu, Package, Plus, Receipt,
@@ -511,7 +511,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
   const [importInstructions, setImportInstructions] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
   const [importBusy, setImportBusy] = useState(false)
-  async function importPdf(event: React.ChangeEvent<HTMLInputElement>) {
+  async function importPdf(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
     setImportBusy(true)
@@ -519,7 +519,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     try {
       const imported = await extractRecipePdf(file)
       if (!window.confirm(`Import ${imported.ingredients.length} ingredient lines from ${file.name}? Review every quantity and cost before saving.`)) return
-      setRows(imported.ingredients)
+      setRows(imported.ingredients.map(row => ({ ...row, cost: calculateIngredientUsageCost(row, inventory) ?? 0 })))
       setImportName(imported.name)
       setImportInstructions(imported.instructions)
     } catch (error) {
