@@ -16,6 +16,7 @@ import SetupGuide from './SetupGuide'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
 import { priceRecipe, sampleRecipeCosts } from './recipe-pricing'
+import { applianceElectricityCost, allocatedOverhead } from './recipe-expenses'
 import { extractRecipePdf } from './recipePdfImport'
 import * as XLSX from 'xlsx'
 
@@ -551,6 +552,18 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
   const [batchSize, setBatchSize] = useState(Number(item?.batchSize || 1))
   const [servingsPerUnit, setServingsPerUnit] = useState(Number(item?.servings ?? 1))
   const [profitMargin, setProfitMargin] = useState(Number(item?.profitMarginPercent ?? 40))
+  const [applianceWatts,setApplianceWatts]=useState(2000)
+  const [applianceHours,setApplianceHours]=useState(1)
+  const [electricityRate,setElectricityRate]=useState(3.5)
+  const [dutyPercent,setDutyPercent]=useState(100)
+  const [waterCost,setWaterCost]=useState(0)
+  const [monthlyOverheads,setMonthlyOverheads]=useState(1500)
+  const [monthlyProductionHours,setMonthlyProductionHours]=useState(100)
+  const [batchProductionHours,setBatchProductionHours]=useState(2)
+  const electricityEstimate=applianceElectricityCost(applianceWatts,applianceHours,electricityRate,dutyPercent)
+  const utilitiesEstimate=electricityEstimate+Math.max(0,waterCost)
+  const overheadEstimate=allocatedOverhead(monthlyOverheads,monthlyProductionHours,batchProductionHours)
+
 
   useEffect(() => onSnapshot(collection(db, 'bakeries', bakeryId, 'inventory'), snapshot => {
     setInventory(snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() })))
@@ -599,6 +612,29 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     <div className="split-fields"><label>Servings<input name="servings" type="number" min="1" value={servingsPerUnit} onChange={event => setServingsPerUnit(Number(event.target.value))} /></label><label>Batch size<input name="batchSize" type="number" min="1" value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} /></label></div>
     <section className="costing-panel"><div className="mini-heading"><div><h3>Operations, Overheads & Labour</h3><p>Configure complete batch-costing details.</p></div><span>Fully editable</span></div><div className="cost-grid"><label>Labour hours<input name="laborHours" type="number" min="0" step="0.25" value={laborHours} onChange={event => setLaborHours(Number(event.target.value))} /></label><label>Rate/hour<input name="laborRatePerHour" type="number" min="0" step="0.01" value={laborRate} onChange={event => setLaborRate(Number(event.target.value))} /></label><label>Overheads cost<input name="overheadsCost" type="number" min="0" step="0.01" value={overheads} onChange={event => setOverheads(Number(event.target.value))} /></label><label>Utilities cost<input name="utilitiesCost" type="number" min="0" step="0.01" value={utilities} onChange={event => setUtilities(Number(event.target.value))} /></label><label>Packaging cost<input name="packagingCost" type="number" min="0" step="0.01" value={packaging} onChange={event => setPackaging(Number(event.target.value))} /></label><label>Profit margin %<input name="profitMarginPercent" type="number" min="0" max="99.9" step="0.1" value={profitMargin} onChange={event=>setProfitMargin(Number(event.target.value))} /></label></div><p className="calculated-line">Calculated labour cost <strong>{money.format(labourCost)}</strong></p></section>
     <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Use g, kg, ml, L, tsp or tablespoon. Equivalent saved ingredients, such as cake flour and flour, can match automatically.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="0.01" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option value="tsp">tsp (teaspoon)</option><option value="tbsp">tablespoon</option><option>cup</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="0.01" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
+    <details className="content-card"><summary><strong>Calculate utilities & overheads</strong> · electricity, water and shared business costs</summary>
+      <p>Use estimates from your appliance label and bills. Apply the result to the recipe using the buttons below. Your existing saved amounts are not changed until you apply and save.</p>
+      <h4>Electricity & water per batch</h4>
+      <div className="cost-grid">
+        <label>Appliance power (watts)<input type="number" min="0" step="1" value={applianceWatts} onChange={e=>setApplianceWatts(Number(e.target.value))}/></label>
+        <label>Hours used<input type="number" min="0" step="0.1" value={applianceHours} onChange={e=>setApplianceHours(Number(e.target.value))}/></label>
+        <label>Electricity tariff (R/kWh)<input type="number" min="0" step="0.01" value={electricityRate} onChange={e=>setElectricityRate(Number(e.target.value))}/></label>
+        <label>Average power usage (%)<input type="number" min="0" max="100" step="1" value={dutyPercent} onChange={e=>setDutyPercent(Number(e.target.value))}/></label>
+        <label>Water/other direct utility cost (R)<input type="number" min="0" step="0.01" value={waterCost} onChange={e=>setWaterCost(Number(e.target.value))}/></label>
+      </div>
+      <p><strong>Estimated utilities: {money.format(utilitiesEstimate)} per batch</strong></p>
+      <button className="outline-button" type="button" onClick={()=>setUtilities(Number(utilitiesEstimate.toFixed(2)))}>Use this utilities amount</button>
+      <h4>Monthly business overheads</h4>
+      <p>Add up rent, insurance, admin, equipment depreciation and other indirect expenses per month. Do not include electricity already calculated above, ingredients, packaging or direct labour.</p>
+      <div className="cost-grid">
+        <label>Monthly indirect expenses (R)<input type="number" min="0" step="0.01" value={monthlyOverheads} onChange={e=>setMonthlyOverheads(Number(e.target.value))}/></label>
+        <label>Monthly productive baking hours<input type="number" min="0.01" step="0.1" value={monthlyProductionHours} onChange={e=>setMonthlyProductionHours(Number(e.target.value))}/></label>
+        <label>Hours allocated to this batch<input type="number" min="0" step="0.1" value={batchProductionHours} onChange={e=>setBatchProductionHours(Number(e.target.value))}/></label>
+      </div>
+      <p><strong>Estimated overheads: {overheadEstimate===null?'Enter monthly hours above zero':money.format(overheadEstimate)} per batch</strong></p>
+      <button className="outline-button" type="button" disabled={overheadEstimate===null} onClick={()=>{if(overheadEstimate!==null)setOverheads(Number(overheadEstimate.toFixed(2)))}}>Use this overhead amount</button>
+      <p className="setup-hint">Estimates cover one batch. If multiple recipes share the oven simultaneously, allocate electricity between batches to avoid double-counting.</p>
+    </details>
     <section className="cost-summary"><div><span>Ingredients cost</span><strong>{money.format(ingredientsCost)}</strong></div><div><span>Operations & labour</span><strong>{money.format(labourCost)}</strong></div><div><span>Overheads</span><strong>{money.format(overheads)}</strong></div><div><span>Utilities</span><strong>{money.format(utilities)}</strong></div><div><span>Packaging</span><strong>{money.format(packaging)}</strong></div><div className="summary-total"><span>Total batch cost</span><strong>{money.format(totalBatchCost)}</strong></div><div><span>Cost per unit ({batchSize} units)</span><strong>{costPerUnit===null?'Enter batch size':money.format(costPerUnit)}</strong></div><div><span>Cost per serving ({servingsPerUnit} servings per unit)</span><strong>{pricing.perServing===null?'Enter servings above zero':money.format(pricing.perServing)}</strong></div><div><span>Suggested selling price per unit ({profitMargin}% margin)</span><strong>{pricing.sellingUnit===null?'Check batch size and margin':money.format(pricing.sellingUnit)}</strong></div><div><span>Suggested selling price per batch</span><strong>{pricing.sellingBatch===null?'Check margin':money.format(pricing.sellingBatch)}</strong></div><small>Gross margin means profit as a percentage of selling price. Suggested prices are estimates before rounding and taxes.</small></section>
     <details className="content-card"><summary><strong>3 recipe costing examples</strong> · view calculations</summary><p>Illustrative costs only, not your saved inventory prices. These examples don't add recipes to your account.</p><div className="tools-grid">{sampleRecipeCosts.map(example=>{const result=priceRecipe(example);return <article className="modal-form" key={example.name}><h4>{example.name}</h4><p>Ingredients: {money.format(result.ingredients)} · Labour: {money.format(result.labour)}</p><p>Overheads: {money.format(result.overheads)} · Utilities: {money.format(result.utilities)} · Packaging: {money.format(result.packaging)}</p><p><strong>Batch cost: {money.format(result.total)}</strong></p><p>Cost each: {money.format(result.perUnit??0)} · Cost per serving: {money.format(result.perServing??0)}</p><p><strong>Sell each at {example.marginPercent}% margin: {money.format(result.sellingUnit??0)}</strong></p></article>})}</div></details>
     <button className="primary-button">Save recipe</button>
