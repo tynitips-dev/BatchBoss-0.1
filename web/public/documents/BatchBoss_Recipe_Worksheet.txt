@@ -1,0 +1,27 @@
+BATCHBOSS RECIPE WORKSHEET
+
+Recipe name:
+Category:
+Description:
+Servings / yield:
+Batch size:
+
+INGREDIENTS (repeat for each ingredient)
+Ingredient name:
+Quantity:
+Unit (g, kg, ml, L, tsp or tbsp):
+
+METHOD / INSTRUCTIONS
+1.
+2.
+3.
+
+COSTING NOTES
+Labour hours:
+Labour rate per hour (R):
+Packaging cost (R):
+Overheads (R):
+Utilities (R):
+Target profit margin (%):
+
+Use the Recipes tab to create your recipe. This worksheet is for planning only and cannot be uploaded directly. The in-app PDF importer accepts PDFs with selectable recipe text.
