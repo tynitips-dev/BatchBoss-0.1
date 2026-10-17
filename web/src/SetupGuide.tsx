@@ -37,7 +37,7 @@ export default function SetupGuide({profile,onOpen,active,suspended}:{profile:Us
   }catch{setError('Your guide progress could not be saved. Check your connection and try again.')}
   finally{setBusy(false)}
  }
- function openStep(){onOpen(step.target)}
+ function openStep(){setVisible(false);onOpen(step.target)}
  return <>
   <details className="setup-help"><summary>Help</summary><button className="outline-button" onClick={()=>{setVisible(true);setWelcome(false)}}>Setup guide</button></details>
   <dialog ref={dialog} className="setup-welcome" onCancel={event=>{event.preventDefault();if(!busy)void persist({...progress,status:'skipped'},false)}}>
