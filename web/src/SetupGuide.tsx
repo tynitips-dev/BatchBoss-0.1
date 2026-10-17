@@ -1,59 +1,58 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import type { ModuleKey, UserProfile } from './types'
 import './setup-guide.css'
 
-const steps: {title:string; text:string; target:ModuleKey; action:string; selector:string}[] = [
- {title:'Make BatchBoss yours',text:'Add your business name, logo and contact details, then select Save business information. Your logo is optional.',target:'settings',action:'Open business settings',selector:'.business-form'},
- {title:'Add your ingredients',text:'Choose Add ingredient. Enter the pack price and pack size, for example R30 for 1 kg of flour, then save. Use your own prices.',target:'ingredients',action:'Open ingredients',selector:'.card-actions .primary-button'},
- {title:'Create your first recipe',text:'Choose Add recipe. Enter a recipe or import a text-based PDF, then review each ingredient, quantity and unit before saving. Cake flour can match flour in your stock.',target:'recipes',action:'Open recipes',selector:'.card-actions .primary-button'},
- {title:'Check your selling price',text:'Open your saved recipe using Edit. Review labour, packaging, overheads and profit margin, then save. Check the calculated cost before deciding what to charge.',target:'recipes',action:'Open recipes to edit',selector:'.content-card'},
- {title:'Add your first customer',text:'Add a customer’s name and contact details and save. You can skip this step until you receive your first order.',target:'customers',action:'Open customers',selector:'.customers-view, .app-section'},
- {title:'Ready for your next bake',text:'Use Orders to organise your work. Quotes, invoices and receipts are Pro features; you can keep using the free costing tools without upgrading.',target:'orders',action:'Explore orders',selector:'.app-section, .content-card'},
+const steps: {title:string; text:string; target:ModuleKey; icon:string}[] = [
+ {title:'Business details',text:'Add your bakery name, logo and contact details.',target:'settings',icon:'🏠'},
+ {title:'Ingredients',text:'Save your ingredients, pack sizes and prices.',target:'ingredients',icon:'🥣'},
+ {title:'First recipe',text:'Create a recipe and list its ingredients.',target:'recipes',icon:'🧁'},
+ {title:'Selling price',text:'Check labour, packaging, costs and profit margin.',target:'recipes',icon:'💰'},
+ {title:'Customers',text:'Add your first customer and contact details.',target:'customers',icon:'👥'},
+ {title:'Orders',text:'Explore how to organise your baking orders.',target:'orders',icon:'📋'},
 ]
-type Progress={step:number;status:'active'|'skipped'|'complete'}
+type Progress={step:number;status:'active'|'skipped'|'complete';completed?:number[]}
+function completedFrom(progress:Progress | undefined):number[]{
+ if(Array.isArray(progress?.completed))return progress.completed.filter((n):n is number=>Number.isInteger(n)&&n>=0&&n<steps.length)
+ if(!progress)return []
+ if(progress.status==='complete')return steps.map((_,i)=>i)
+ return Array.from({length:Math.max(0,Math.min(steps.length,Number(progress.step)||0))},(_,i)=>i)
+}
 export default function SetupGuide({profile,onOpen,active,suspended}:{profile:UserProfile;onOpen:(key:ModuleKey)=>void;active:ModuleKey;suspended:boolean}) {
  const stored=profile.setupGuide as Progress|undefined
- const [progress,setProgress]=useState<Progress>(()=>({step:Math.min(5,Math.max(0,Number(stored?.step)||0)),status:stored?.status||'active'}))
- const [visible,setVisible]=useState(stored?.status==='active')
- const [welcome,setWelcome]=useState(!stored && !new URLSearchParams(location.search).has('payment'))
+ const [completed,setCompleted]=useState<number[]>(()=>completedFrom(stored))
+ const [visible,setVisible]=useState(!stored || stored.status==='active')
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
- const dialog=useRef<HTMLDialogElement>(null)
- const step=steps[progress.step]
- useEffect(()=>{if(welcome)dialog.current?.showModal();else dialog.current?.close()},[welcome])
- useEffect(()=>{
-  if(!visible||suspended||active!==step.target)return
-  const target=document.querySelector(step.selector)
-  target?.classList.add('setup-highlight')
-  return ()=>target?.classList.remove('setup-highlight')
- },[visible,suspended,active,step])
- async function persist(next:Progress,show:boolean){
+ const remaining=steps.length-completed.length
+ async function save(done:number[],show:boolean,status:'active'|'skipped'|'complete'){
   setBusy(true);setError('')
   try{
-   await updateDoc(doc(db,'users',profile.uid),{setupGuide:next})
-   setProgress(next);setVisible(show);setWelcome(false)
-  }catch{setError('Your guide progress could not be saved. Check your connection and try again.')}
+   await updateDoc(doc(db,'users',profile.uid),{setupGuide:{step:done.length,completed:done,status}})
+   setCompleted(done);setVisible(show)
+  }catch{setError('Could not save your setup progress. Try again.')}
   finally{setBusy(false)}
  }
- function openStep(){setVisible(false);onOpen(step.target)}
+ function openStep(index:number){setVisible(false);onOpen(steps[index].target)}
  return <>
-  <details className="setup-help"><summary>Help</summary><button className="outline-button" onClick={()=>{setVisible(true);setWelcome(false)}}>Setup guide</button></details>
-  <dialog ref={dialog} className="setup-welcome" onCancel={event=>{event.preventDefault();if(!busy)void persist({...progress,status:'skipped'},false)}}>
-   <span className="brand-mark">B</span><p className="eyebrow">Welcome to BatchBoss</p><h2>Let’s set up your bakery</h2>
-   <p>Six simple steps, using your own business details and recipes. Take your time—you can return through Help → Setup guide.</p>
-   {error&&<p role="alert">{error}</p>}
-   <div className="setup-actions"><button className="primary-button" disabled={busy} onClick={()=>void persist({step:0,status:'active'},true)}>Let’s get started</button><button className="outline-button" disabled={busy} onClick={()=>void persist({step:0,status:'skipped'},false)}>Skip for now</button></div>
-  </dialog>
+  <div className="setup-help"><button type="button" className="outline-button" onClick={()=>setVisible(v=>!v)}>{visible?'Hide bakery setup':'Your bakery setup'}{remaining>0?` · ${remaining} to go`:' · Complete'}</button></div>
   {visible&&!suspended&&<section className="setup-guide" aria-labelledby="setup-title">
-   <p className="eyebrow">Your bakery setup · Step {progress.step+1} of {steps.length}</p>
-   <progress max={steps.length} value={progress.step+1} aria-label="Setup guide progress"/>
-   <h2 id="setup-title">{step.title}</h2><p>{step.text}</p>
-   <button className="primary-button" onClick={openStep}>{step.action}</button>
-   <p className="setup-hint">Save your changes on the page before selecting Next. Skipping the guide won’t change your bakery data.</p>
+   <div className="setup-header"><div><span className="eyebrow">GET STARTED WITH BATCHBOSS</span><h2 id="setup-title">Your bakery setup 🧁</h2><p>Six little steps to get your bakery ready. Open a section, save your work, then mark it Done.</p></div><strong className="setup-count">{completed.length} / {steps.length} done</strong></div>
+   <progress max={steps.length} value={completed.length} aria-label="Bakery setup progress"/>
+   <div className="setup-card-grid">
+    {steps.map((step,index)=>{
+     const done=completed.includes(index)
+     return <article className={`setup-step-card${done?' is-done':''}`} key={step.title}>
+      <div className="setup-step-top"><span className="setup-step-icon" aria-hidden="true">{step.icon}</span><span className="setup-step-number">{done?'✓':String(index+1).padStart(2,'0')}</span></div>
+      <h3>{step.title}</h3><p>{step.text}</p>
+      <div className="setup-step-actions"><button type="button" className="outline-button" onClick={()=>openStep(index)}>Open</button><button type="button" className="primary-button" disabled={busy} onClick={()=>void save(done?completed.filter(i=>i!==index):[...completed,index].sort((a,b)=>a-b),true,!done&&remaining===1?'complete':'active')}>{done?'Undo':'Done ✓'}</button></div>
+     </article>
+    }))}
+   </div>
    {error&&<p role="alert">{error}</p>}
-   <div className="setup-actions"><button className="outline-button" disabled={busy||progress.step===0} onClick={()=>void persist({step:progress.step-1,status:'active'},true)}>Back</button><button className="primary-button" disabled={busy} onClick={()=>void persist({step:Math.min(5,progress.step+1),status:progress.step===5?'complete':'active'},progress.step!==5)}>{busy?'Saving…':progress.step===5?'Finish guide':'Next'}</button><button className="outline-button" disabled={busy} onClick={()=>void persist({...progress,status:'skipped'},false)}>Skip for now</button></div>
+   {remaining===0?<p className="setup-finished">🎉 Your setup checklist is complete! You can revisit any section whenever you like.</p>:<p className="setup-hint">Tick Done only when you've finished that step. You can complete them at your own pace.</p>}
+   <div className="setup-footer"><button type="button" className="outline-button" disabled={busy} onClick={()=>void save(completed,false,remaining===0?'complete':'skipped')}>{remaining===0?'Close checklist':'Finish for now'}</button></div>
   </section>}
  </>
 }
