@@ -105,7 +105,7 @@ async function syncSubscription(code:string){
  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Invalid subscription');
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
  const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||planFor(interval);
- if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||('invoiceLimit' in plan&&plan.invoiceLimit>0&&Number(s.plan?.invoice_limit)!==plan.invoiceLimit))throw new Error('Subscription mismatch');
+ if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)>0&&Number(s.plan?.invoice_limit)!==Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)))throw new Error('Subscription mismatch');
  await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
  if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
  // Never overwrite a later subscription or an administrator's promotion.
