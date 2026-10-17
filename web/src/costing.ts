@@ -20,7 +20,7 @@ export function findMatchingStock(name:string, inventory:StockItem[]):StockItem|
  return matched.length===1?matched[0]:null
 }
 const qty=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)&&n>0?n:0}
-const baseUnit=(s:unknown)=>{
+export const normalizeIngredientUnit=(s:unknown)=>{
  const x=String(s??'').trim().toLowerCase()
  if(['g','gram','grams'].includes(x))return 'g'
  if(['kg','kilogram','kilograms'].includes(x))return 'kg'
@@ -41,7 +41,7 @@ const toBase=(quantity:number,unit:string)=>quantity*({kg:1000,L:1000,tsp:5,tbsp
 export function calculateIngredientUsageCost(row:IngredientUsage,inventory:StockItem[]):number|null{
  const stock=findMatchingStock(row.name,inventory)
  if(!stock||qty(row.quantity)===0)return null
- const stockUnit=baseUnit(stock.unit||'unit'),recipeUnit=baseUnit(row.unit)
+ const stockUnit=normalizeIngredientUnit(stock.unit||'unit'),recipeUnit=normalizeIngredientUnit(row.unit)
  if(dimension(stockUnit)!==dimension(recipeUnit)||dimension(stockUnit)==='unknown')return null
  const packPrice=qty(stock.packagePrice)
  const packQuantity=qty(stock.packageQuantity)
