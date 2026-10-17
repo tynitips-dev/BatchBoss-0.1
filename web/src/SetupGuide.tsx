@@ -48,7 +48,7 @@ export default function SetupGuide({profile,onOpen,active,suspended}:{profile:Us
       <h3>{step.title}</h3><p>{step.text}</p>
       <div className="setup-step-actions"><button type="button" className="outline-button" onClick={()=>openStep(index)}>Open</button><button type="button" className="primary-button" disabled={busy} onClick={()=>void save(done?completed.filter(i=>i!==index):[...completed,index].sort((a,b)=>a-b),true,!done&&remaining===1?'complete':'active')}>{done?'Undo':'Done ✓'}</button></div>
      </article>
-    }))}
+    })}
    </div>
    {error&&<p role="alert">{error}</p>}
    {remaining===0?<p className="setup-finished">Your setup checklist is complete! You can revisit any section whenever you like.</p>:<p className="setup-hint">Tick Done only when you've finished that step. You can complete them at your own pace.</p>}
