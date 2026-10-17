@@ -109,6 +109,19 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
  }else if(['subscription.create','subscription.not_renew','subscription.disable','invoice.payment_failed','invoice.update'].includes(event.event)){
   const code=String(data.subscription?.subscription_code||data.subscription_code||'');const linked=await syncSubscription(code);
   if(linked&&event.event==='invoice.update'&&data.paid&&data.transaction?.reference)await settle(String(data.transaction.reference),undefined,code);
+  if(linked&&event.event==='invoice.payment_failed'){
+   const subscription=await db().doc(`paystackSubscriptions/${code}`).get();
+   const sub=subscription.data();
+   if(sub?.domain==='live'){
+    const invoice=String(data.invoice_code||data.invoice?.invoice_code||data.id||data.reference||'');
+    if(invoice && /^[a-zA-Z0-9_.-]{1,120}$/.test(invoice)){
+     await db().doc(`paymentEmailEvents/${code}_${invoice}`).create({
+      type:'failed_payment',uid:linked.uid,domain:'live',interval:sub.interval,amount:sub.amount,
+      createdAt:now()
+     }).catch((error:any)=>{if(error?.code!==6)throw error;});
+    }else console.warn('Paystack failure event lacked stable invoice identifier');
+   }
+  }
  }
  response.status(200).send('OK');
  }catch(error){console.error('Paystack event could not be processed',error instanceof HttpsError?error.code:'processing-error');response.status(500).send('Retry later');}
