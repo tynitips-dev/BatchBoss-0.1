@@ -42,7 +42,13 @@ service cloud.firestore {
         || (signedIn()
           && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['firstName','surname','bakeryName','email','updatedAt','phone','displayName']));
+            .hasOnly(['firstName','surname','bakeryName','email','updatedAt','phone','displayName','setupGuide'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['setupGuide'])
+            || (request.resource.data.setupGuide.keys().hasOnly(['step','status'])
+              && request.resource.data.setupGuide.step is int
+              && request.resource.data.setupGuide.step >= 0
+              && request.resource.data.setupGuide.step <= 5
+              && request.resource.data.setupGuide.status in ['active','skipped','complete'])));
       allow delete: if false;
     }
 

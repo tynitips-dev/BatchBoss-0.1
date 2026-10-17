@@ -12,6 +12,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnaps
 import { auth, db, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
+import SetupGuide from './SetupGuide'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
 import { extractRecipePdf } from './recipePdfImport'
@@ -72,7 +73,7 @@ function App() {
   if (!firebaseConfigured) return <SetupNotice />
   if (loading) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
   if (!user || !profile) return <AuthScreen />
-  return <Dashboard profile={profile} />
+  return <Dashboard key={user.uid} profile={profile} />
 }
 
 function SetupNotice() {
@@ -384,6 +385,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     <main className="dashboard-main">
       <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{displayName(profile)} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
       <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
+      <SetupGuide profile={profile} active={active} suspended={showEditor || showImporter} onOpen={key => { setActive(key); setMenuOpen(false) }} />
       {active === 'reports' && <ReportsView items={items} />}
       {['orders','receipts'].includes(active) && (active !== 'receipts' || isPro) && <RecordsView kind={active as 'orders'|'receipts'} bakeryId={profile.bakeryId} items={selectedItems} invoices={items.invoices || []} customers={items.customers || []} />}
       {active === 'home' && <HomeView invoices={items.invoices || []} counts={counts} onOpen={setActive} />}

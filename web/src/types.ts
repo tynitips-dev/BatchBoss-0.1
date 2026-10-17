@@ -1,4 +1,5 @@
 export type UserProfile = {
+  setupGuide?: { step: number; status: 'active' | 'skipped' | 'complete' }
   uid: string
   bakeryId: string
   firstName: string
