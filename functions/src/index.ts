@@ -505,3 +505,5 @@ export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePays
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 
 export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
+
+export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
