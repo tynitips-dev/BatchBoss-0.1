@@ -706,10 +706,67 @@ function ProductsView({ bakeryId, items }: { bakeryId: string; items: WorkspaceI
 
 function ProductEditor({ bakeryId, item, onClose }: { bakeryId:string; item:WorkspaceItem|null; onClose:()=>void }) {
   const [kind,setKind]=useState(String(item?.kind||'product'))
-  const [cost,setCost]=useState(Number(item?.costPrice||0)); const [price,setPrice]=useState(Number(item?.sellingPrice||item?.price||0))
+  const [cost,setCost]=useState(Number(item?.costPrice??0))
+  const [price,setPrice]=useState(Number(item?.sellingPrice??item?.price??0))
+  const [recipes,setRecipes]=useState<WorkspaceItem[]>([])
+  const [recipeId,setRecipeId]=useState(String(item?.recipeId||''))
+  const [recipeNotice,setRecipeNotice]=useState('')
+  const [recipeError,setRecipeError]=useState('')
+  const [productName,setProductName]=useState(String(item?.name||''))
+  const [saving,setSaving]=useState(false)
+  useEffect(()=>onSnapshot(collection(db,'bakeries',bakeryId,'recipes'),snapshot=>{
+    setRecipes(snapshot.docs.map(entry=>({id:entry.id,...entry.data()} as WorkspaceItem)).filter(recipe=>!recipe.archived))
+    setRecipeError('')
+  },()=>setRecipeError('Could not load saved recipes. Please check your connection.')),[bakeryId])
   const profit=price-cost, margin=price?profit/price*100:0
-  async function save(event:FormEvent<HTMLFormElement>){event.preventDefault(); const data=new FormData(event.currentTarget); const payload={kind,name:String(data.get('name')||''),category:String(data.get('category')||'Cakes'),sku:String(data.get('sku')||''),unit:String(data.get('unit')||'Each'),costPrice:cost,sellingPrice:price,price,status:String(item?.status||'active'),updatedAt:serverTimestamp()}; if(item) await updateDoc(doc(db,'bakeries',bakeryId,'products',item.id),payload); else await addDoc(collection(db,'bakeries',bakeryId,'products'),{...payload,createdAt:serverTimestamp()}); onClose()}
-  return <Modal title={`${item?'Edit':'New'} Product / Service`} onClose={onClose}><form className="modal-form product-form" onSubmit={save}><div className="type-toggle"><button type="button" className={kind==='product'?'active':''} onClick={()=>setKind('product')}>Product (Cake, Bakes)</button><button type="button" className={kind==='service'?'active':''} onClick={()=>setKind('service')}>Service (Delivery, Decor)</button></div><label>Product/Service name<input name="name" defaultValue={String(item?.name||'')} required/></label><label>Category<select name="category" defaultValue={String(item?.category||'Cupcakes')}><option>Cakes</option><option>Cupcakes</option><option>Cookies</option><option>Muffins</option><option>Services</option><option>Other</option></select></label><div className="split-fields"><label>SKU / Code<input name="sku" defaultValue={String(item?.sku||'')}/></label><label>Unit<select name="unit" defaultValue={String(item?.unit||'Each')}><option>Each</option><option>Item</option><option>Dozen</option><option>Kg</option><option>Gram</option><option>Box</option></select></label></div><div className="split-fields"><label>Cost price (R)<input type="number" min="0" step=".01" value={cost} onChange={e=>setCost(Number(e.target.value))}/></label><label>Selling price (R)<input type="number" min="0" step=".01" value={price} onChange={e=>setPrice(Number(e.target.value))} required/></label></div><div className="profit-preview"><div><span>Estimated profit</span><strong>{money.format(profit)}</strong></div><div><span>Profit margin</span><strong>{margin.toFixed(1)}%</strong></div></div><button className="primary-button">Save to Products &amp; Services</button></form></Modal>
+  function selectRecipe(id:string){
+    setRecipeId(id);setRecipeNotice('')
+    if(!id)return
+    const recipe=recipes.find(entry=>entry.id===id)
+    if(!recipe)return
+    const results=priceRecipe({
+      ingredients:Number(recipe.ingredientCost??0),
+      labourHours:Number(recipe.laborHours??0),
+      labourRate:Number(recipe.laborRatePerHour??0),
+      overheads:Number(recipe.overheadsCost??0),
+      utilities:Number(recipe.utilitiesCost??0),
+      packaging:Number(recipe.packagingCost??0),
+      yieldCount:Number(recipe.batchSize??0),
+      servingsPerUnit:Number(recipe.servings??1),
+      marginPercent:Number(recipe.profitMarginPercent??40),
+    })
+    if(results.perUnit===null||results.sellingUnit===null){
+      setRecipeNotice('This recipe needs a valid batch size and a profit margin below 100%. Check the recipe costing before importing its price.')
+      return
+    }
+    setCost(Number(results.perUnit.toFixed(2)))
+    setPrice(Number(results.sellingUnit.toFixed(2)))
+    if(!item)setProductName(String(recipe.name||''))
+    setRecipeNotice('Prices copied from the selected recipe per finished unit. You can adjust either price before saving. Re-select a recipe to refresh its prices later.')
+  }
+  async function save(event:FormEvent<HTMLFormElement>){
+    event.preventDefault()
+    setSaving(true)
+    try{
+      const data=new FormData(event.currentTarget)
+      const payload={kind,name:productName.trim(),category:String(data.get('category')||'Cakes'),sku:String(data.get('sku')||''),unit:String(data.get('unit')||'Each'),costPrice:cost,sellingPrice:price,price,recipeId:kind==='product'?recipeId:'',status:String(item?.status||'active'),updatedAt:serverTimestamp()}
+      if(item)await updateDoc(doc(db,'bakeries',bakeryId,'products',item.id),payload)
+      else await addDoc(collection(db,'bakeries',bakeryId,'products'),{...payload,createdAt:serverTimestamp()})
+      onClose()
+    }catch{setRecipeError('Could not save this product. Check your connection and try again.')}
+    finally{setSaving(false)}
+  }
+  return <Modal title={`${item?'Edit':'New'} Product / Service`} onClose={onClose}><form className="modal-form product-form" onSubmit={save}>
+    <div className="type-toggle"><button type="button" className={kind==='product'?'active':''} onClick={()=>setKind('product')}>Product (Cake, Bakes)</button><button type="button" className={kind==='service'?'active':''} onClick={()=>{setKind('service');setRecipeId('');setRecipeNotice('')}}>Service (Delivery, Decor)</button></div>
+    {kind==='product'&&<section className="content-card"><h3>Link a saved recipe</h3><label>Choose recipe<select value={recipeId} onChange={e=>selectRecipe(e.target.value)}><option value="">No recipe selected (enter prices manually)</option>{recipes.map(recipe=><option key={recipe.id} value={recipe.id}>{String(recipe.name||'Untitled recipe')}</option>)}</select></label><small>Selecting a recipe copies its calculated cost per unit and suggested selling price. Prices are saved with this product; later recipe edits do not silently overwrite them.</small>{recipeNotice&&<p role="status">{recipeNotice}</p>}</section>}
+    {recipeError&&<p className="error-message" role="alert">{recipeError}</p>}
+    <label>Product/Service name<input name="name" value={productName} onChange={e=>setProductName(e.target.value)} required/></label>
+    <label>Category<select name="category" defaultValue={String(item?.category||'Cupcakes')}><option>Cakes</option><option>Cupcakes</option><option>Cookies</option><option>Muffins</option><option>Services</option><option>Other</option></select></label>
+    <div className="split-fields"><label>SKU / Code<input name="sku" defaultValue={String(item?.sku||'')}/></label><label>Unit<select name="unit" defaultValue={String(item?.unit||'Each')}><option>Each</option><option>Item</option><option>Dozen</option><option>Kg</option><option>Gram</option><option>Box</option></select></label></div>
+    <div className="split-fields"><label>Cost price (R)<input type="number" min="0" step=".01" value={cost} onChange={e=>setCost(Number(e.target.value))}/></label><label>Selling price (R)<input type="number" min="0" step=".01" value={price} onChange={e=>setPrice(Number(e.target.value))} required/></label></div>
+    <div className="profit-preview"><div><span>Estimated profit</span><strong>{money.format(profit)}</strong></div><div><span>Profit margin</span><strong>{margin.toFixed(1)}%</strong></div></div>
+    <button className="primary-button" disabled={saving}>{saving?'Saving…':'Save to Products & Services'}</button>
+  </form></Modal>
 }
 
 function InvoicesView({ bakeryId, invoices, products, packaging }: { bakeryId:string; invoices:WorkspaceItem[]; products:WorkspaceItem[]; packaging:WorkspaceItem[] }) {
