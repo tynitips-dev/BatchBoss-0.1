@@ -35,7 +35,7 @@ export const sendBatchBossProPaymentEmail = onDocumentUpdated(
 
     const account = await getAuth().getUser(uid);
     const email = String(account.email || "").trim();
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
 
     const delivered = db.collection("emailDeliveries").doc(`paystack_${reference}`);
     try {
@@ -55,7 +55,7 @@ export const sendBatchBossProPaymentEmail = onDocumentUpdated(
     const amountInCents = Number(payment.amount);
     const amount = Number.isFinite(amountInCents) && amountInCents > 0
       ? (amountInCents / 100).toFixed(2) : null;
-    const firstName = escapeHtml(String(profile.data()?.firstName || account.displayName || "Baker").trim().split(/\\s+/)[0].slice(0, 80));
+    const firstName = escapeHtml(String(profile.data()?.firstName || account.displayName || "Baker").trim().split(/\s+/)[0].slice(0, 80));
     const paidDate = typeof payment.paidAt === "string" && !Number.isNaN(Date.parse(payment.paidAt))
       ? new Date(payment.paidAt).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Johannesburg" })
       : "See your Paystack payment record";
