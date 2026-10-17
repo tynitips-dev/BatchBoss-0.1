@@ -10,7 +10,7 @@ const n=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0
 const text=(v:unknown)=>String(v??'')
 export function Dialog({title, close, children}:{title:string;close:()=>void;children:ReactNode}) {
   useEffect(()=>{const old=document.activeElement as HTMLElement;const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')close();if(e.key==='Tab'){const dialog=document.querySelector('.repair-dialog');const nodes=[...dialog?.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href]')||[]].filter(x=>!x.hasAttribute('disabled'));if(e.shiftKey&&document.activeElement===nodes[0]){e.preventDefault();nodes.at(-1)?.focus()}else if(!e.shiftKey&&document.activeElement===nodes.at(-1)){e.preventDefault();nodes[0]?.focus()}}};document.addEventListener('keydown',handler);(document.querySelector('.repair-dialog button') as HTMLElement)?.focus();return()=>{document.removeEventListener('keydown',handler);old?.focus()}},[close])
-  return <div className="modal-backdrop"><section className="modal repair-dialog" role="dialog" aria-modal="true" aria-label={title}><div className="modal-title"><h2>{title}</h2><button type="button" onClick={close} aria-label="Close dialog">×</button></div>{children}</section></div>
+  return <div className="modal-backdrop"><div className="modal-frame"><button className="modal-external-close" type="button" onClick={close} aria-label="Close dialog">×</button><section className="modal repair-dialog" role="dialog" aria-modal="true" aria-label={title}><div className="modal-title"><h2>{title}</h2></div>{children}</section></div></div>
 }
 export function ProfileName({profile}:{profile:UserProfile}) {
  const [message,setMessage]=useState('');const [busy,setBusy]=useState(false)
