@@ -418,14 +418,22 @@ function Dashboard({ profile }: { profile: UserProfile }) {
 }
 
 function DocumentsView({ onOpen }: { onOpen: (key: ModuleKey) => void }) {
+  const templates: { key: ModuleKey; title: string; description: string; filename: string; format: string; action: string }[] = [
+    { key: 'ingredients', title: 'Ingredients', description: 'Record ingredient pack prices, quantities and units. Import the completed CSV from the Ingredients tab.', filename: 'BatchBoss_Ingredients_Template.csv', format: 'CSV upload template', action: 'Open Ingredients' },
+    { key: 'inventory', title: 'Inventory', description: 'Track stock quantities, minimum levels and reorder information. Import the completed CSV from the Inventory tab.', filename: 'BatchBoss_Inventory_Template.csv', format: 'CSV upload template', action: 'Open Inventory' },
+    { key: 'recipes', title: 'Recipes', description: 'Plan recipe ingredients, instructions and costing before entering them in BatchBoss. For direct import, use a recipe PDF with selectable text in the recipe editor.', filename: 'BatchBoss_Recipe_Worksheet.txt', format: 'Editable planning worksheet', action: 'Open Recipes' },
+    { key: 'packaging', title: 'Packaging', description: 'Keep packaging prices, pack sizes and quantities in a separate list. Import the completed CSV from the Packaging tab.', filename: 'BatchBoss_Packaging_Template.csv', format: 'CSV upload template', action: 'Open Packaging' },
+  ]
   return <section className="content-card documents-view">
-    <div className="section-heading"><div><span className="eyebrow">Downloads & uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Download the BatchBoss starter workbook, edit your prices and pack sizes, then upload each list into your private bakery workspace.</p></div></div>
+    <div className="section-heading"><div><span className="eyebrow">Downloads &amp; uploads</span><h2>Documents &amp; Templates</h2><p className="section-copy">Each bakery section has its own document. Download the template you need, then open the matching tab to work with your data.</p></div></div>
     <div className="template-grid">
-      <article className="template-card"><div className="template-icon"><Download /></div><div><h3>Ingredients &amp; Packaging Starter Workbook</h3><p>Includes editable ingredients and packaging lists, plus BatchBoss-ready upload sheets.</p><small>Excel workbook · Prices are reference prices and can be changed.</small></div><a className="primary-button compact" href="/documents/BatchBoss_Baking_Ingredients_and_Packaging.xlsx" download>Download workbook</a></article>
-      <article className="template-card instructions-card"><h3>How to use the workbook</h3><ol><li>Download and open the workbook in Excel.</li><li>Edit the prices, quantities, units and stock for your bakery.</li><li>Save the workbook.</li><li>Open the matching BatchBoss tab and select <strong>Upload list</strong>.</li><li>Select the Excel workbook, check every value in the preview and confirm.</li></ol></article>
+      {templates.map(template => <article className="template-card" key={template.key}>
+        <div className="template-icon"><Download /></div>
+        <div><h3>{template.title}</h3><p>{template.description}</p><small>{template.format}</small></div>
+        <div className="document-actions"><a className="primary-button compact" href={`/documents/${template.filename}`} download>Download {template.title}</a><button className="outline-button" onClick={() => onOpen(template.key)}>{template.action}</button></div>
+      </article>)}
     </div>
-    <div className="document-actions"><button className="outline-button" onClick={() => onOpen('ingredients')}>Open Ingredients</button><button className="outline-button" onClick={() => onOpen('packaging')}>Open Packaging</button></div>
-    <p className="privacy-note">Your changes are saved only in your bakery account. They do not change the master workbook or another customer’s lists.</p>
+    <p className="privacy-note">Ingredient, inventory and packaging CSV files contain column headings only. Fill in your own prices before importing. The recipe worksheet is a planning document, not an upload file. Imported records remain within your bakery account.</p>
   </section>
 }
 
