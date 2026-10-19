@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, LogOut, RefreshCw, Search, ShieldCheck, Trash2, UserRoundCheck, Users } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, CreditCard, Gift, LayoutDashboard, LogOut, RefreshCw, Search, ShieldCheck, Trash2, UserRoundCheck, Users } from 'lucide-react'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
@@ -129,6 +129,7 @@ function ActivateAdmin({ user, onActivated }: { user: User; onActivated: () => v
 }
 
 function Dashboard({ user }: { user: User }) {
+  const [section,setSection]=useState<'overview'|'accounts'|'analytics'|'subscriptions'|'promotions'|'deletions'|'activity'>('overview')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [requests, setRequests] = useState<DeletionRequest[]>([])
   const [audit, setAudit] = useState<AuditLog[]>([])
@@ -214,21 +215,26 @@ function Dashboard({ user }: { user: User }) {
   }
 
   return <div className="admin-shell">
-    <aside>
-      <Brand />
-      <nav><button className="nav-active"><Users /> Accounts</button><button><Trash2 /> Deletion requests <span>{requests.filter(item => item.status === 'pending').length}</span></button><button><ShieldCheck /> Audit trail</button></nav>
+    <aside><Brand /><nav aria-label="Admin sections">{([
+      ['overview','Overview',LayoutDashboard],['accounts','Accounts',Users],['analytics','Analytics',BarChart3],
+      ['subscriptions','Subscriptions',CreditCard],['promotions','Pro gifts',Gift],['deletions','Deletion requests',Trash2],['activity','Activity log',Activity]
+      ] as const).map(([id,title,Icon])=><button key={id} className={section===id?'nav-active':''} onClick={()=>setSection(id)}><Icon />{title}{id==='deletions'&&<span>{requests.filter(item=>item.status==='pending').length}</span>}</button>)}</nav>
       <div className="admin-user"><div>{(user.email || 'A').slice(0, 1).toUpperCase()}</div><span><strong>Administrator</strong><small>{user.email}</small></span><button onClick={() => signOut(auth)} title="Sign out"><LogOut /></button></div>
     </aside>
     <main>
-      <header><div><span className="eyebrow">BatchBoss control centre</span><h1>Account administration</h1></div><button className="secondary" onClick={refreshAccounts}><RefreshCw /> Sync now</button></header>
+      <header><div><span className="eyebrow">BatchBoss control centre</span><h1>{({overview:"Dashboard overview",accounts:"Bakery accounts",analytics:"Website & app analytics",subscriptions:"Subscriptions",promotions:"Promotional Pro gifts",deletions:"Deletion requests",activity:"Administrator activity"} as const)[section]}</h1></div><button className="secondary" onClick={refreshAccounts}><RefreshCw /> Sync now</button></header>
       {message && <div className="notice"><CheckCircle2 />{message}</div>}
-      <section className="stats">
+      {(section==='overview'||section==='subscriptions')&&<section className="stats">
         <article><Users /><div><span>Total accounts</span><strong>{accounts.length}</strong></div></article>
         <article><UserRoundCheck /><div><span>Active accounts</span><strong>{accounts.filter(item => !item.disabled).length}</strong></div></article>
         <article><ShieldCheck /><div><span>Pro subscribers</span><strong>{accounts.filter(item => ['active','trialing'].includes(item.subscriptionStatus)).length}</strong></div></article>
         <article><AlertTriangle /><div><span>Deletion requests</span><strong>{requests.filter(item => item.status === 'pending').length}</strong></div></article>
-      </section>
-      <section className="panel">
+      </section>}
+      {section==='overview'&&<section className="lower-grid"><article className="panel"><h2>Website & app visits</h2><p>Visitor analytics are not connected yet. Configure Google Analytics 4 to see actual visitor figures.</p><button className="secondary" onClick={()=>setSection('analytics')}>View analytics setup</button></article><article className="panel"><h2>Attention needed</h2><p>{requests.filter(item=>item.status==='pending').length} pending deletions</p><p>{accounts.filter(item=>item.disabled).length} disabled accounts</p></article></section>}
+      {section==='analytics'&&<section className="panel"><h2>Visitor tracking</h2><p>To measure app.batchboss.co.za visits, connect a Google Analytics 4 property and configure consent on the public web app.</p><p><strong>Tracking status:</strong> Not connected. No visitor totals are available yet.</p><p>After configuration, view verified figures in <a href="https://analytics.google.com/" target="_blank" rel="noreferrer">Google Analytics</a>. Displaying them inside this admin site requires a separate authenticated reporting connection.</p></section>}
+      {section==='subscriptions'&&<section className="panel"><h2>Subscription summary</h2><p>Account status totals, not verified payment revenue.</p><p>Paid Pro: {accounts.filter(a=>a.subscriptionPlan==='pro'&&a.subscriptionStatus==='active').length}</p><p>Pro gifts: {accounts.filter(a=>a.subscriptionPlan==='promo'&&a.subscriptionStatus==='active').length}</p></section>}
+      {section==='promotions'&&<section className="panel"><h2>Pro gifts</h2><p>Choose a customer below, select the gift duration and click Gift Pro. Seven-day gifts use the existing email flow when deployed.</p></section>}
+      {(section==='accounts'||section==='promotions')&&<section className="panel">
         <div className="panel-title"><div><h2>Bakery accounts</h2><p>Authentication and workspace records from Firebase.</p></div><label className="search"><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search users or bakeries…" /></label></div>
         <div className="table-wrap"><table><thead><tr><th>Account</th><th>Bakery</th><th>Last login</th><th>Subscription</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           {shown.map(account => <tr key={account.uid}>
@@ -240,11 +246,11 @@ function Dashboard({ user }: { user: User }) {
             <td><div className="promo-controls"><select aria-label={`Promotional Pro duration for ${account.email}`} value={promoDays[account.uid] || 30} onChange={event => setPromoDays(current => ({ ...current, [account.uid]: Number(event.target.value) }))}><option value={7}>7 days</option><option value={30}>1 month</option><option value={90}>3 months</option><option value={180}>6 months</option><option value={365}>1 year</option></select><button disabled={busyUid === account.uid} onClick={() => grantPromo(account)}>{account.subscriptionPlan === 'promo' && account.subscriptionStatus === 'active' ? 'Extend Pro' : 'Gift Pro'}</button>{account.subscriptionPlan === 'promo' && account.subscriptionStatus === 'active' && <button className="danger" disabled={busyUid === account.uid} onClick={() => removePromo(account)}>Remove Pro</button>}</div><div className="actions"><button disabled={busyUid === account.uid} onClick={() => toggleDisabled(account)}>{account.disabled ? 'Enable' : 'Disable'}</button><button className="danger" disabled={busyUid === account.uid} onClick={() => deleteAccount(account)}><Trash2 /> Delete</button></div></td>
           </tr>)}
         </tbody></table></div>
-      </section>
-      <section className="lower-grid">
-        <article className="panel"><h2>Pending deletion requests</h2>{requests.length ? requests.slice(0, 6).map(item => <div className="list-row" key={item.id}><div><strong>{item.email}</strong><small>{item.reason}</small></div><span className="status pending">{item.status}</span></div>) : <p>No deletion requests.</p>}</article>
-        <article className="panel"><h2>Recent administrator activity</h2>{audit.length ? audit.map(item => <div className="list-row" key={item.id}><div><strong>{item.action.replaceAll('_', ' ')}</strong><small>{item.targetEmail || item.actorEmail || 'System action'}</small></div><span>{item.status || 'recorded'}</span></div>) : <p>No administrator activity yet.</p>}</article>
-      </section>
+      </section>}
+      {(section==='deletions'||section==='activity')&&<section className="lower-grid">
+        {section==='deletions'&&<article className="panel"><h2>Pending deletion requests</h2>{requests.length ? requests.slice(0, 6).map(item => <div className="list-row" key={item.id}><div><strong>{item.email}</strong><small>{item.reason}</small></div><span className="status pending">{item.status}</span></div>) : <p>No deletion requests.</p>}</article>}
+        {section==='activity'&&<article className="panel"><h2>Recent administrator activity</h2>{audit.length ? audit.map(item => <div className="list-row" key={item.id}><div><strong>{item.action.replaceAll('_', ' ')}</strong><small>{item.targetEmail || item.actorEmail || 'System action'}</small></div><span>{item.status || 'recorded'}</span></div>) : <p>No administrator activity yet.</p>}</article>}
+      </section>}
     </main>
   </div>
 }
