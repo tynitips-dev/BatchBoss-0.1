@@ -227,7 +227,7 @@ function Dashboard({ user }: { user: User }) {
       {(section==='overview'||section==='subscriptions')&&<section className="stats">
         <article><Users /><div><span>Total accounts</span><strong>{accounts.length}</strong></div></article>
         <article><UserRoundCheck /><div><span>Active accounts</span><strong>{accounts.filter(item => !item.disabled).length}</strong></div></article>
-        <article><ShieldCheck /><div><span>Pro subscribers</span><strong>{accounts.filter(item => ['active','trialing'].includes(item.subscriptionStatus)).length}</strong></div></article>
+        <article><ShieldCheck /><div><span>Accounts with active Pro</span><strong>{accounts.filter(item => ['active','trialing'].includes(item.subscriptionStatus)).length}</strong></div></article>
         <article><AlertTriangle /><div><span>Deletion requests</span><strong>{requests.filter(item => item.status === 'pending').length}</strong></div></article>
       </section>}
       {section==='overview'&&<section className="lower-grid"><article className="panel"><h2>Website & app visits</h2><p>Visitor analytics are not connected yet. Configure Google Analytics 4 to see actual visitor figures.</p><button className="secondary" onClick={()=>setSection('analytics')}>View analytics setup</button></article><article className="panel"><h2>Attention needed</h2><p>{requests.filter(item=>item.status==='pending').length} pending deletions</p><p>{accounts.filter(item=>item.disabled).length} disabled accounts</p></article></section>}
