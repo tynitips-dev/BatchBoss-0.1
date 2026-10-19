@@ -120,6 +120,10 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
     throw new HttpsError("failed-precondition", "This login does not have a BatchBoss user profile yet. Sign in to the customer portal once, then try again.");
   }
 
+  const existing = userSnapshot.data() || {};
+  if (enabled && existing.subscriptionSource === "paystack" && existing.subscriptionStatus === "active") {
+    throw new HttpsError("failed-precondition", "This account already has an active paid subscription. Do not replace its billing access with a gift.");
+  }
   const expiresAt = enabled ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
   await userRef.set(enabled ? {
     subscriptionPlan: "promo",
@@ -151,6 +155,14 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
     status: "completed",
   });
 
+  // A new 7-day grant generates an email event. Firestore's event handler sends it
+  // asynchronously, so a successful admin action does not claim email delivery.
+  if (enabled && durationDays === 7 && expiresAt) {
+    await db.collection("proGiftEmailEvents").add({
+      type: "gift_pro", uid, durationDays, expiresAt,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
   return { success: true, expiresAt: expiresAt?.toISOString() || null };
 });
 
@@ -503,6 +515,7 @@ export const payfastNotify = onRequest(
 export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
 
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
+export { sendBatchBossGiftProEmail } from './giftProEmail';
 
 export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
 
