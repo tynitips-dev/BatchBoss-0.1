@@ -459,8 +459,14 @@ td small {
     height: auto;
   }
   .admin-shell nav {
-    display: none;
+    display: flex;
+    overflow-x: auto;
+    gap: 6px;
+    margin-top: 16px;
+    padding-bottom: 8px;
   }
+  .admin-shell nav button {white-space:nowrap; flex:none;}
+
   .admin-user {
     margin-top: 22px;
   }
@@ -484,3 +490,5 @@ td small {
     width: 100%;
   }
 }
+
+.admin-shell .panel a{color:#cc2859;font-weight:700}.admin-shell .panel .secondary{margin-top:12px}.admin-shell nav button:focus-visible{outline:2px solid #fff;outline-offset:2px}
