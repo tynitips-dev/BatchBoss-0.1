@@ -94,3 +94,29 @@ test('multiple paid grants retain valid paid access if one expires', () => {
   assert.equal(result.active, true);
   assert.equal(result.source, 'payfast');
 });
+
+test('revoked gift cannot reappear from its legacy subscription mirror', () => {
+  const result = evaluateProEntitlement({
+    proEntitlementsMigrated: false,
+    subscriptionPlan: 'promo',
+    subscriptionSource: 'admin_promotion',
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: after,
+  }, [{ id: 'admin_revoked', source: 'admin_promotion', expiresAt: after, revokedAt: before }], NOW);
+  assert.equal(result.active, false);
+});
+
+test('revoked gift leaves an independent paid grant active', () => {
+  const result = evaluateProEntitlement({
+    proEntitlementsMigrated: false,
+    subscriptionPlan: 'promo',
+    subscriptionSource: 'admin_promotion',
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: after,
+  }, [
+    { id: 'admin_revoked', source: 'admin_promotion', expiresAt: after, revokedAt: before },
+    { id: 'paystack_paid', source: 'paystack', expiresAt: after },
+  ], NOW);
+  assert.equal(result.active, true);
+  assert.equal(result.source, 'paystack');
+});
