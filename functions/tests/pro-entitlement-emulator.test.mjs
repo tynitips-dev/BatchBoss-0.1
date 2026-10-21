@@ -10,8 +10,8 @@ if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8080' ||
 }
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { initializeApp, deleteApp } = require(join(root, 'node_modules/firebase-admin/app'));
-const { getFirestore } = require(join(root, 'node_modules/firebase-admin/firestore'));
+const { initializeApp, deleteApp } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 const { recomputeProEntitlement } = require(join(root, 'lib/proEntitlements.js'));
 const app = initializeApp({ projectId: 'demo-batchboss' });
 const db = getFirestore(app);
