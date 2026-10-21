@@ -181,7 +181,39 @@ export async function recomputeProEntitlement(
   const userRef = db.collection("users").doc(uid);
 
   if (!migrationEnabled()) {
-    // Client calls and the first entitlement read must never initiate a migration.
+    if (options.syncTrustedGrant === true) {
+      // A verified payment or administrator gift is the only caller allowed
+      // to mirror current access while historical migration is disabled.
+      // Read the profile and grants in one transaction so we do not persist
+      // stale values from a concurrent grant operation.
+      let result: ReturnType<typeof evaluateProEntitlement> | null = null;
+      await db.runTransaction(async transaction => {
+        const profileSnapshot = await transaction.get(userRef);
+        if (!profileSnapshot.exists) return;
+        const grantSnapshot = await transaction.get(userRef.collection("proGrants"));
+        const profile = profileSnapshot.data() || {};
+        const grants = grantSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProGrant));
+        result = evaluateProEntitlement(profile, grants);
+        transaction.set(userRef, {
+          proEntitlementActive: result.active,
+          proEntitlementExpiresAt: result.expiresAt,
+          proEntitlementSource: result.source,
+          proEntitlementSources: result.sources,
+          proEntitlementUpdatedAt: FieldValue.serverTimestamp(),
+          subscriptionPlan: result.plan,
+          subscriptionStatus: result.status,
+          ...(result.source ? { subscriptionSource: result.source } : {
+            subscriptionSource: FieldValue.delete(),
+          }),
+          subscriptionExpiresAt: result.sourceExpiresAt || FieldValue.delete(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+      return result;
+    }
+
+    // Customer reads must not create grant records, update compatibility fields,
+    // mark a profile as migrated, or import payment history.
     const [profileSnapshot, grantSnapshot] = await Promise.all([
       userRef.get(),
       userRef.collection("proGrants").get(),
@@ -189,27 +221,7 @@ export async function recomputeProEntitlement(
     if (!profileSnapshot.exists) return null;
     const profile = profileSnapshot.data() || {};
     const grants = grantSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProGrant));
-    const result = evaluateProEntitlement(profile, grants);
-    if (options.syncTrustedGrant === true) {
-      // Only a verified payment or admin gift handler may request these
-      // legacy-compatible fields. Never write migration markers or import
-      // historical ledger records with the gate disabled.
-      await userRef.set({
-        proEntitlementActive: result.active,
-        proEntitlementExpiresAt: result.expiresAt,
-        proEntitlementSource: result.source,
-        proEntitlementSources: result.sources,
-        proEntitlementUpdatedAt: FieldValue.serverTimestamp(),
-        subscriptionPlan: result.plan,
-        subscriptionStatus: result.status,
-        ...(result.source ? { subscriptionSource: result.source } : {
-          subscriptionSource: FieldValue.delete(),
-        }),
-        subscriptionExpiresAt: result.sourceExpiresAt || FieldValue.delete(),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-    }
-    return result;
+    return evaluateProEntitlement(profile, grants);
   }
   const state: { result?: ReturnType<typeof evaluateProEntitlement> } = {};
 
