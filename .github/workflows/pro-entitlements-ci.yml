@@ -26,3 +26,14 @@ jobs:
         run: npm run test:entitlements
       - name: Lint TypeScript
         run: npm run lint
+      - name: Install Java for isolated Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Firestore emulator integration checks (demo project only)
+        working-directory: .
+        env:
+          GCLOUD_PROJECT: demo-batchboss
+          PRO_ENTITLEMENT_MIGRATION_ENABLED: 'false'
+        run: npx --yes firebase-tools@14 emulators:exec --only firestore --project demo-batchboss "node --test functions/tests/pro-entitlement-emulator.test.mjs"
