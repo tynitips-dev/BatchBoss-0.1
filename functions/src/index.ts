@@ -545,7 +545,9 @@ export const payfastNotify = onRequest(
           }, { merge: true });
           changed = true;
         });
-        if (changed) await recomputeProEntitlement(uid, { syncTrustedGrant: true });
+        // Safe on repeated, verified PayFast callbacks: repair access mirrors if
+        // the original settlement committed but the previous recompute failed.
+        await recomputeProEntitlement(uid, { syncTrustedGrant: true });
       } else {
         await db.runTransaction(async transaction => {
           const current = await transaction.get(paymentRef);
