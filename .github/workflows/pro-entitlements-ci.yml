@@ -1,0 +1,30 @@
+name: Pro entitlement safety checks
+on:
+  push:
+    branches:
+      - safety/pro-migration-gate-20261021
+  pull_request:
+    paths:
+      - 'functions/**'
+      - '.github/workflows/pro-entitlements-ci.yml'
+permissions:
+  contents: read
+jobs:
+  functions-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install dependencies without running package scripts
+        run: npm ci --ignore-scripts
+      - name: Compile TypeScript and run Pro entitlement tests
+        run: npm run test:entitlements
+      - name: Lint TypeScript
+        run: npm run lint
