@@ -5,6 +5,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { evaluateProEntitlement, recomputeProEntitlement, refreshProEntitlements, type ProGrant } from "./proEntitlements";
 
 initializeApp();
 
@@ -107,10 +108,14 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
   const uid = String(request.data?.uid || "");
   const enabled = request.data?.enabled === true;
   const durationDays = Number(request.data?.durationDays || 30);
+  const requestId = String(request.data?.requestId || "");
 
   if (!uid) throw new HttpsError("invalid-argument", "A user ID is required.");
   if (enabled && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650)) {
     throw new HttpsError("invalid-argument", "Promotional access must be between 1 and 3650 days.");
+  }
+  if (enabled && !/^[a-zA-Z0-9_-]{1,100}$/.test(requestId)) {
+    throw new HttpsError("invalid-argument", "A stable grant request ID is required.");
   }
 
   const userRecord = await auth.getUser(uid);
@@ -120,50 +125,75 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
     throw new HttpsError("failed-precondition", "This login does not have a BatchBoss user profile yet. Sign in to the customer portal once, then try again.");
   }
 
-  const existing = userSnapshot.data() || {};
-  if (enabled && existing.subscriptionSource === "paystack" && existing.subscriptionStatus === "active") {
-    throw new HttpsError("failed-precondition", "This account already has an active paid subscription. Do not replace its billing access with a gift.");
-  }
-  const expiresAt = enabled ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
-  await userRef.set(enabled ? {
-    subscriptionPlan: "promo",
-    subscriptionStatus: "active",
-    subscriptionSource: "admin_promotion",
-    subscriptionStartedAt: FieldValue.serverTimestamp(),
-    subscriptionExpiresAt: expiresAt,
-    subscriptionGrantedBy: administrator.uid,
-    updatedAt: FieldValue.serverTimestamp(),
-  } : {
-    subscriptionPlan: "free",
-    subscriptionStatus: "free",
-    subscriptionSource: FieldValue.delete(),
-    subscriptionStartedAt: FieldValue.delete(),
-    subscriptionExpiresAt: FieldValue.delete(),
-    subscriptionGrantedBy: FieldValue.delete(),
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await recomputeProEntitlement(uid);
+  const grantRef = userRef.collection("proGrants").doc(`admin_${requestId}`);
+  const grantState: { expiresAt: Date | null } = { expiresAt: null };
+  await db.runTransaction(async transaction => {
+    const [profile, grants] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(userRef.collection("proGrants")),
+    ]);
+    const account = profile.data() || {};
+    const existingGrants = grants.docs.map(document => ({
+      id: document.id,
+      ...document.data(),
+    } as ProGrant));
+    if (enabled) {
+      const existingGrant = await transaction.get(grantRef);
+      const oldExpiry = existingGrant.data()?.expiresAt;
+      grantState.expiresAt = oldExpiry instanceof Date ? oldExpiry :
+        typeof oldExpiry?.toDate === "function" ? oldExpiry.toDate() :
+          new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+      if (!existingGrant.exists) {
+        const entitlement = evaluateProEntitlement(account, existingGrants);
+        if (entitlement.active && (entitlement.source === "paystack" || entitlement.source === "payfast")) {
+          throw new HttpsError("failed-precondition", "This account already has active paid Pro access. Do not replace its billing access with a gift.");
+        }
+        grantState.expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+        transaction.create(grantRef, {
+          source: "admin_promotion",
+          durationDays,
+          startsAt: new Date(),
+          expiresAt: grantState.expiresAt,
+          grantedBy: administrator.uid,
+          requestId,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        if (durationDays === 7) {
+          transaction.create(db.collection("proGiftEmailEvents").doc(`admin_${requestId}`), {
+            type: "gift_pro",
+            uid,
+            durationDays,
+            grantId: `admin_${requestId}`,
+            expiresAt: grantState.expiresAt,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    } else {
+      for (const grant of grants.docs) {
+        if (grant.data().source === "admin_promotion" && !grant.data().revokedAt) {
+          transaction.update(grant.ref, { revokedAt: FieldValue.serverTimestamp() });
+        }
+      }
+    }
+  });
+  await recomputeProEntitlement(uid, { syncTrustedGrant: true });
 
   await db.collection("adminAuditLogs").add({
     action: enabled ? "PROMOTIONAL_PRO_GRANTED" : "PROMOTIONAL_PRO_REMOVED",
     targetUid: uid,
     targetEmail: userRecord.email || "",
     durationDays: enabled ? durationDays : null,
-    expiresAt,
+    expiresAt: grantState.expiresAt,
     actorUid: administrator.uid,
     actorEmail: String(administrator.token.email || ""),
     createdAt: FieldValue.serverTimestamp(),
     status: "completed",
   });
 
-  // A new 7-day grant generates an email event. Firestore's event handler sends it
-  // asynchronously, so a successful admin action does not claim email delivery.
-  if (enabled && durationDays === 7 && expiresAt) {
-    await db.collection("proGiftEmailEvents").add({
-      type: "gift_pro", uid, durationDays, expiresAt,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-  }
-  return { success: true, expiresAt: expiresAt?.toISOString() || null };
+  if (enabled && !grantState.expiresAt) throw new HttpsError("internal", "The existing Pro gift could not be verified.");
+  return { success: true, expiresAt: grantState.expiresAt?.toISOString() || null };
 });
 
 export const setAccountDisabled = onCall({ region: "europe-west1", invoker: "public" }, async request => {
@@ -462,47 +492,74 @@ export const payfastNotify = onRequest(
 
       if (paymentStatus === "COMPLETE" && uid) {
         const userRef = db.collection("users").doc(uid);
-        const userSnapshot = await userRef.get();
-        const currentExpiry = userSnapshot.data()?.subscriptionExpiresAt;
-        const currentExpiryDate =
-          typeof currentExpiry?.toDate === "function"
-            ? currentExpiry.toDate()
-            : null;
-
-        const periodStart =
-          currentExpiryDate && currentExpiryDate.getTime() > Date.now()
-            ? currentExpiryDate
-            : new Date();
-
-        const expiresAt = addBillingPeriod(periodStart, plan);
-
-        await userRef.set(
-          {
-            subscriptionPlan: "pro",
-            subscriptionStatus: "active",
-            subscriptionSource: "payfast",
-            subscriptionBillingInterval: plan,
-            subscriptionStartedAt: FieldValue.serverTimestamp(),
-            subscriptionExpiresAt: expiresAt,
+        const grantRef = userRef.collection("proGrants").doc(`payfast_${paymentId}`);
+        let changed = false;
+        await db.runTransaction(async transaction => {
+          const [currentPayment, userSnapshot, grants, existingGrant] = await Promise.all([
+            transaction.get(paymentRef),
+            transaction.get(userRef),
+            transaction.get(userRef.collection("proGrants")),
+            transaction.get(grantRef),
+          ]);
+          if (String(currentPayment.data()?.status || "").toLowerCase() === "complete") return;
+          if (!userSnapshot.exists) throw new Error("Missing user profile for verified PayFast payment.");
+          const user = userSnapshot.data() || {};
+          const paidExpiries = grants.docs
+            .filter(grant => ["paystack", "payfast"].includes(String(grant.data().source)) && !grant.data().revokedAt)
+            .map(grant => {
+              const expiry = grant.data().expiresAt;
+              return expiry instanceof Date ? expiry :
+                typeof expiry?.toDate === "function" ? expiry.toDate() : null;
+            })
+            .filter((expiry): expiry is Date => expiry instanceof Date && expiry.getTime() > Date.now());
+          if (["paystack", "payfast"].includes(String(user.subscriptionSource))) {
+            const legacy = user.subscriptionExpiresAt;
+            const expiry = legacy instanceof Date ? legacy :
+              typeof legacy?.toDate === "function" ? legacy.toDate() : null;
+            if (expiry instanceof Date && expiry.getTime() > Date.now()) paidExpiries.push(expiry);
+          }
+          const periodStart = paidExpiries.sort((left, right) => right.getTime() - left.getTime())[0] || new Date();
+          const expiresAt = addBillingPeriod(periodStart, plan);
+          if (!existingGrant.exists) {
+            transaction.create(grantRef, {
+              source: "payfast",
+              reference: paymentId,
+              startsAt: periodStart,
+              expiresAt,
+              createdAt: FieldValue.serverTimestamp(),
+            });
+          }
+          transaction.set(paymentRef, {
+            status: "complete",
+            payfastPaymentStatus: paymentStatus,
+            payfastPaymentId: String(fields.pf_payment_id || ""),
+            payfastToken: String(fields.token || ""),
+            processedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          transaction.set(userRef, {
             payfastPaymentId: paymentId,
             payfastToken: String(fields.token || ""),
+            subscriptionBillingInterval: plan,
             updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
+          }, { merge: true });
+          changed = true;
+        });
+        if (changed) await recomputeProEntitlement(uid, { syncTrustedGrant: true });
+      } else {
+        await db.runTransaction(async transaction => {
+          const current = await transaction.get(paymentRef);
+          if (String(current.data()?.status || "").toLowerCase() === "complete") return;
+          transaction.set(paymentRef, {
+            status: paymentStatus.toLowerCase(),
+            payfastPaymentStatus: paymentStatus,
+            payfastPaymentId: String(fields.pf_payment_id || ""),
+            payfastToken: String(fields.token || ""),
+            processedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        });
       }
-
-      await paymentRef.set(
-        {
-          status: paymentStatus.toLowerCase(),
-          payfastPaymentStatus: paymentStatus,
-          payfastPaymentId: String(fields.pf_payment_id || ""),
-          payfastToken: String(fields.token || ""),
-          processedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
 
       response.status(200).send("OK");
     } catch (error) {
@@ -512,7 +569,20 @@ export const payfastNotify = onRequest(
   }
 );
 
-export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
+export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook} from './paystack';
+export { refreshProEntitlements as expirePaystackAccess };
+
+export const getProEntitlement = onCall({ region: "europe-west1", invoker: "public" }, async request => {
+  const current = requireSignedIn(request);
+  const entitlement = await recomputeProEntitlement(current.uid);
+  if (!entitlement) throw new HttpsError("not-found", "The BatchBoss user profile was not found.");
+  return {
+    active: entitlement.active,
+    expiresAt: entitlement.expiresAt?.toISOString() || null,
+    source: entitlement.source,
+    sources: entitlement.sources,
+  };
+});
 
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 export { sendBatchBossGiftProEmail } from './giftProEmail';
