@@ -55,7 +55,11 @@ export function evaluateProEntitlement(
     const expiresAt = asDate(profile.subscriptionExpiresAt);
     const paidLegacyWithoutExpiry = source === "payfast" && !expiresAt &&
       ["active", "trialing"].includes(status);
-    if (source && ["active", "trialing", "expired"].includes(status) &&
+    // The legacy promotion fields are mirrors once an explicit admin gift
+    // exists. Never resurrect a revoked gift through its old profile mirror.
+    const hasExplicitAdminGift = grants.some(grant => grant.source === "admin_promotion");
+    if (source && !(source === "admin_promotion" && hasExplicitAdminGift) &&
+        ["active", "trialing", "expired"].includes(status) &&
         (expiresAt || paidLegacyWithoutExpiry)) {
       candidates.set("legacy_profile", {
         id: "legacy_profile",
