@@ -20,10 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: functions/package-lock.json
       - name: Install dependencies without running package scripts
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Compile TypeScript and run Pro entitlement tests
         run: npm run test:entitlements
       - name: Lint TypeScript
