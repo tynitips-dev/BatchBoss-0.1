@@ -175,12 +175,14 @@ async function migrateLegacyGrants(
 
 export async function recomputeProEntitlement(
   uid: string,
-  options: { syncTrustedGrant?: boolean } = {}
+  options: { syncTrustedGrant?: boolean; allowMigration?: boolean } = {}
 ) {
   const db = getFirestore();
   const userRef = db.collection("users").doc(uid);
 
-  if (!migrationEnabled()) {
+  // Only explicitly authorized background jobs may run historical migration.
+  // Even when the gate is enabled, a customer profile read is always read-only.
+  if (!(migrationEnabled() && options.allowMigration === true)) {
     if (options.syncTrustedGrant === true) {
       // A verified payment or administrator gift is the only caller allowed
       // to mirror current access while historical migration is disabled.
@@ -304,7 +306,7 @@ export const refreshProEntitlements = onSchedule({
       const pending = page.docs.filter(user => !processed.has(user.id));
       for (const user of pending) processed.add(user.id);
       for (let offset = 0; offset < pending.length; offset += 10) {
-        await Promise.all(pending.slice(offset, offset + 10).map(user => recomputeProEntitlement(user.id)));
+        await Promise.all(pending.slice(offset, offset + 10).map(user => recomputeProEntitlement(user.id, { allowMigration: true })));
       }
       if (page.docs.length < 200) break;
       cursor = page.docs[page.docs.length - 1];
