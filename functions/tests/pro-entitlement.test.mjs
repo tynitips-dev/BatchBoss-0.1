@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { evaluateProEntitlement } = require(join(here, '../lib/proEntitlements.js'));
+const { evaluateProEntitlement, legacyProfileGrant } = require(join(here, '../lib/proEntitlements.js'));
 const NOW = new Date('2026-10-21T12:00:00.000Z');
 const before = '2026-10-20T12:00:00.000Z';
 const after = '2026-10-30T12:00:00.000Z';
@@ -119,4 +119,26 @@ test('revoked gift leaves an independent paid grant active', () => {
   ], NOW);
   assert.equal(result.active, true);
   assert.equal(result.source, 'paystack');
+});
+
+test('legacy paid expiry after 1970 is imported without historical clock filtering', () => {
+  const grant = legacyProfileGrant({ subscriptionPlan: 'pro', subscriptionSource: 'payfast',
+    subscriptionStatus: 'active', subscriptionExpiresAt: after });
+  assert.equal(grant?.source, 'payfast');
+  assert.equal(grant?.expiresAt?.toISOString(), after);
+});
+
+test('expired dated legacy grant remains expired when evaluated today', () => {
+  const grant = legacyProfileGrant({ subscriptionPlan: 'pro', subscriptionSource: 'payfast',
+    subscriptionStatus: 'expired', subscriptionExpiresAt: before });
+  assert.equal(grant?.source, 'payfast');
+  const result = evaluateProEntitlement({ proEntitlementsMigrated: true }, [grant], NOW);
+  assert.equal(result.active, false);
+});
+
+test('legacy promotion cannot be imported over a revoked admin grant', () => {
+  const grant = legacyProfileGrant({ subscriptionPlan: 'promo',
+    subscriptionStatus: 'active', subscriptionExpiresAt: after },
+    [{ id: 'admin_revoked', source: 'admin_promotion', expiresAt: after, revokedAt: before }]);
+  assert.equal(grant, null);
 });
