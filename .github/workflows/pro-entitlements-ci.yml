@@ -37,3 +37,10 @@ jobs:
           GCLOUD_PROJECT: demo-batchboss
           PRO_ENTITLEMENT_MIGRATION_ENABLED: 'false'
         run: npx --yes firebase-tools@14 emulators:exec --only firestore --project demo-batchboss "node --test functions/tests/pro-entitlement-emulator.test.mjs"
+
+      - name: Explicit migration dry run on isolated demo Firestore
+        working-directory: .
+        env:
+          GCLOUD_PROJECT: demo-batchboss
+          PRO_ENTITLEMENT_MIGRATION_ENABLED: 'true'
+        run: npx --yes firebase-tools@14 emulators:exec --only firestore --project demo-batchboss "node --test functions/tests/pro-migration-enabled-emulator.test.mjs"
