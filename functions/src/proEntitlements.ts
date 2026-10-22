@@ -105,6 +105,30 @@ export function evaluateProEntitlement(
   };
 }
 
+export function legacyProfileGrant(
+  profile: Record<string, unknown>,
+  existing: ProGrant[] = []
+): ProGrant | null {
+  if (profile.proEntitlementsMigrated === true) return null;
+  const status = String(profile.subscriptionStatus || "").toLowerCase();
+  if (!["active", "trialing", "expired"].includes(status)) return null;
+  const sourceRaw = String(profile.subscriptionSource || "").toLowerCase();
+  const plan = String(profile.subscriptionPlan || "").toLowerCase();
+  const source: GrantSource | null =
+    sourceRaw === "payfast" || sourceRaw === "paystack" ? sourceRaw :
+    sourceRaw === "admin_promotion" || plan === "promo" ? "admin_promotion" :
+    ["pro", "monthly", "annual"].includes(plan) ? "payfast" : null;
+  if (!source) return null;
+  // Once an explicit admin gift exists, never recreate the older mirrored gift.
+  if (source === "admin_promotion" &&
+      existing.some(grant => grant.source === "admin_promotion")) return null;
+  const expiresAt = asDate(profile.subscriptionExpiresAt);
+  const allowedNoExpiry = source === "payfast" &&
+    ["active", "trialing"].includes(status);
+  if (!expiresAt && !allowedNoExpiry) return null;
+  return { id: "legacy_profile", source, startsAt: null, expiresAt };
+}
+
 function paymentExpiry(payment: Record<string, unknown>): Date | null {
   const interval = payment.interval === "annual" || payment.plan === "annual"
     ? "annual"
@@ -142,20 +166,10 @@ async function migrateLegacyGrants(
     });
   };
 
-  const legacy = evaluateProEntitlement(
-    { ...profile, proEntitlementsMigrated: false },
-    [],
-    new Date(0)
-  );
-  if (legacy.source) {
-    const source = legacy.source as GrantSource;
-    add({
-      id: "legacy_profile",
-      source,
-      startsAt: null,
-      expiresAt: asDate(profile.subscriptionExpiresAt),
-    });
-  }
+  // Preserve the original dated grant independently of today's clock.
+  // The previous 1970 evaluator check skipped nearly every valid legacy expiry.
+  const legacy = legacyProfileGrant(profile, existing);
+  if (legacy) add(legacy);
 
   const latestBySource = new Map<"paystack" | "payfast", Date>();
   for (const paymentSnapshot of payments) {
