@@ -41,5 +41,5 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
-      - name: Run isolated Robolectric customer and recipe sync tests
-        run: gradle --no-daemon --no-configuration-cache --console=plain :app:testDebugUnitTest --tests "com.example.BakerySyncRobolectricTest"
+      - name: Run complete Android unit test suite
+        run: gradle --no-daemon --no-configuration-cache --console=plain :app:testDebugUnitTest
