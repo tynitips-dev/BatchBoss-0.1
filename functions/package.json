@@ -10,7 +10,7 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "lint": "tsc --noEmit",
-    "test:entitlements": "npm run build && node --test tests/pro-entitlement.test.mjs"
+    "test:entitlements": "npm run build && node --test tests/pro-entitlement.test.mjs tests/paystack-security.test.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",
