@@ -34,7 +34,20 @@ object WebSyncService {
 
     private var activeBaseUrl: String? = null
 
+    // Test-only endpoint override. No externally supplied URL is accepted
+    // in production; tests use an isolated loopback HTTP server.
+    @Volatile private var testingBaseUrl: String? = null
+
+    internal fun setTestBaseUrl(url: String?) {
+        require(url == null || url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) {
+            "Test sync endpoint must be a loopback HTTP server"
+        }
+        testingBaseUrl = url
+        activeBaseUrl = null
+    }
+
     private suspend fun getWorkingBaseUrl(): String = withContext(Dispatchers.IO) {
+        testingBaseUrl?.let { return@withContext it }
         activeBaseUrl?.let { return@withContext it }
         for (url in candidateBaseUrls) {
             try {
