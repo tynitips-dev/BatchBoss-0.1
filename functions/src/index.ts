@@ -475,11 +475,19 @@ export const payfastNotify = onRequest(
       }
 
       const payment = paymentSnapshot.data() || {};
-      const expectedAmount = Number(payment.amount || 0);
-      const receivedAmount = Number(fields.amount_gross || 0);
+      // Only a server-created PayFast ZAR checkout may be settled here.
+      // This protects against callbacks reusing unrelated payment document IDs.
+      if (payment.provider !== "payfast" || payment.currency !== "ZAR" ||
+          !["monthly", "annual"].includes(String(payment.plan || ""))) {
+        response.status(400).send("Invalid payment record");
+        return;
+      }
+      const expectedAmount = Number(payment.amount);
+      const receivedAmount = Number(fields.amount_gross);
 
       if (
-        !Number.isFinite(receivedAmount) ||
+        !Number.isFinite(expectedAmount) || expectedAmount <= 0 ||
+        !Number.isFinite(receivedAmount) || receivedAmount <= 0 ||
         Math.abs(receivedAmount - expectedAmount) > 0.01
       ) {
         response.status(400).send("Payment amount does not match");
@@ -501,6 +509,13 @@ export const payfastNotify = onRequest(
             transaction.get(userRef.collection("proGrants")),
             transaction.get(grantRef),
           ]);
+          if (currentPayment.data()?.provider !== "payfast" ||
+              currentPayment.data()?.currency !== "ZAR" ||
+              currentPayment.data()?.uid !== uid ||
+              currentPayment.data()?.plan !== plan ||
+              Number(currentPayment.data()?.amount) !== expectedAmount) {
+            throw new Error("PayFast checkout changed during settlement.");
+          }
           if (String(currentPayment.data()?.status || "").toLowerCase() === "complete") return;
           if (!userSnapshot.exists) throw new Error("Missing user profile for verified PayFast payment.");
           const user = userSnapshot.data() || {};
