@@ -492,3 +492,35 @@ td small {
 }
 
 .admin-shell .panel a{color:#cc2859;font-weight:700}.admin-shell .panel .secondary{margin-top:12px}.admin-shell nav button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Supplier management: scoped to the existing admin design. */
+.supplier-admin-section { margin-top:24px }
+.supplier-admin-section h2 { margin-top:0 }
+.supplier-admin-login { display:grid;gap:12px;max-width:440px;margin:18px 0 }
+.supplier-admin-login label { display:grid;gap:7px;font-weight:700;font-size:13px }
+.supplier-admin-login input,.supplier-admin-tools select { padding:11px 13px;border:1px solid #d9dee8;border-radius:10px;background:white;color:#12243b }
+.supplier-admin-tools { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:15px 0 }
+.supplier-admin-tools label { display:flex;gap:10px;align-items:center }
+.supplier-admin-item { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 0;border-top:1px solid #edf0f4 }
+.supplier-admin-item p { margin:6px 0;color:#64748b }
+.supplier-admin-item small { color:#64748b }
+.supplier-admin-section .secondary { margin:0;width:auto }
+
+
+/* Supplier admin: campaign review inside the existing main admin dashboard */
+.supplier-admin-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
+.supplier-admin-tabs button{border:1px solid #dfe4ec;border-radius:11px;background:white;color:#12243b;padding:11px 16px;font-weight:800;cursor:pointer}
+.supplier-admin-tabs button.active{background:#10263f;color:white;border-color:#10263f}
+.supplier-campaign-review{min-width:0}
+.supplier-campaign-review .supplier-admin-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:15px 0}
+.supplier-campaign-review .supplier-admin-tools h3{margin:0 auto 0 0}
+.supplier-review-item{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:20px;padding:18px;margin-top:15px;border:1px solid #e4e9f0;border-radius:16px;background:#fff}
+.supplier-review-image{width:100%;height:175px;object-fit:cover;border-radius:12px;border:1px solid #e4e9f0}
+.supplier-review-image-empty{background:#f6f8fb;color:#64748b;font-size:12px;text-align:center;display:grid;place-items:center;padding:12px}
+.supplier-review-copy{min-width:0;overflow-wrap:anywhere}
+.supplier-review-copy h3{margin:0 0 7px}
+.supplier-review-copy p{color:#64748b;line-height:1.5}
+.supplier-review-copy small{display:block;margin-top:8px;color:#526477}
+.supplier-rejection-form label{display:grid;gap:8px;font-weight:700;font-size:13px}
+.supplier-rejection-form textarea{width:100%;min-height:90px;border:1px solid #dfe4ec;border-radius:10px;padding:10px;font:inherit}
+@media(max-width:740px){.supplier-review-item{grid-template-columns:1fr}}
