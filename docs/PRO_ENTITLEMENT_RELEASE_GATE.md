@@ -18,6 +18,12 @@ This document covers the separate safety branch and draft PR #25. Passing unit t
 - [ ] Produce backups, staged canary population, alerting thresholds, backout procedure and explicit written deploy/merge authorization.
 - [ ] Review branch/base merge conflicts and obtain final human review of this cross-product feature.
 
+## Source-only integration security findings (23 October 2026)
+- **Legacy Node backend on repository default branch:** `server.js` serves `/api/bakery/:bakeryId/all` and mutable bakery routes without authentication, accepts wildcard CORS, persists bakery/customer data at `public/data/bakery_store.json`, and statically serves the `public` directory. If this server is reachable outside a disposable fixture environment, customer data may be exposed or modified. Its presence in GitHub does **not** prove it is deployed. Verify the actual xneelo runtime/configuration with the owner before any production integration; never probe customer endpoints with live identifiers.
+- **Branch divergence:** this Pro safety PR targets `codex/web-backend-foundation` and does not contain that legacy `server.js`. Passing PR CI therefore does not audit or fix the separate default-branch Node service. Do not assume a merge resolves the discrepancy.
+- **Android sync:** `WebSyncService` currently chooses loopback addresses (`10.0.2.2`, `127.0.0.1`, `localhost`), so passing isolated mock-server tests does not demonstrate authenticated production Android-to-web synchronization. A reviewed, authenticated staging endpoint and source reconciliation are required.
+- **PayFast is legacy, not the active payment provider:** `index.ts` still exports `createPayfastCheckout` and `payfastNotify`. Confirm that new PayFast checkout is disabled in the actual deployed runtime; preserve legacy callback/data paths until existing subscription obligations have been audited. No new PayFast charge is authorized by this PR.
+
 ## Hard safety constraints
 - `PRO_ENTITLEMENT_MIGRATION_ENABLED` is **false by default**. Do not enable for any customer environment without the separate migration approval.
 - Do not run `firebase deploy`, merge the draft PR, write production Firestore accounts, or edit real Paystack/PayFast payment records without explicit approval.
