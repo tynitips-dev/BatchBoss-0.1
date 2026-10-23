@@ -55,6 +55,24 @@ test('annual expiry preserves calendar date except leap day', () => {
   assert.equal(periodEnd('2024-02-29T09:00:00Z', 'annual').toISOString(),
     '2025-02-28T09:00:00.000Z');
 });
+test('impossible calendar dates and malformed Paystack timestamps fail closed', () => {
+  for (const paidAt of [
+    '2026-02-31T09:00:00.000Z',
+    '2026-04-31T09:00:00.000Z',
+    '2026-10-22T25:00:00Z',
+    '2026-10-22T09:61:00Z',
+    '2026-10-22T09:00:00+15:00',
+    '2026-10-22 09:00:00Z',
+    '2026-10-22T09:00:00'
+  ]) {
+    assert.throws(() => periodEnd(paidAt, 'monthly'), /Invalid paid date/);
+    assert.equal(matchesPayment(transaction({ paid_at: paidAt }), expected), false);
+  }
+  assert.equal(matchesPayment(transaction({
+    paid_at: '2026-10-22T11:00:00+02:00'
+  }), expected), true);
+});
+
 test('invalid billing timestamp cannot create an entitlement', () => {
   assert.throws(() => periodEnd('nonsense', 'annual'), /Invalid paid date/);
 });
