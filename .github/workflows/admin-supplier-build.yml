@@ -45,6 +45,7 @@ jobs:
           zip -qr ../../BatchBoss-admin-SUPPLIERS-configured-TEST.zip .
       - uses: actions/upload-artifact@v4
         with:
-          name: BatchBoss-admin-suppliers-TEST
-          path: BatchBoss-admin-suppliers-TEST.zip
+          name: BatchBoss-admin-SUPPLIERS-configured-TEST
+          path: BatchBoss-admin-SUPPLIERS-configured-TEST.zip
+          if-no-files-found: error
           retention-days: 14
