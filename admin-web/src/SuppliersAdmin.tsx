@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Component, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -51,6 +51,20 @@ function CampaignArtwork({supplierId,campaignId}:{supplierId:string;campaignId:s
   return url?<img className="supplier-review-image" src={url} alt="Supplier advertisement artwork"/>:<div className="supplier-review-image supplier-review-image-empty">{status}</div>
 }
 
+class CampaignReviewBoundary extends Component<{children:ReactNode},{error:string|null}> {
+  state:{error:string|null}={error:null}
+  static getDerivedStateFromError(error:Error){return {error:error.message||'Unknown rendering error'}}
+  componentDidCatch(error:Error,info:{componentStack?:string}){console.error('Campaign review screen crashed',error,info)}
+  render(){
+    if(this.state.error)return <section className="error" role="alert">
+      <h3>Campaign reviews couldn't be displayed</h3>
+      <p>{this.state.error}</p>
+      <button className="secondary" type="button" onClick={()=>this.setState({error:null})}>Retry campaign reviews</button>
+    </section>
+    return this.props.children
+  }
+}
+
 function SupplierCampaignReviews() {
   const [items,setItems]=useState<CampaignReviewItem[]>([])
   const [loading,setLoading]=useState(true)
@@ -63,7 +77,9 @@ function SupplierCampaignReviews() {
     setLoading(true);setError('')
     try {
       const fn=httpsCallable<undefined,{campaigns:CampaignReviewItem[]}>(supplierServices().functions,'listCampaignReviewQueue')
-      setItems((await fn()).data.campaigns)
+      const response=(await fn()).data
+      if(!Array.isArray(response?.campaigns))throw new Error('Supplier server returned an unexpected campaign list. Please check the deployed listCampaignReviewQueue function.')
+      setItems(response.campaigns.filter(item=>item && typeof item.campaignId==='string' && typeof item.supplierId==='string'))
     }catch(e){setError(errorText(e))}
     finally{setLoading(false)}
   },[])
@@ -181,7 +197,7 @@ export default function SuppliersAdmin({initialTab='applications'}:{initialTab?:
       !authorized ? <div className="error">This account is signed in but does not have supplier administrator permissions. An existing customer administrator is not automatically authorized in the separate supplier project. <button className="secondary" onClick={()=>signOut(supplierServices().auth)}>Switch supplier account</button></div> :
       <>
         <div className="supplier-admin-tabs"><button type="button" className={tab==='applications'?'active':''} onClick={()=>setTab('applications')}>Supplier applications</button><button type="button" className={tab==='campaigns'?'active':''} onClick={()=>setTab('campaigns')}>Campaign reviews</button></div>
-        {tab==='campaigns'?<SupplierCampaignReviews/>:<>
+        {tab==='campaigns'?<CampaignReviewBoundary><SupplierCampaignReviews/></CampaignReviewBoundary>:<>
         <p>Connected to supplier administration as {user.email}. Approval does not activate a paid listing.</p>
         <div className="supplier-admin-tools">
           <label>Status <select value={status} onChange={event=>setStatus(event.target.value as SupplierStatus)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="suspended">Suspended</option></select></label>
