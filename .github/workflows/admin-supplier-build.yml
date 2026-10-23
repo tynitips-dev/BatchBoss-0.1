@@ -14,6 +14,18 @@ jobs:
     defaults:
       run:
         working-directory: admin-web
+    env:
+      VITE_FIREBASE_API_KEY: 'AIzaSyBp_aulVgP52CVzgEWteFhTkmtfFKD5v6M'
+      VITE_FIREBASE_AUTH_DOMAIN: 'batch-boss-android.firebaseapp.com'
+      VITE_FIREBASE_PROJECT_ID: 'batch-boss-android'
+      VITE_FIREBASE_STORAGE_BUCKET: 'batch-boss-android.firebasestorage.app'
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '802048202389'
+      VITE_FIREBASE_APP_ID: '1:802048202389:web:e0eceeb49caf0824b7ad9c'
+      VITE_SUPPLIER_FIREBASE_API_KEY: 'AIzaSyBSjmeoNOQ8HvMkBKK-vpSs4ET_P57BUac'
+      VITE_SUPPLIER_FIREBASE_AUTH_DOMAIN: 'batchboss-suppliers.firebaseapp.com'
+      VITE_SUPPLIER_FIREBASE_PROJECT_ID: 'batchboss-suppliers'
+      VITE_SUPPLIER_FIREBASE_MESSAGING_SENDER_ID: '775678064302'
+      VITE_SUPPLIER_FIREBASE_APP_ID: '1:775678064302:web:3433a51ede23025481df3f'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,10 +33,16 @@ jobs:
           node-version: '22'
       - run: npm install --no-package-lock --no-audit --no-fund
       - run: npm run build
+      - name: Verify main and supplier Firebase configuration was embedded
+        run: |
+          test -s dist/index.html
+          grep -rl 'batch-boss-android' dist/assets
+          grep -rl 'batchboss-suppliers' dist/assets
+          if grep -rl 'VITE_SUPPLIER_FIREBASE_API_KEY' dist/assets; then echo 'Unresolved supplier environment variable'; exit 1; fi
       - name: Package xneelo build (requires configured Firebase environment)
         run: |
           cd dist
-          zip -qr ../../BatchBoss-admin-suppliers-TEST.zip .
+          zip -qr ../../BatchBoss-admin-SUPPLIERS-configured-TEST.zip .
       - uses: actions/upload-artifact@v4
         with:
           name: BatchBoss-admin-suppliers-TEST
