@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account access | BatchBoss</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#263144;background:#faf7f9}
+*{box-sizing:border-box}body{margin:0}main{max-width:970px;margin:auto;padding:35px 20px 70px}
+a{color:#bd1454}.eyebrow{font-weight:700;color:#bd1454;letter-spacing:.09em;text-transform:uppercase;font-size:.8rem}
+h1{font-size:clamp(2rem,5vw,3rem);margin:.3em 0}.intro{color:#566278;max-width:700px;line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:18px;margin-top:30px}
+.card{border:1px solid #f2d4df;border-radius:18px;padding:26px;background:white;box-shadow:0 6px 18px #9d31520a;display:flex;flex-direction:column}
+.card h2{margin:0 0 12px}.card p{line-height:1.6;flex:1;color:#566278}
+.cta{display:inline-block;text-align:center;padding:13px 15px;border-radius:9px;background:#d51b64;color:white;text-decoration:none;font-weight:700}
+.cta:focus-visible{outline:3px solid #1e293b;outline-offset:3px}
+.note{margin-top:26px;padding:17px;background:#fff;border:1px solid #e4dfe4;border-radius:12px;color:#566278;font-size:.94rem;line-height:1.5}
+</style></head>
+<body><main>
+<a href="/">← Back to BatchBoss</a>
+<p class="eyebrow">BatchBoss account access</p>
+<h1>Choose your workspace</h1>
+<p class="intro">Customers, suppliers and administrators use different workspaces. Your account permissions are verified by the destination service, not by this page.</p>
+<section class="grid" aria-label="Account destinations">
+<article class="card"><h2>🧁 Customers & bakeries</h2><p>Return to the BatchBoss bakery portal for customer and bakery records. A separate secure customer sign-in has not yet been enabled on this entry page.</p><a class="cta" href="/">Open bakery portal</a></article>
+<article class="card"><h2>🏪 Suppliers</h2><p>Sign in to the existing supplier website. Supplier registration and approval remain limited by the staged supplier system.</p><a class="cta" href="https://suppliers.batchboss.co.za/">Supplier sign-in</a></article>
+<article class="card"><h2>🔐 Administration</h2><p>Continue to the independent BatchBoss admin site. Administrative access must be enforced on the server and Firebase security rules.</p><a class="cta" href="https://admin.batchboss.co.za/">Admin sign-in</a></article>
+</section>
+<p class="note"><strong>Security:</strong> These links do not grant any permissions or combine Firebase user databases. Supplier listings and adverts must be approved, paid and unexpired before publication. Payments and product-image uploads remain disabled during this phase.</p>
+</main></body></html>
