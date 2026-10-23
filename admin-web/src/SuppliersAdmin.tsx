@@ -77,7 +77,9 @@ export default function SuppliersAdmin() {
     setBusy(item.uid);setError('');setNotice('')
     try{
       const {functions}=supplierServices()
-      await httpsCallable<{supplierId:string;decision:string;reason?:string},{status:string}>(functions,'reviewSupplierApplication')({supplierId:item.uid,decision,reason:reason||undefined})
+      const payload:{supplierId:string;decision:'approved'|'rejected';reason?:string}={supplierId:item.uid,decision}
+      if(decision==='rejected')payload.reason=reason||''
+      await httpsCallable<typeof payload,{status:string}>(functions,'reviewSupplierApplication')(payload)
       setNotice(`Supplier application ${decision}.`);await refresh()
     } catch(e){setError(errorText(e))}
     finally{setBusy('')}
