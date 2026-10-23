@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: npm install --no-package-lock --no-audit --no-fund
       - run: npm run build
       - name: Package xneelo build (requires configured Firebase environment)
         run: |
