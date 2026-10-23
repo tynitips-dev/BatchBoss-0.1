@@ -1,0 +1,45 @@
+name: Main site Supplier Login release check
+on:
+  pull_request:
+    paths:
+      - 'public/index.html'
+      - '.github/workflows/supplier-login-release.yml'
+  push:
+    branches:
+      - 'feature/role-entry-customer-supplier-admin-20261023'
+    paths:
+      - 'public/index.html'
+      - '.github/workflows/supplier-login-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-xneelo-page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify minimal change and redirect target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('public/index.html').read_text(encoding='utf-8')
+          assert 'Supplier Login</a>' in html, 'Supplier Login link is missing'
+          assert 'href="https://suppliers.batchboss.co.za/"' in html, 'Incorrect supplier link'
+          assert 'suppliers.batchboss.co.za' in html
+          assert 'sk_live_' not in html and 'sk_test_' not in html, 'Unexpected secret-looking token'
+          print('PASS: Supplier Login links to existing supplier portal. No payment changes.')
+          PY
+      - name: Package single-file xneelo web-root replacement
+        run: |
+          mkdir -p release
+          cp public/index.html release/index.html
+          cd release && zip -q ../BatchBoss-homepage-supplier-login-xneelo.zip index.html
+      - name: Upload reviewed deploy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatchBoss-homepage-supplier-login-xneelo
+          path: BatchBoss-homepage-supplier-login-xneelo.zip
+          if-no-files-found: error
+          retention-days: 14
