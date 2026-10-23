@@ -1,0 +1,49 @@
+name: Main site Supplier Login release check
+on:
+  pull_request:
+    paths:
+      - 'release/MAIN_HOMEPAGE_ORIGINAL_WITH_SUPPLIER_LOGIN/index.html'
+      - '.github/workflows/supplier-login-release.yml'
+  push:
+    branches:
+      - 'feature/role-entry-customer-supplier-admin-20261023'
+    paths:
+      - 'release/MAIN_HOMEPAGE_ORIGINAL_WITH_SUPPLIER_LOGIN/index.html'
+      - '.github/workflows/supplier-login-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-xneelo-page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify minimal change and redirect target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('release/MAIN_HOMEPAGE_ORIGINAL_WITH_SUPPLIER_LOGIN/index.html').read_text(encoding='utf-8')
+          assert 'Supplier Login <span' in html, 'Supplier Login link is missing'
+          assert 'href="https://suppliers.batchboss.co.za/"' in html, 'Incorrect supplier link'
+          assert 'suppliers.batchboss.co.za' in html
+          assert 'assets/hero.png' in html, 'Original hero not preserved'
+          assert 'id="cost-form"' in html, 'Original calculator not preserved'
+          assert 'id="plans"' in html, 'Original pricing content not preserved'
+          assert 'script.js' in html and 'style.css' in html, 'Original asset references missing'
+          assert 'sk_live_' not in html and 'sk_test_' not in html, 'Unexpected secret-looking token'
+          print('PASS: Original BatchBoss hero, calculator, plans, assets and supplier redirect preserved.')
+          PY
+      - name: Package single-file xneelo web-root replacement
+        run: |
+          mkdir -p /tmp/batchboss-homepage-xneelo
+          cp release/MAIN_HOMEPAGE_ORIGINAL_WITH_SUPPLIER_LOGIN/index.html /tmp/batchboss-homepage-xneelo/index.html
+          cd /tmp/batchboss-homepage-xneelo && zip -q "$GITHUB_WORKSPACE/BatchBoss-homepage-supplier-login-xneelo.zip" index.html
+      - name: Upload reviewed deploy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatchBoss-ORIGINAL-homepage-supplier-login-xneelo
+          path: BatchBoss-homepage-supplier-login-xneelo.zip
+          if-no-files-found: error
+          retention-days: 14
