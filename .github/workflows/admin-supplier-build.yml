@@ -1,0 +1,32 @@
+name: Admin supplier approvals build
+on:
+  push:
+    branches: [feature/admin-supplier-approvals-20261023]
+    paths: ['admin-web/**','.github/workflows/admin-supplier-build.yml']
+  pull_request:
+    paths: ['admin-web/**','.github/workflows/admin-supplier-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+      - name: Package xneelo build (requires configured Firebase environment)
+        run: |
+          cd dist
+          zip -qr ../../BatchBoss-admin-suppliers-TEST.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BatchBoss-admin-suppliers-TEST
+          path: BatchBoss-admin-suppliers-TEST.zip
+          retention-days: 14
