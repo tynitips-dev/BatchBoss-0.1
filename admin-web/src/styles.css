@@ -492,3 +492,16 @@ td small {
 }
 
 .admin-shell .panel a{color:#cc2859;font-weight:700}.admin-shell .panel .secondary{margin-top:12px}.admin-shell nav button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Supplier management: scoped to the existing admin design. */
+.supplier-admin-section { margin-top:24px }
+.supplier-admin-section h2 { margin-top:0 }
+.supplier-admin-login { display:grid;gap:12px;max-width:440px;margin:18px 0 }
+.supplier-admin-login label { display:grid;gap:7px;font-weight:700;font-size:13px }
+.supplier-admin-login input,.supplier-admin-tools select { padding:11px 13px;border:1px solid #d9dee8;border-radius:10px;background:white;color:#12243b }
+.supplier-admin-tools { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:15px 0 }
+.supplier-admin-tools label { display:flex;gap:10px;align-items:center }
+.supplier-admin-item { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 0;border-top:1px solid #edf0f4 }
+.supplier-admin-item p { margin:6px 0;color:#64748b }
+.supplier-admin-item small { color:#64748b }
+.supplier-admin-section .secondary { margin:0;width:auto }
