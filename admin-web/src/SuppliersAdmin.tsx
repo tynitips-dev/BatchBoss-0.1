@@ -105,12 +105,12 @@ function SupplierCampaignReviews() {
 }
 
 /** Isolated supplier login: the customer-admin Firebase identity is NOT a supplier-admin grant. */
-export default function SuppliersAdmin() {
+export default function SuppliersAdmin({initialTab='applications'}:{initialTab?:'applications'|'campaigns'}) {
   const [user,setUser] = useState<User|null>(null)
   const [authorized,setAuthorized] = useState(false)
   const [checking,setChecking] = useState(ready)
   const [status,setStatus] = useState<SupplierStatus>('pending')
-  const [tab,setTab] = useState<'applications'|'campaigns'>('applications')
+  const [tab,setTab] = useState<'applications'|'campaigns'>(initialTab)
   const [applications,setApplications] = useState<SupplierApplication[]>([])
   const [loading,setLoading] = useState(false)
   const [busy,setBusy] = useState('')
