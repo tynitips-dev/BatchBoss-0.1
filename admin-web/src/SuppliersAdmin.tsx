@@ -13,6 +13,7 @@ const config = {
   apiKey: import.meta.env.VITE_SUPPLIER_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_SUPPLIER_FIREBASE_AUTH_DOMAIN,
   projectId,
+  storageBucket: 'batchboss-suppliers.firebasestorage.app',
   appId: import.meta.env.VITE_SUPPLIER_FIREBASE_APP_ID,
   messagingSenderId: import.meta.env.VITE_SUPPLIER_FIREBASE_MESSAGING_SENDER_ID,
 }
@@ -35,7 +36,10 @@ function CampaignArtwork({supplierId,campaignId}:{supplierId:string;campaignId:s
     let active=true
     let objectUrl:string|null=null
     const path=`supplier-campaigns/${supplierId}/${campaignId}/artwork`
-    getBlob(ref(supplierServices().storage,path)).then(blob=>{
+    let imageReference
+    try { imageReference=ref(supplierServices().storage,path) }
+    catch(e) { setStatus(e instanceof Error ? e.message : 'Storage configuration error'); return () => {active=false} }
+    getBlob(imageReference).then(blob=>{
       objectUrl=URL.createObjectURL(blob)
       if(active){setUrl(objectUrl);setStatus('')}else URL.revokeObjectURL(objectUrl)
     }).catch(e=>{
