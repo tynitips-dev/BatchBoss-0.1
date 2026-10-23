@@ -4,6 +4,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, configured, db, functions } from './firebase'
+import SuppliersAdmin from './SuppliersAdmin'
 
 type Account = {
   uid: string
@@ -129,7 +130,7 @@ function ActivateAdmin({ user, onActivated }: { user: User; onActivated: () => v
 }
 
 function Dashboard({ user }: { user: User }) {
-  const [section,setSection]=useState<'overview'|'accounts'|'analytics'|'subscriptions'|'promotions'|'deletions'|'activity'>('overview')
+  const [section,setSection]=useState<'overview'|'accounts'|'analytics'|'subscriptions'|'promotions'|'deletions'|'activity'|'suppliers'>('overview')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [requests, setRequests] = useState<DeletionRequest[]>([])
   const [audit, setAudit] = useState<AuditLog[]>([])
@@ -217,12 +218,12 @@ function Dashboard({ user }: { user: User }) {
   return <div className="admin-shell">
     <aside><Brand /><nav aria-label="Admin sections">{([
       ['overview','Overview',LayoutDashboard],['accounts','Accounts',Users],['analytics','Analytics',BarChart3],
-      ['subscriptions','Subscriptions',CreditCard],['promotions','Pro gifts',Gift],['deletions','Deletion requests',Trash2],['activity','Activity log',Activity]
+      ['subscriptions','Subscriptions',CreditCard],['promotions','Pro gifts',Gift],['suppliers','Suppliers',Users],['deletions','Deletion requests',Trash2],['activity','Activity log',Activity]
       ] as const).map(([id,title,Icon])=><button key={id} className={section===id?'nav-active':''} onClick={()=>setSection(id)}><Icon />{title}{id==='deletions'&&<span>{requests.filter(item=>item.status==='pending').length}</span>}</button>)}</nav>
       <div className="admin-user"><div>{(user.email || 'A').slice(0, 1).toUpperCase()}</div><span><strong>Administrator</strong><small>{user.email}</small></span><button onClick={() => signOut(auth)} title="Sign out"><LogOut /></button></div>
     </aside>
     <main>
-      <header><div><span className="eyebrow">BatchBoss control centre</span><h1>{({overview:"Dashboard overview",accounts:"Bakery accounts",analytics:"Website & app analytics",subscriptions:"Subscriptions",promotions:"Promotional Pro gifts",deletions:"Deletion requests",activity:"Administrator activity"} as const)[section]}</h1></div><button className="secondary" onClick={refreshAccounts}><RefreshCw /> Sync now</button></header>
+      <header><div><span className="eyebrow">BatchBoss control centre</span><h1>{({overview:"Dashboard overview",accounts:"Bakery accounts",analytics:"Website & app analytics",subscriptions:"Subscriptions",promotions:"Promotional Pro gifts",suppliers:"Supplier approvals",deletions:"Deletion requests",activity:"Administrator activity"} as const)[section]}</h1></div><button className="secondary" onClick={refreshAccounts}><RefreshCw /> Sync now</button></header>
       {message && <div className="notice"><CheckCircle2 />{message}</div>}
       {(section==='overview'||section==='subscriptions')&&<section className="stats">
         <article><Users /><div><span>Total accounts</span><strong>{accounts.length}</strong></div></article>
@@ -233,6 +234,7 @@ function Dashboard({ user }: { user: User }) {
       {section==='overview'&&<section className="lower-grid"><article className="panel"><h2>Website & app visits</h2><p>Visitor analytics are not connected yet. Configure Google Analytics 4 to see actual visitor figures.</p><button className="secondary" onClick={()=>setSection('analytics')}>View analytics setup</button></article><article className="panel"><h2>Attention needed</h2><p>{requests.filter(item=>item.status==='pending').length} pending deletions</p><p>{accounts.filter(item=>item.disabled).length} disabled accounts</p></article></section>}
       {section==='analytics'&&<section className="panel"><h2>Visitor tracking</h2><p>To measure app.batchboss.co.za visits, connect a Google Analytics 4 property and configure consent on the public web app.</p><p><strong>Tracking status:</strong> Not connected. No visitor totals are available yet.</p><p>After configuration, view verified figures in <a href="https://analytics.google.com/" target="_blank" rel="noreferrer">Google Analytics</a>. Displaying them inside this admin site requires a separate authenticated reporting connection.</p></section>}
       {section==='subscriptions'&&<section className="panel"><h2>Subscription summary</h2><p>Account status totals, not verified payment revenue.</p><p>Paid Pro: {accounts.filter(a=>a.subscriptionPlan==='pro'&&a.subscriptionStatus==='active').length}</p><p>Pro gifts: {accounts.filter(a=>a.subscriptionPlan==='promo'&&a.subscriptionStatus==='active').length}</p></section>}
+      {section==='suppliers'&&<SuppliersAdmin />}
       {section==='promotions'&&<section className="panel"><h2>Pro gifts</h2><p>Choose a customer below, select the gift duration and click Gift Pro. Seven-day gifts use the existing email flow when deployed.</p></section>}
       {(section==='accounts'||section==='promotions')&&<section className="panel">
         <div className="panel-title"><div><h2>Bakery accounts</h2><p>Authentication and workspace records from Firebase.</p></div><label className="search"><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search users or bakeries…" /></label></div>
