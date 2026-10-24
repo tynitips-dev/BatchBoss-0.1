@@ -17,6 +17,8 @@ const payfastMerchantId = defineSecret("PAYFAST_MERCHANT_ID");
 const payfastMerchantKey = defineSecret("PAYFAST_MERCHANT_KEY");
 const payfastPassphrase = defineSecret("PAYFAST_PASSPHRASE");
 const payfastSecrets = [payfastMerchantId, payfastMerchantKey, payfastPassphrase];
+// PayFast is legacy. New checkouts remain disabled unless a separately reviewed exception enables them.
+const payfastCheckoutEnabled = defineString("PAYFAST_CHECKOUT_ENABLED", { default: "false" });
 
 function requireSignedIn(request: { auth?: { uid: string; token: Record<string, unknown> } }) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Please sign in.");
@@ -342,6 +344,12 @@ export const createPayfastCheckout = onCall(
   },
   async request => {
     const current = requireSignedIn(request);
+    if (payfastCheckoutEnabled.value() !== "true") {
+      throw new HttpsError(
+        "failed-precondition",
+        "PayFast checkout is legacy and disabled. Use Paystack for new subscriptions."
+      );
+    }
     const plan = String(request.data?.plan || "").toLowerCase();
 
     if (plan !== "monthly" && plan !== "annual") {
