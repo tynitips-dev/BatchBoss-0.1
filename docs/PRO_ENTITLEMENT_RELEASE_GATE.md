@@ -23,6 +23,7 @@ This document covers the separate safety branch and draft PR #25. Passing unit t
 - **Branch divergence:** this Pro safety PR targets `codex/web-backend-foundation` and does not contain that legacy `server.js`. Passing PR CI therefore does not audit or fix the separate default-branch Node service. Do not assume a merge resolves the discrepancy.
 - **Android sync:** `WebSyncService` currently chooses loopback addresses (`10.0.2.2`, `127.0.0.1`, `localhost`), so passing isolated mock-server tests does not demonstrate authenticated production Android-to-web synchronization. A reviewed, authenticated staging endpoint and source reconciliation are required.
 - **PayFast is legacy, not the active payment provider:** `index.ts` still exports `createPayfastCheckout` and `payfastNotify`. Confirm that new PayFast checkout is disabled in the actual deployed runtime; preserve legacy callback/data paths until existing subscription obligations have been audited. No new PayFast charge is authorized by this PR.
+- **Development-branch hardening (24 October 2026):** `createPayfastCheckout` now checks `PAYFAST_CHECKOUT_ENABLED`, default `false`, and fails before writing a new payment intent unless explicitly enabled. `payfastNotify` remains available for historical ITN settlement. This is source-level protection only; it does not verify the currently deployed runtime or its parameter configuration.
 
 ## Hard safety constraints
 - `PRO_ENTITLEMENT_MIGRATION_ENABLED` is **false by default**. Do not enable for any customer environment without the separate migration approval.
