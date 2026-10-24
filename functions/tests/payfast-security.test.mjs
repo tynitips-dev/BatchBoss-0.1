@@ -32,13 +32,13 @@ test('rejects invalid expected settlement amounts', () => {
 
 
 test('legacy PayFast checkout is disabled by default while the notification handler remains available', () => {
-  assert.match(source, /defineString\\(["']PAYFAST_CHECKOUT_ENABLED["'],\\s*\\{\\s*default:\\s*["']false["']\\s*\\}\\)/);
+  assert.match(source, /defineString\(["']PAYFAST_CHECKOUT_ENABLED["'],\s*\{\s*default:\s*["']false["']\s*\}\)/);
   const start = source.indexOf('export const createPayfastCheckout = onCall(');
   const end = source.indexOf('export const payfastNotify = onRequest(', start);
   assert.ok(start >= 0 && end > start, 'legacy checkout and callback exports should remain separate');
   const checkout = source.slice(start, end);
   const gate = checkout.indexOf('payfastCheckoutEnabled.value() !== "true"');
-  const write = checkout.indexOf('subscriptionPayments').valueOf();
+  const write = checkout.indexOf('subscriptionPayments');
   assert.ok(gate >= 0 && gate < write, 'checkout must fail closed before writing a payment intent');
-  assert.match(source.slice(end), /export const payfastNotify = onRequest\\(/);
+  assert.match(source.slice(end), /export const payfastNotify = onRequest\(/);
 });
