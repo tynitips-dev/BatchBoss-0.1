@@ -3,8 +3,8 @@ import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
-import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
+import {recomputeProEntitlement} from './proEntitlements';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
@@ -94,11 +94,13 @@ async function settle(reference:string,expectedUid?:string,subscriptionCode?:str
  if(transaction.status!=='success')return {status:String(transaction.status||'pending')};
  if(transaction.reference!==reference || !matchesPayment(transaction,expected as any))throw new HttpsError('failed-precondition','Payment details do not match the subscription.');
  const expires=periodEnd(transaction.paid_at,expected.interval);const profileRef=db().doc(`users/${expected.uid}`);
- await db().runTransaction(async t=>{const [current,profile]=await Promise.all([t.get(paymentRef),t.get(profileRef)]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
+ await db().runTransaction(async t=>{const [current,profile]=await Promise.all([t.get(paymentRef),t.get(profileRef)]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');
  t.set(paymentRef,{...expected,reference,status:'success',transactionId:String(transaction.id),paidAt:transaction.paid_at,processedAt:now()},{merge:true});
- // Test mode records test payments but never grants production entitlements.
- if(expected!.domain==='live' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
- });return {status:'success',testMode:expected.domain==='test'};
+ if(expected!.domain==='live'){
+  t.set(profileRef.collection('proGrants').doc(`paystack_${reference}`),{source:'paystack',reference,startsAt:new Date(transaction.paid_at),expiresAt:expires,createdAt:now()},{merge:true});
+  t.set(profileRef,{subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()},{merge:true});
+ }
+ });if(expected.domain==='live')await recomputeProEntitlement(String(expected.uid),{syncTrustedGrant:true});return {status:'success',testMode:expected.domain==='test'};
 }
 export const verifyPaystackPayment=onCall(options,async request=>settle(String(request.data?.reference||''),uidOf(request)));
 async function syncSubscription(code:string){
@@ -108,8 +110,7 @@ async function syncSubscription(code:string){
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)>0&&s.plan?.invoice_limit!=null&&Number(s.plan.invoice_limit)!==Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)))throw new Error('Subscription mismatch');
  await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
  if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
- // Never overwrite a later subscription or an administrator's promotion.
- if(p.subscriptionSource!=='paystack'||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
+ if((p.payfastPaymentId&&p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
  t.update(ref,{paystackSubscriptionCode:code,paystackSubscriptionStatus:s.status,subscriptionRenews:s.status==='active',updatedAt:now()});});
  return {uid,remote:s};
 }
@@ -143,9 +144,4 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
  }
  response.status(200).send('OK');
  }catch(error){console.error('Paystack event could not be processed',error instanceof HttpsError?error.code:'processing-error');response.status(500).send('Retry later');}
-});
-export const expirePaystackAccess=onSchedule({region:'europe-west1',schedule:'every 60 minutes'},async()=>{
- // Query only provider, then filter expiry locally: no composite index required.
- const users=await db().collection('users').where('subscriptionSource','==','paystack').get();
- for(const user of users.docs)await db().runTransaction(async t=>{const current=await t.get(user.ref);const p=current.data();if(p?.subscriptionSource==='paystack'&&p.subscriptionExpiresAt?.toMillis?.()<=Date.now()&&p.subscriptionStatus==='active')t.update(user.ref,{subscriptionStatus:'expired',updatedAt:now()});});
 });

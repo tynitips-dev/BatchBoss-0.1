@@ -9,6 +9,10 @@ import com.example.data.local.RecipeEntity
 import com.example.data.local.UserProfileEntity
 import com.example.data.local.generateBakeryId
 import com.example.data.remote.WebSyncService
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -26,6 +30,8 @@ import org.robolectric.annotation.Config
 class BakerySyncRobolectricTest {
 
     private lateinit var database: AppDatabase
+    private lateinit var backend: MockWebServer
+    private val posted = mutableMapOf<String, String>()
     private val testBakeryId = "bakery_test_suite_1"
 
     @Before
@@ -34,10 +40,34 @@ class BakerySyncRobolectricTest {
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        posted.clear()
+        backend = MockWebServer()
+        backend.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path ?: return MockResponse().setResponseCode(400)
+                val endpoint = path.substringBefore('?')
+                return when (request.method) {
+                    "POST" -> {
+                        synchronized(posted) { posted[endpoint] = request.body.readUtf8() }
+                        MockResponse().setResponseCode(200).setBody("{}")
+                    }
+                    "GET" -> {
+                        val saved = synchronized(posted) { posted[endpoint] }
+                        if (saved == null) MockResponse().setResponseCode(200).setBody("[]")
+                        else MockResponse().setResponseCode(200).setBody("[$saved]")
+                    }
+                    else -> MockResponse().setResponseCode(405)
+                }
+            }
+        }
+        backend.start()
+        WebSyncService.setTestBaseUrl(backend.url("/").toString().removeSuffix("/"))
     }
 
     @After
     fun teardown() {
+        WebSyncService.setTestBaseUrl(null)
+        backend.shutdown()
         database.close()
     }
 
