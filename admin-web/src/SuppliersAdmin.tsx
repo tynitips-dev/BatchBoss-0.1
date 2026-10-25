@@ -2,7 +2,6 @@ import { Component, useCallback, useEffect, useState, type FormEvent, type React
 import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-import { getBlob, getStorage, ref } from 'firebase/storage'
 
 type SupplierStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
 type CampaignReviewItem = { supplierId:string; campaignId:string; title:string; description:string; placement:string; startDate:string; endDate:string }
@@ -20,7 +19,7 @@ const config = {
 function supplierServices() {
   if (!ready) throw new Error('Supplier Firebase connection has not been configured.')
   const app = getApps().some(item => item.name === 'supplier-admin') ? getApp('supplier-admin') : initializeApp(config, 'supplier-admin')
-  return { auth: getAuth(app), functions: getFunctions(app), storage: getStorage(app, 'gs://batchboss-suppliers.firebasestorage.app') }
+  return { auth: getAuth(app), functions: getFunctions(app) }
 }
 function errorText(error: unknown) {
   const code = (error as {code?:string})?.code || ''
@@ -35,16 +34,19 @@ function CampaignArtwork({supplierId,campaignId}:{supplierId:string;campaignId:s
   useEffect(()=>{
     let active=true
     let objectUrl:string|null=null
-    const path=`supplier-campaigns/${supplierId}/${campaignId}/artwork`
-    let imageReference
-    try { imageReference=ref(supplierServices().storage,path) }
-    catch(e) { setStatus(e instanceof Error ? e.message : 'Storage configuration error'); return () => {active=false} }
-    getBlob(imageReference).then(blob=>{
+    setUrl(null);setStatus('Loading artwork…')
+    const load=async()=>{
+      const call=httpsCallable<{supplierId:string;campaignId:string},{contentType:string;base64:string}>(supplierServices().functions,'getCampaignReviewArtwork')
+      const {data}=await call({supplierId,campaignId})
+      if(!/^image\/(jpeg|png|webp)$/.test(data.contentType)||typeof data.base64!=='string')throw new Error('Invalid artwork response')
+      const bytes=Uint8Array.from(atob(data.base64),character=>character.charCodeAt(0))
+      const blob=new Blob([bytes],{type:data.contentType})
       objectUrl=URL.createObjectURL(blob)
       if(active){setUrl(objectUrl);setStatus('')}else URL.revokeObjectURL(objectUrl)
-    }).catch(e=>{
+    }
+    void load().catch(e=>{
       const code=(e as {code?:string}).code
-      if(active)setStatus(code==='storage/object-not-found'?'No artwork attached':code==='storage/unauthorized'?'Artwork access denied':`Cannot load artwork (${code||'network error'})`)
+      if(active)setStatus(code==='functions/not-found'?'No artwork attached':code==='functions/permission-denied'?'Artwork access denied. Sign in with your supplier administrator account.':errorText(e))
     })
     return ()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)}
   },[supplierId,campaignId])
