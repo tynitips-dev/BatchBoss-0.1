@@ -73,6 +73,7 @@ function SupplierCampaignReviews() {
   const [notice,setNotice]=useState('')
   const [reason,setReason]=useState('')
   const [rejecting,setRejecting]=useState('')
+  const [viewing,setViewing]=useState<CampaignReviewItem|null>(null)
   const refresh=useCallback(async()=>{
     setLoading(true);setError('')
     try {
@@ -91,7 +92,7 @@ function SupplierCampaignReviews() {
     try{
       const call=httpsCallable(supplierServices().functions,'reviewSupplierCampaign')
       await call({supplierId:item.supplierId,campaignId:item.campaignId,decision,reason:decision==='rejected'?reason.trim():undefined})
-      setRejecting('');setReason('')
+      setRejecting('');setReason('');setViewing(null)
       await refresh()
       setNotice(`Campaign ${decision}. Advertising remains unpublished.`)
     }catch(e){setError(errorText(e))}
@@ -110,6 +111,7 @@ function SupplierCampaignReviews() {
           <small><strong>Placement:</strong> {item.placement} | <strong>Dates:</strong> {item.startDate} to {item.endDate}</small>
           <small>Supplier ID: {item.supplierId}</small>
           <div className="supplier-admin-tools">
+            <button className="secondary" type="button" onClick={()=>setViewing(item)}>View campaign</button>
             <button className="secondary" disabled={!!busy} onClick={()=>void review(item,'approved')}>Approve creative</button>
             <button className="secondary" disabled={!!busy} onClick={()=>{setRejecting(key);setReason('')}}>Reject</button>
           </div>
@@ -119,6 +121,26 @@ function SupplierCampaignReviews() {
         </div>
       </article>
     })}
+    {viewing&&<div className="campaign-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setViewing(null)}}>
+      <section className="campaign-modal" role="dialog" aria-modal="true" aria-label={"Review campaign: "+viewing.title}>
+        <div className="campaign-modal-header"><div><span className="eyebrow">SUPPLIER ADVERTISING</span><h2>{viewing.title}</h2></div>
+          <button className="secondary" type="button" onClick={()=>setViewing(null)}>Close ✕</button></div>
+        <CampaignArtwork supplierId={viewing.supplierId} campaignId={viewing.campaignId}/>
+        <div className="campaign-modal-body">
+          <p>{viewing.description||'No campaign description supplied.'}</p>
+          <dl><div><dt>Placement</dt><dd>{viewing.placement}</dd></div><div><dt>Start date</dt><dd>{viewing.startDate}</dd></div><div><dt>End date</dt><dd>{viewing.endDate}</dd></div></dl>
+          <p><small>Supplier ID: {viewing.supplierId}</small></p>
+          <p>Review approval does not publish or charge for advertising.</p>
+          <div className="supplier-admin-tools">
+            <button className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'approved')}>Approve creative</button>
+            <button className="secondary" disabled={!!busy} onClick={()=>{setRejecting(viewing.supplierId+':'+viewing.campaignId);setReason('')}}>Reject creative</button>
+          </div>
+          {rejecting===viewing.supplierId+':'+viewing.campaignId&&<div className="supplier-rejection-form">
+            <label>Reason for rejection<textarea maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></label>
+            <button className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'rejected')}>Confirm rejection</button></div>}
+        </div>
+      </section>
+    </div>}
     {error&&<div className="error" role="alert">{error}</div>}
     {notice&&<p className="notice" role="status">{notice}</p>}
   </div>
