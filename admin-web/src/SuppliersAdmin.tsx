@@ -20,7 +20,7 @@ const config = {
 function supplierServices() {
   if (!ready) throw new Error('Supplier Firebase connection has not been configured.')
   const app = getApps().some(item => item.name === 'supplier-admin') ? getApp('supplier-admin') : initializeApp(config, 'supplier-admin')
-  return { auth: getAuth(app), functions: getFunctions(app), storage: getStorage(app) }
+  return { auth: getAuth(app), functions: getFunctions(app), storage: getStorage(app, 'gs://batchboss-suppliers.firebasestorage.app') }
 }
 function errorText(error: unknown) {
   const code = (error as {code?:string})?.code || ''
