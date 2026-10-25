@@ -1,11 +1,10 @@
-import { Component, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useState, type FormEvent, type ReactNode, useRef } from 'react'
 import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-import { getBlob, getStorage, ref } from 'firebase/storage'
 
 type SupplierStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
-type CampaignReviewItem = { supplierId:string; campaignId:string; title:string; description:string; placement:string; startDate:string; endDate:string }
+type CampaignReviewItem = { supplierId:string; campaignId:string; title:string; description:string; placement:string; startDate:string; endDate:string; supplier?:{businessName:string;contactName:string;email:string} }
 type SupplierApplication = { uid: string; businessName?: string; contactName?: string; email?: string; status: SupplierStatus }
 const projectId = import.meta.env.VITE_SUPPLIER_FIREBASE_PROJECT_ID
 const ready = projectId === 'batchboss-suppliers' && Boolean(import.meta.env.VITE_SUPPLIER_FIREBASE_API_KEY && import.meta.env.VITE_SUPPLIER_FIREBASE_APP_ID)
@@ -20,7 +19,7 @@ const config = {
 function supplierServices() {
   if (!ready) throw new Error('Supplier Firebase connection has not been configured.')
   const app = getApps().some(item => item.name === 'supplier-admin') ? getApp('supplier-admin') : initializeApp(config, 'supplier-admin')
-  return { auth: getAuth(app), functions: getFunctions(app), storage: getStorage(app, 'gs://batchboss-suppliers.firebasestorage.app') }
+  return { auth: getAuth(app), functions: getFunctions(app) }
 }
 function errorText(error: unknown) {
   const code = (error as {code?:string})?.code || ''
@@ -35,16 +34,19 @@ function CampaignArtwork({supplierId,campaignId}:{supplierId:string;campaignId:s
   useEffect(()=>{
     let active=true
     let objectUrl:string|null=null
-    const path=`supplier-campaigns/${supplierId}/${campaignId}/artwork`
-    let imageReference
-    try { imageReference=ref(supplierServices().storage,path) }
-    catch(e) { setStatus(e instanceof Error ? e.message : 'Storage configuration error'); return () => {active=false} }
-    getBlob(imageReference).then(blob=>{
+    setUrl(null);setStatus('Loading artwork…')
+    const load=async()=>{
+      const call=httpsCallable<{supplierId:string;campaignId:string},{contentType:string;base64:string}>(supplierServices().functions,'getCampaignReviewArtwork')
+      const {data}=await call({supplierId,campaignId})
+      if(!/^image\/(jpeg|png|webp)$/.test(data.contentType)||typeof data.base64!=='string')throw new Error('Invalid artwork response')
+      const bytes=Uint8Array.from(atob(data.base64),character=>character.charCodeAt(0))
+      const blob=new Blob([bytes],{type:data.contentType})
       objectUrl=URL.createObjectURL(blob)
       if(active){setUrl(objectUrl);setStatus('')}else URL.revokeObjectURL(objectUrl)
-    }).catch(e=>{
+    }
+    void load().catch(e=>{
       const code=(e as {code?:string}).code
-      if(active)setStatus(code==='storage/object-not-found'?'No artwork attached':code==='storage/unauthorized'?'Artwork access denied':`Cannot load artwork (${code||'network error'})`)
+      if(active)setStatus(code==='functions/not-found'?'No artwork attached':code==='functions/permission-denied'?'Artwork access denied. Sign in with your supplier administrator account.':errorText(e))
     })
     return ()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)}
   },[supplierId,campaignId])
@@ -74,6 +76,25 @@ function SupplierCampaignReviews() {
   const [reason,setReason]=useState('')
   const [rejecting,setRejecting]=useState('')
   const [viewing,setViewing]=useState<CampaignReviewItem|null>(null)
+  const modalRef=useRef<HTMLElement>(null)
+  useEffect(()=>{
+    if(!viewing)return
+    const previous=document.activeElement as HTMLElement|null
+    const overflow=document.body.style.overflow
+    document.body.style.overflow='hidden'
+    modalRef.current?.focus()
+    function onKey(event:KeyboardEvent){
+      if(event.key==='Escape'&&!busy){setViewing(null);return}
+      if(event.key!=='Tab')return
+      const controls=modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),textarea,input,a[href]')
+      if(!controls?.length){event.preventDefault();return}
+      const first=controls[0],last=controls[controls.length-1]
+      if(event.shiftKey&&(document.activeElement===first||document.activeElement===modalRef.current)){event.preventDefault();last.focus()}
+      else if(!event.shiftKey&&(document.activeElement===last||document.activeElement===modalRef.current)){event.preventDefault();first.focus()}
+    }
+    document.addEventListener('keydown',onKey)
+    return()=>{document.body.style.overflow=overflow;document.removeEventListener('keydown',onKey);previous?.focus()}
+  },[viewing,busy])
   const refresh=useCallback(async()=>{
     setLoading(true);setError('')
     try {
@@ -111,7 +132,7 @@ function SupplierCampaignReviews() {
           <small><strong>Placement:</strong> {item.placement} | <strong>Dates:</strong> {item.startDate} to {item.endDate}</small>
           <small>Supplier ID: {item.supplierId}</small>
           <div className="supplier-admin-tools">
-            <button className="secondary" type="button" onClick={()=>setViewing(item)}>View campaign</button>
+            <button className="secondary" type="button" onClick={()=>{setError('');setRejecting('');setReason('');setViewing(item)}}>View campaign</button>
             <button className="secondary" disabled={!!busy} onClick={()=>void review(item,'approved')}>Approve creative</button>
             <button className="secondary" disabled={!!busy} onClick={()=>{setRejecting(key);setReason('')}}>Reject</button>
           </div>
@@ -121,15 +142,17 @@ function SupplierCampaignReviews() {
         </div>
       </article>
     })}
-    {viewing&&<div className="campaign-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setViewing(null)}}>
-      <section className="campaign-modal" role="dialog" aria-modal="true" aria-label={"Review campaign: "+viewing.title}>
+    {viewing&&<div className="campaign-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)setViewing(null)}}>
+      <section className="campaign-modal" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={"Review campaign: "+viewing.title}>
         <div className="campaign-modal-header"><div><span className="eyebrow">SUPPLIER ADVERTISING</span><h2>{viewing.title}</h2></div>
-          <button className="secondary" type="button" onClick={()=>setViewing(null)}>Close ✕</button></div>
+          <button className="secondary" type="button" disabled={!!busy} onClick={()=>setViewing(null)}>Close ✕</button></div>
         <CampaignArtwork supplierId={viewing.supplierId} campaignId={viewing.campaignId}/>
         <div className="campaign-modal-body">
           <p>{viewing.description||'No campaign description supplied.'}</p>
           <dl><div><dt>Placement</dt><dd>{viewing.placement}</dd></div><div><dt>Start date</dt><dd>{viewing.startDate}</dd></div><div><dt>End date</dt><dd>{viewing.endDate}</dd></div></dl>
+          <dl><div><dt>Supplier</dt><dd>{viewing.supplier?.businessName||'Not supplied'}</dd></div><div><dt>Contact</dt><dd>{viewing.supplier?.contactName||'Not supplied'}</dd></div><div><dt>Email</dt><dd>{viewing.supplier?.email||'Not supplied'}</dd></div></dl>
           <p><small>Supplier ID: {viewing.supplierId}</small></p>
+          {error&&<div className="error" role="alert">{error}</div>}
           <p>Review approval does not publish or charge for advertising.</p>
           <div className="supplier-admin-tools">
             <button className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'approved')}>Approve creative</button>
