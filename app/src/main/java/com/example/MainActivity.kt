@@ -881,13 +881,27 @@ fun BatchBossApp(
                     PremiumSubscriptionScreen(
                         isPremium = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onUpgrade = { plan ->
-                            viewModel.upgradeToPremium(plan)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Upgraded to BatchBoss Pro! All features unlocked.") }
+                        onUpgrade = { _ ->
+                            // All purchases must complete in the web checkout and be
+                            // validated by the server before Pro access is granted.
+                            val url = android.net.Uri.parse("https://batchboss.co.za/?subscription=1")
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url)
+                            try {
+                                context.startActivity(intent)
+                            } catch (error: android.content.ActivityNotFoundException) {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Open https://batchboss.co.za to manage BatchBoss Pro.") }
+                            }
                         },
                         onCancelSubscription = {
-                            viewModel.cancelPremium()
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Subscription reverted to Free tier.") }
+                            // Never revoke paid access locally; cancellation must
+                            // be handled by the payment provider via the web app.
+                            val url = android.net.Uri.parse("https://batchboss.co.za/?subscription=1")
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url)
+                            try {
+                                context.startActivity(intent)
+                            } catch (error: android.content.ActivityNotFoundException) {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Open https://batchboss.co.za to manage your subscription.") }
+                            }
                         },
                         onOpenAiScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
                         onOpenBarcodeScanner = { viewModel.navigateTo(Screen.BarcodeScanner) }
