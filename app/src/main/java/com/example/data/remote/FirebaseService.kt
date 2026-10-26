@@ -278,17 +278,19 @@ object FirebaseService {
             // 11. Determine Pro access from subscriptionStatus and subscriptionPlan in users/{uid}
             val subscriptionStatus = userDoc.getString("subscriptionStatus") ?: ""
             val subscriptionPlan = userDoc.getString("subscriptionPlan") ?: ""
-            val isPremiumDoc = userDoc.getBoolean("isPremium") == true || userDoc.getBoolean("isPro") == true
-
-            val isPro = isPremiumDoc ||
-                subscriptionStatus.equals("active", ignoreCase = true) ||
-                subscriptionStatus.equals("pro", ignoreCase = true) ||
-                subscriptionStatus.equals("trialing", ignoreCase = true) ||
-                subscriptionStatus.equals("premium", ignoreCase = true) ||
-                subscriptionPlan.contains("pro", ignoreCase = true) ||
-                subscriptionPlan.contains("premium", ignoreCase = true) ||
-                subscriptionPlan.contains("commercial", ignoreCase = true) ||
-                subscriptionPlan.contains("business", ignoreCase = true)
+            // Keep Android entitlement decisions aligned with the customer web app.
+            // Legacy plan names and isPremium/isPro flags must never override the
+            // current subscription status or its expiry.
+            val subscriptionExpiry = userDoc.getTimestamp("subscriptionExpiresAt")?.toDate()
+            val subscriptionSource = userDoc.getString("subscriptionSource") ?: ""
+            val promoValid = if (subscriptionExpiry != null) {
+                subscriptionExpiry.time > System.currentTimeMillis()
+            } else {
+                !subscriptionPlan.equals("promo", ignoreCase = true) &&
+                    !subscriptionSource.equals("paystack", ignoreCase = true)
+            }
+            val isPro = (subscriptionStatus.equals("active", ignoreCase = true) ||
+                subscriptionStatus.equals("trialing", ignoreCase = true)) && promoValid
 
             FirebaseLoginResult(
                 success = true,

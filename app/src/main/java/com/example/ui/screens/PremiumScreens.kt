@@ -319,7 +319,7 @@ fun PremiumSubscriptionScreen(
                     Icon(Icons.Filled.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Unlock BatchBoss Premium",
+                        text = "Continue on website to subscribe",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -329,7 +329,7 @@ fun PremiumSubscriptionScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Includes 7-day free trial. Cancel anytime with no penalty.",
+                    text = "Payment and plan terms are confirmed on the secure BatchBoss website.",
                     fontSize = 12.sp,
                     color = LightText,
                     textAlign = TextAlign.Center
@@ -343,7 +343,7 @@ fun PremiumSubscriptionScreen(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Cancel Subscription (Switch to Free)")
+                    Text("Manage or cancel on website")
                 }
             }
 
