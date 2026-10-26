@@ -885,7 +885,7 @@ fun BatchBossApp(
                         onUpgrade = { _ ->
                             // All purchases must complete in the web checkout and be
                             // validated by the server before Pro access is granted.
-                            val url = android.net.Uri.parse("https://batchboss.co.za/?subscription=1")
+                            val url = android.net.Uri.parse("https://batchboss.co.za/?payment=subscription")
                             val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url)
                             try {
                                 context.startActivity(intent)
@@ -896,7 +896,7 @@ fun BatchBossApp(
                         onCancelSubscription = {
                             // Never revoke paid access locally; cancellation must
                             // be handled by the payment provider via the web app.
-                            val url = android.net.Uri.parse("https://batchboss.co.za/?subscription=1")
+                            val url = android.net.Uri.parse("https://batchboss.co.za/?payment=subscription")
                             val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url)
                             try {
                                 context.startActivity(intent)
