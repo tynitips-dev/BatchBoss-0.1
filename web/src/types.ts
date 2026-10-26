@@ -25,8 +25,9 @@ export type Customer = {
   createdAt?: unknown
 }
 
-export type ModuleKey =
+export type ModuleKey = 'supplierDirectory'
   | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'packaging' | 'suppliers'
   | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
   | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'
   | 'documents' | 'reports'
+
