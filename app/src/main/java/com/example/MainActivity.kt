@@ -116,6 +116,7 @@ fun BatchBossApp(
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
