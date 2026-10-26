@@ -33,3 +33,12 @@ This document covers the separate safety branch and draft PR #25. Passing unit t
 
 ## Gate ownership
 Developer may continue non-production development and automated tests. Owner approval is required at the production-change boundary.
+
+## Local source archive reconciliation (26 October 2026, read-only)
+- Inspected the five owner-uploaded 21 October source archives from the private file library: `functions.zip`, `app.zip`, `tests.zip`, `web.zip`, and `admin-web.zip`. This was a **source inventory and selected-file comparison**, not a wholesale import, runtime test, or approval to replace GitHub files.
+- Compared 17 representative integration paths with this PR branch, normalizing CRLF/LF before comparison. **Four match**: `web/src/SubscriptionView.tsx`, `web/src/firebase.ts`, `admin-web/src/firebase.ts`, and `tests/payment-core.cjs`.
+- **Eleven differ**: `functions/src/{index,paystack,paystack-core,proEntitlements}.ts`, `web/src/App.tsx`, `web/firestore.rules`, `admin-web/src/App.tsx`, `app/src/main/java/com/example/data/remote/{WebSyncService,FirebaseService}.kt`, `app/src/main/java/com/example/ui/BatchBossViewModel.kt`, and `tests/paystack-flow.cjs`.
+- **Two archive files are absent from this PR branch**: `app/src/main/java/com/example/data/remote/ProEntitlement.kt` and `tests/pro-entitlements.cjs`. Absence may reflect moved/replaced code; check references and dependencies before importing.
+- The local `functions/src/paystack-core.ts` uses permissive date parsing, whereas the draft branch rejects impossible Paystack dates. Preserve the branch's tested validation; **do not overwrite it with the older archive**. Other differences need targeted review, not blind replacement.
+- Archives contain local configuration and generated dependencies, including environment files. **Never commit local `.env` files, credentials, build directories, or `node_modules` during reconciliation.** No secrets were copied to GitHub in this check.
+- Remaining source gate: review each differing implementation against its consumers, selectively port only needed behavior to the draft branch with isolated tests, and separately verify hosted/runtime parity. None of these archive snapshots establishes the currently deployed version.
