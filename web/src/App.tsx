@@ -1,3 +1,4 @@
+import SupplierDirectory from './SupplierDirectory'
 import { type ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen, Boxes, CalendarDays, ChevronRight, ClipboardList,
@@ -27,6 +28,7 @@ const modules: ModuleDefinition[] = [
   { key: 'ingredients', label: 'Ingredients', icon: Package, collection: 'inventory' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, collection: 'inventory' },
   { key: 'packaging', label: 'Packaging', icon: Package, collection: 'packaging' },
+  { key: 'supplierDirectory', label: 'Find suppliers', icon: Store },
   { key: 'suppliers', label: 'Suppliers', icon: Store, collection: 'suppliers', pro: true },
   { key: 'invoices', label: 'Invoices', icon: ReceiptText, collection: 'invoices', pro: true },
   { key: 'quotes', label: 'Quotes & estimates', icon: FileCheck2, collection: 'quotes', pro: true },
@@ -168,6 +170,7 @@ function AuthScreen() {
 type WorkspaceItem = { id: string; name?: string; title?: string; description?: string; email?: string; phone?: string; notes?: string; status?: string; total?: number; price?: number; totalOrders?: number; totalSpend?: number; [key: string]: unknown }
 
 function Dashboard({ profile }: { profile: UserProfile }) {
+  const [supplierCategory, setSupplierCategory] = useState('')
   const [active, setActive] = useState<ModuleKey>(new URLSearchParams(location.search).has('payment') ? 'subscription' : 'home')
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
@@ -388,6 +391,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{displayName(profile)} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
       <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
       <SetupGuide profile={profile} active={active} suspended={showEditor || showImporter} onOpen={key => { setActive(key); setMenuOpen(false) }} />
+      {active === 'supplierDirectory' && <SupplierDirectory initialCategory={supplierCategory} />}
       {active === 'reports' && <ReportsView items={items} />}
       {['orders','receipts'].includes(active) && (active !== 'receipts' || isPro) && <RecordsView kind={active as 'orders'|'receipts'} bakeryId={profile.bakeryId} items={selectedItems} invoices={items.invoices || []} customers={items.customers || []} />}
       {active === 'home' && <HomeView invoices={items.invoices || []} counts={counts} onOpen={setActive} />}
@@ -410,7 +414,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {selectedModule.collection && selectedModule.pro && !isPro
         ? <LockedView title={selectedModule.label} onUpgrade={() => setActive('subscription')} />
         : selectedModule.collection && !['products','invoices','quotes','tasks','customers','orders','receipts'].includes(active) && <section className="content-card">
-          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
+          <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>{setSupplierCategory(active==='packaging'?'Packaging':'Ingredients');setActive('supplierDirectory')}}>Find suppliers</button>}{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
           {['ingredients','inventory','packaging'].includes(active) ? <StockCards items={selectedItems} onEdit={openEditor} bakeryId={profile.bakeryId} collectionName={selectedModule.collection!} /> : <WorkspaceList items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />}
         </section>}
     </main>
@@ -828,3 +832,4 @@ function EmptyState({ title, text, action, onAction }: { title: string; text: st
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="modal-backdrop"><div className="modal-frame"><button className="modal-external-close" type="button" aria-label="Close dialog" onClick={onClose}><X size={23} /></button><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-title"><h2>{title}</h2></div>{children}</div></div></div> }
 
 export default App
+
