@@ -1,6 +1,8 @@
 package com.example.data.remote
 
 import com.example.data.local.SupplierEntity
+import com.google.android.gms.tasks.Task
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Source
 
@@ -40,6 +42,10 @@ object BakerySupplierCloud {
     }
     suspend fun save(bakeryId: String, supplier: SupplierEntity): Boolean {
         require(supplier.cloudDocumentId.isNotBlank() && '/' !in supplier.cloudDocumentId)
+        return writeSupplier(suppliers(bakeryId).document(supplier.cloudDocumentId), supplier).awaitTask()
+    }
+    /** The same transaction is exercised against the local Firestore emulator in CI. */
+    internal fun writeSupplier(target: DocumentReference, supplier: SupplierEntity): Task<Boolean> {
         val data = mapOf(
             "name" to supplier.name, "description" to supplier.about, "about" to supplier.about,
             "categories" to supplier.categories, "phone" to supplier.phone, "email" to supplier.email,
@@ -48,9 +54,7 @@ object BakerySupplierCloud {
             "publicListingId" to supplier.publicListingId, "city" to supplier.city, "province" to supplier.province,
             "updatedAt" to FieldValue.serverTimestamp()
         )
-        val target = suppliers(bakeryId).document(supplier.cloudDocumentId)
-        val db = FirebaseService.firestore ?: error("Firebase is not configured.")
-        return db.runTransaction { transaction ->
+        return target.firestore.runTransaction { transaction ->
             val existing = transaction.get(target)
             when (supplierWrite(existing.exists(), supplier.cloudConfirmed)) {
                 // The phone currently edits only the favourite flag for existing suppliers.
@@ -63,7 +67,7 @@ object BakerySupplierCloud {
                 SupplierWrite.DELETED -> false
                 SupplierWrite.CREATE -> { transaction.set(target, data); true }
             }
-        }.awaitTask()
+        }
     }
     suspend fun saveDirectory(bakeryId: String, supplier: PublicSupplier): SupplierEntity {
         require(PublicSupplierDirectory.validId(supplier.id)) { "Invalid public supplier." }
