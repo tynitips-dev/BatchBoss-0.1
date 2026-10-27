@@ -546,7 +546,11 @@ fun BatchBossApp(
                                 "Unlock verified supplier directory, wholesale contact lines, and exclusive supplier discounts."
                             )
                         },
-                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) }
+                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) },
+                        onSavePublicSupplier = { viewModel.savePublicSupplier(it) },
+                        onSyncSuppliers = { viewModel.syncSupplierRecords() },
+                        onInspectLegacy = { viewModel.inspectLegacySuppliers() },
+                        onRecoverLegacy = { viewModel.recoverLegacySuppliers(it) }
                     )
                 }
 

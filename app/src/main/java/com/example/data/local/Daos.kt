@@ -195,6 +195,12 @@ interface InventoryDao {
 
 @Dao
 interface SupplierDao {
+    @Query("SELECT COUNT(*) FROM suppliers WHERE userId = 0 AND bakeryId = '' AND cloudDocumentId = ''")
+    suspend fun countUnassignedLegacy(): Int
+
+    @Query("UPDATE suppliers SET userId = :userId, bakeryId = :bakeryId, pendingSync = 1 WHERE userId = 0 AND bakeryId = '' AND cloudDocumentId = ''")
+    suspend fun recoverUnassignedLegacy(userId: Long, bakeryId: String): Int
+
     @Query("SELECT * FROM suppliers WHERE userId = :userId ORDER BY id ASC")
     fun getSuppliersByUser(userId: Long): Flow<List<SupplierEntity>>
 

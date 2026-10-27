@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
         DataDeletionRequestEntity::class,
         PackagingItemEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,6 +60,19 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudDocumentId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `publicListingId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `city` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `province` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudConfirmed` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `pendingSync` INTEGER NOT NULL DEFAULT 0")
+                // Old records with no owner are retained. Do not silently assign them to a different account.
+            }
+        }
 
         val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -102,7 +115,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "batchboss_database"
                 )
-                .addMigrations(MIGRATION_11_12)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13)
                 .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()
