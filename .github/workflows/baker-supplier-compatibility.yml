@@ -12,12 +12,19 @@ permissions:
 jobs:
   web-contract:
     runs-on: ubuntu-latest
+    env:
+      VITE_FIREBASE_API_KEY: 'AIzaSyBp_aulVgP52CVzgEWteFhTkmtfFKD5v6M'
+      VITE_FIREBASE_AUTH_DOMAIN: 'batch-boss-android.firebaseapp.com'
+      VITE_FIREBASE_PROJECT_ID: 'batch-boss-android'
+      VITE_FIREBASE_STORAGE_BUCKET: 'batch-boss-android.firebasestorage.app'
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '802048202389'
+      VITE_FIREBASE_APP_ID: '1:802048202389:web:e0eceeb49caf0824b7ad9c'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-package-lock --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
         working-directory: web
       - run: node --experimental-strip-types --test tests/supplier-records.test.mjs
       - run: npm run build
