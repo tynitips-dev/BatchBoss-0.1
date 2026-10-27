@@ -2,8 +2,14 @@ package com.example.data.remote
 
 import com.example.data.local.SupplierEntity
 import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
+
+internal enum class SupplierWrite { UPDATE_FAVOURITE, CREATE, DELETED }
+internal fun supplierWrite(exists: Boolean, confirmed: Boolean): SupplierWrite = when {
+    exists -> SupplierWrite.UPDATE_FAVOURITE
+    confirmed -> SupplierWrite.DELETED
+    else -> SupplierWrite.CREATE
+}
 
 /** Baker-owned saved suppliers use the main Firebase project, never the supplier project's private records. */
 object BakerySupplierCloud {
@@ -32,7 +38,7 @@ object BakerySupplierCloud {
     suspend fun fetch(bakeryId: String): List<SupplierEntity> = suppliers(bakeryId).get(Source.SERVER).awaitTask().documents.mapNotNull { doc ->
         doc.data?.let { decode(doc.id, it) }
     }
-    suspend fun save(bakeryId: String, supplier: SupplierEntity) {
+    suspend fun save(bakeryId: String, supplier: SupplierEntity): Boolean {
         require(supplier.cloudDocumentId.isNotBlank() && '/' !in supplier.cloudDocumentId)
         val data = mapOf(
             "name" to supplier.name, "description" to supplier.about, "about" to supplier.about,
@@ -42,7 +48,22 @@ object BakerySupplierCloud {
             "publicListingId" to supplier.publicListingId, "city" to supplier.city, "province" to supplier.province,
             "updatedAt" to FieldValue.serverTimestamp()
         )
-        suppliers(bakeryId).document(supplier.cloudDocumentId).set(data, SetOptions.merge()).awaitTask()
+        val target = suppliers(bakeryId).document(supplier.cloudDocumentId)
+        val db = FirebaseService.firestore ?: error("Firebase is not configured.")
+        return db.runTransaction { transaction ->
+            val existing = transaction.get(target)
+            when (supplierWrite(existing.exists(), supplier.cloudConfirmed)) {
+                // The phone currently edits only the favourite flag for existing suppliers.
+                // Never overwrite details that may have changed since the initial fetch.
+                SupplierWrite.UPDATE_FAVOURITE -> {
+                    transaction.update(target, mapOf("isFavorite" to supplier.isFavorite, "updatedAt" to FieldValue.serverTimestamp()))
+                    true
+                }
+                // A website deletion must not be undone by a stale phone write.
+                SupplierWrite.DELETED -> false
+                SupplierWrite.CREATE -> { transaction.set(target, data); true }
+            }
+        }.awaitTask()
     }
     suspend fun saveDirectory(bakeryId: String, supplier: PublicSupplier): SupplierEntity {
         require(PublicSupplierDirectory.validId(supplier.id)) { "Invalid public supplier." }
