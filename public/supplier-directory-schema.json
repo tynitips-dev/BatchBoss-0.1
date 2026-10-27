@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BatchBoss approved public supplier listing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "businessName",
+    "category",
+    "city",
+    "province",
+    "description",
+    "delivery"
+  ],
+  "properties": {
+    "businessName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "Ingredients",
+        "Packaging",
+        "Equipment",
+        "Decorating"
+      ]
+    },
+    "city": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "province": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "delivery": {
+      "type": "string",
+      "maxLength": 150
+    }
+  }
+}
