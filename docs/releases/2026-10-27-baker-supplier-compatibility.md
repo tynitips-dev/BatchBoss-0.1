@@ -20,9 +20,11 @@ Android compilation and the isolated SupplierCompatibilityTest suite passed on G
 
 - Recheck the full CI result after correcting the web build job to use the committed dependency lockfile and existing public Firebase build settings.
 - Verify two-way save/favourite/edit/delete and account switching with designated test records; test directory paging and failed writes without publishing real suppliers or enabling charges.
-- Older manual suppliers were stored with userId=0. The migration retains them but does not guess their owner or expose them to every account. Provide an explicitly authorized ownership-recovery path before distributing this Android update.
+- Older manual suppliers were stored with userId=0. The migration retains them without exposing names to another account. Recovery now requires a matching signed-in bakery and an explicit ownership confirmation. Only the original sole local account is eligible; the SQLite account sequence disqualifies a device even if a second account was later deleted. Shared/history-ambiguous devices receive a support-review notice; nothing is silently reassigned. Verify this flow on a device before distribution.
 - Full contact details/public supplier pages and paid-listing eligibility remain separate work. Do not imply all supplier onboarding is finished.
 
 Live payment flags, supplier entitlements, public listings, other websites and live bakery records are unchanged.
 
 Local labelled sample preview verified city/province filtering, a retryable failed save and a successful one-time save that disables duplicates. No live bakery records were written. Three web contract tests and direct migration-SQL checks passed locally.
+
+Legacy recovery tests additionally cover confirmation, record retention, shared/deleted account history and wrong-workspace refusal. These latest additions await CI.

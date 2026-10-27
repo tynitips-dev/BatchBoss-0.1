@@ -8,6 +8,8 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
 import com.example.data.local.SupplierEntity
+import com.example.data.local.UserAccountEntity
+import com.example.data.local.LegacySupplierRecovery
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplierDirectory
 import com.example.data.remote.SupplierSyncPlanner
@@ -93,5 +95,45 @@ class SupplierCompatibilityTest {
     @Test fun `sync planner rejects records belonging to another account or bakery`() {
         assertThrows(IllegalArgumentException::class.java) { SupplierSyncPlanner.plan(listOf(localSupplier().copy(userId=202)),emptyList(),101,"bakery-a") }
         assertThrows(IllegalArgumentException::class.java) { SupplierSyncPlanner.plan(listOf(localSupplier().copy(bakeryId="bakery-b")),emptyList(),101,"bakery-a") }
+    }
+
+    @Test fun `legacy recovery requires explicit ownership confirmation and keeps original records`() = runBlocking {
+        val db=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val owner=db.userAccountDao().insertUser(UserAccountEntity(bakeryId="bakery-a",email="owner@example.test"))
+            assertEquals(1L,owner)
+            val id=db.supplierDao().insertSupplier(localSupplier().copy(id=0,userId=0,bakeryId="",cloudDocumentId="",cloudConfirmed=false,pendingSync=false))
+            assertTrue(LegacySupplierRecovery.inspect(db,owner,"bakery-a").canRecover)
+            assertTrue(runCatching { LegacySupplierRecovery.recover(db,owner,"bakery-a",false) }.isFailure)
+            assertEquals(0L,db.supplierDao().getSupplierById(id).first()?.userId)
+            assertEquals(1,LegacySupplierRecovery.recover(db,owner,"bakery-a",true))
+            val recovered=db.supplierDao().getSupplierById(id).first()!!
+            assertEquals(owner,recovered.userId);assertEquals("bakery-a",recovered.bakeryId)
+            assertEquals("Example",recovered.name);assertTrue(recovered.pendingSync)
+            assertEquals("",recovered.cloudDocumentId);assertFalse(recovered.cloudConfirmed)
+            assertEquals(0,LegacySupplierRecovery.inspect(db,owner,"bakery-a").unassignedCount)
+        } finally { db.close() }
+    }
+    @Test fun `shared device recovery is refused even after a second account is deleted`() = runBlocking {
+        val db=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val first=db.userAccountDao().insertUser(UserAccountEntity(bakeryId="bakery-a",email="first@example.test"))
+            val second=db.userAccountDao().insertUser(UserAccountEntity(bakeryId="bakery-b",email="second@example.test"))
+            val id=db.supplierDao().insertSupplier(localSupplier().copy(id=0,userId=0,bakeryId="",cloudDocumentId="",cloudConfirmed=false))
+            assertFalse(LegacySupplierRecovery.inspect(db,first,"bakery-a").canRecover)
+            db.userAccountDao().deleteUser(second)
+            assertFalse(LegacySupplierRecovery.inspect(db,first,"bakery-a").canRecover)
+            assertTrue(runCatching { LegacySupplierRecovery.recover(db,first,"bakery-a",true) }.isFailure)
+            assertEquals(0L,db.supplierDao().getSupplierById(id).first()?.userId)
+        } finally { db.close() }
+    }
+    @Test fun `legacy recovery refuses the wrong bakery workspace`() = runBlocking {
+        val db=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val owner=db.userAccountDao().insertUser(UserAccountEntity(bakeryId="bakery-a",email="owner@example.test"))
+            db.supplierDao().insertSupplier(localSupplier().copy(id=0,userId=0,bakeryId="",cloudDocumentId="",cloudConfirmed=false))
+            assertFalse(LegacySupplierRecovery.inspect(db,owner,"bakery-b").canRecover)
+            assertTrue(runCatching { LegacySupplierRecovery.recover(db,owner,"bakery-b",true) }.isFailure)
+        } finally { db.close() }
     }
 }

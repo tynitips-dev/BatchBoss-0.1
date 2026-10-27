@@ -9,6 +9,8 @@ import com.example.data.remote.WebSyncService
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplier
 import com.example.data.remote.SupplierSyncPlanner
+import com.example.data.local.LegacySupplierRecovery
+import com.example.data.local.LegacySupplierRecoveryState
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -827,6 +829,30 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             )
             syncSupplierRecords()
             navigateTo(Screen.SupplierDetail(id))
+        }
+    }
+
+    private suspend fun legacyRecoveryContext(): Pair<Long, String> {
+        val uid = _currentUserId.value
+        val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+        val account = repository.getUserByIdOnce(uid) ?: error("Sign in before recovering suppliers.")
+        val firebaseUser = FirebaseService.auth?.currentUser ?: error("Sign in before recovering suppliers.")
+        require(_isUserLoggedIn.value && profile.userId == uid && profile.bakeryId.isNotBlank()
+            && account.bakeryId == profile.bakeryId && account.email.equals(firebaseUser.email, ignoreCase = true)) {
+            "Sign in to the matching bakery account before recovering suppliers."
+        }
+        return uid to profile.bakeryId
+    }
+
+    suspend fun inspectLegacySuppliers(): Result<LegacySupplierRecoveryState> = runCatching {
+        val (uid, bakeryId) = legacyRecoveryContext()
+        LegacySupplierRecovery.inspect(database, uid, bakeryId)
+    }
+
+    suspend fun recoverLegacySuppliers(confirmedOwnership: Boolean): Result<Int> = supplierSyncMutex.withLock {
+        runCatching {
+            val (uid, bakeryId) = legacyRecoveryContext()
+            LegacySupplierRecovery.recover(database, uid, bakeryId, confirmedOwnership)
         }
     }
 
