@@ -29,4 +29,11 @@ class PublicSupplierDirectoryContractTest {
         assertNull(PublicSupplierDirectoryContract.parse(safe + ("businessName" to "")))
         assertNull(PublicSupplierDirectoryContract.parse(safe - "province"))
     }
+
+    @Test fun rejectsOversizedPublicFields() {
+        assertNull(PublicSupplierDirectoryContract.parse(safe + ("businessName" to "B".repeat(121))))
+        assertNull(PublicSupplierDirectoryContract.parse(safe + ("city" to "C".repeat(101))))
+        assertNull(PublicSupplierDirectoryContract.parse(safe + ("description" to "D".repeat(1001))))
+        assertNull(PublicSupplierDirectoryContract.parse(safe + ("delivery" to "E".repeat(151))))
+    }
 }
