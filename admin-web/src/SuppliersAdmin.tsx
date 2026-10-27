@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -31,24 +31,29 @@ function errorText(error: unknown) {
 
 function CampaignArtwork({supplierId,campaignId}:{supplierId:string;campaignId:string}) {
   const [url,setUrl]=useState<string|null>(null)
+  const [attempt,setAttempt]=useState(0)
   const [status,setStatus]=useState('Loading artwork…')
   useEffect(()=>{
     let active=true
+    setUrl(null);setStatus('Loading artwork…')
     let objectUrl:string|null=null
     const path=`supplier-campaigns/${supplierId}/${campaignId}/artwork`
     let imageReference
     try { imageReference=ref(supplierServices().storage,path) }
     catch(e) { setStatus(e instanceof Error ? e.message : 'Storage configuration error'); return () => {active=false} }
+    const timeout=window.setTimeout(()=>{if(active)setStatus('Artwork is taking too long to load. Check your connection and retry.')},20000)
     getBlob(imageReference).then(blob=>{
+      window.clearTimeout(timeout)
       objectUrl=URL.createObjectURL(blob)
       if(active){setUrl(objectUrl);setStatus('')}else URL.revokeObjectURL(objectUrl)
     }).catch(e=>{
+      window.clearTimeout(timeout)
       const code=(e as {code?:string}).code
       if(active)setStatus(code==='storage/object-not-found'?'No artwork attached':code==='storage/unauthorized'?'Artwork access denied':`Cannot load artwork (${code||'network error'})`)
     })
-    return ()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl)}
-  },[supplierId,campaignId])
-  return url?<img className="supplier-review-image" src={url} alt="Supplier advertisement artwork"/>:<div className="supplier-review-image supplier-review-image-empty">{status}</div>
+    return ()=>{active=false;window.clearTimeout(timeout);if(objectUrl)URL.revokeObjectURL(objectUrl)}
+  },[supplierId,campaignId,attempt])
+  return url?<img className="supplier-review-image" src={url} alt="Supplier advertisement artwork"/>:<div className="supplier-review-image supplier-review-image-empty" role="status">{status}{status!=='Loading artwork…'&&<button className="secondary" type="button" onClick={()=>setAttempt(value=>value+1)}>Retry artwork</button>}</div>
 }
 
 class CampaignReviewBoundary extends Component<{children:ReactNode},{error:string|null}> {
@@ -65,7 +70,21 @@ class CampaignReviewBoundary extends Component<{children:ReactNode},{error:strin
   }
 }
 
+function CampaignLightbox({item,onClose,children}:{item:CampaignReviewItem;onClose:()=>void;children:ReactNode}) {
+  const dialog=useRef<HTMLDialogElement>(null)
+  useEffect(()=>{dialog.current?.showModal()},[])
+  return <dialog ref={dialog} className="campaign-lightbox" onClose={onClose} onClick={event=>{if(event.target===event.currentTarget)dialog.current?.close()}} aria-labelledby="campaign-review-title">
+    <button className="secondary" type="button" autoFocus onClick={()=>dialog.current?.close()}>Close campaign</button>
+    <h2 id="campaign-review-title">{item.title}</h2>
+    <CampaignArtwork supplierId={item.supplierId} campaignId={item.campaignId}/>
+    <p>{item.description||'No description provided.'}</p>
+    <dl><dt>Placement</dt><dd>{item.placement}</dd><dt>Start date</dt><dd>{item.startDate}</dd><dt>End date</dt><dd>{item.endDate}</dd><dt>Supplier ID</dt><dd>{item.supplierId}</dd><dt>Campaign ID</dt><dd>{item.campaignId}</dd></dl>
+    {children}
+  </dialog>
+}
+
 function SupplierCampaignReviews() {
+  const [viewing,setViewing]=useState<CampaignReviewItem|null>(null)
   const [items,setItems]=useState<CampaignReviewItem[]>([])
   const [loading,setLoading]=useState(true)
   const [busy,setBusy]=useState('')
@@ -73,7 +92,6 @@ function SupplierCampaignReviews() {
   const [notice,setNotice]=useState('')
   const [reason,setReason]=useState('')
   const [rejecting,setRejecting]=useState('')
-  const [viewing,setViewing]=useState<CampaignReviewItem|null>(null)
   const refresh=useCallback(async()=>{
     setLoading(true);setError('')
     try {
@@ -91,9 +109,10 @@ function SupplierCampaignReviews() {
     setBusy(key);setError('');setNotice('')
     try{
       const call=httpsCallable(supplierServices().functions,'reviewSupplierCampaign')
-      await call({supplierId:item.supplierId,campaignId:item.campaignId,decision,reason:decision==='rejected'?reason.trim():undefined})
-      setRejecting('');setReason('');setViewing(null)
+      await call({supplierId:item.supplierId,campaignId:item.campaignId,decision,...(decision==='rejected'?{reason:reason.trim()}:{})})
+      setRejecting('');setReason('')
       await refresh()
+      setViewing(null)
       setNotice(`Campaign ${decision}. Advertising remains unpublished.`)
     }catch(e){setError(errorText(e))}
     finally{setBusy('')}
@@ -111,7 +130,7 @@ function SupplierCampaignReviews() {
           <small><strong>Placement:</strong> {item.placement} | <strong>Dates:</strong> {item.startDate} to {item.endDate}</small>
           <small>Supplier ID: {item.supplierId}</small>
           <div className="supplier-admin-tools">
-            <button className="secondary" type="button" onClick={()=>setViewing(item)}>View campaign</button>
+            <button className="secondary" type="button" disabled={!!busy} onClick={()=>setViewing(item)}>View campaign</button>
             <button className="secondary" disabled={!!busy} onClick={()=>void review(item,'approved')}>Approve creative</button>
             <button className="secondary" disabled={!!busy} onClick={()=>{setRejecting(key);setReason('')}}>Reject</button>
           </div>
@@ -121,26 +140,12 @@ function SupplierCampaignReviews() {
         </div>
       </article>
     })}
-    {viewing&&<div className="campaign-modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setViewing(null)}}>
-      <section className="campaign-modal" role="dialog" aria-modal="true" aria-label={"Review campaign: "+viewing.title}>
-        <div className="campaign-modal-header"><div><span className="eyebrow">SUPPLIER ADVERTISING</span><h2>{viewing.title}</h2></div>
-          <button className="secondary" type="button" onClick={()=>setViewing(null)}>Close ✕</button></div>
-        <CampaignArtwork supplierId={viewing.supplierId} campaignId={viewing.campaignId}/>
-        <div className="campaign-modal-body">
-          <p>{viewing.description||'No campaign description supplied.'}</p>
-          <dl><div><dt>Placement</dt><dd>{viewing.placement}</dd></div><div><dt>Start date</dt><dd>{viewing.startDate}</dd></div><div><dt>End date</dt><dd>{viewing.endDate}</dd></div></dl>
-          <p><small>Supplier ID: {viewing.supplierId}</small></p>
-          <p>Review approval does not publish or charge for advertising.</p>
-          <div className="supplier-admin-tools">
-            <button className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'approved')}>Approve creative</button>
-            <button className="secondary" disabled={!!busy} onClick={()=>{setRejecting(viewing.supplierId+':'+viewing.campaignId);setReason('')}}>Reject creative</button>
-          </div>
-          {rejecting===viewing.supplierId+':'+viewing.campaignId&&<div className="supplier-rejection-form">
-            <label>Reason for rejection<textarea maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></label>
-            <button className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'rejected')}>Confirm rejection</button></div>}
-        </div>
-      </section>
-    </div>}
+    {viewing&&<CampaignLightbox item={viewing} onClose={()=>setViewing(null)}>
+      <div className="supplier-admin-tools"><button type="button" className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'approved')}>Approve creative</button><button type="button" className="secondary" disabled={!!busy} onClick={()=>{setRejecting(viewing.supplierId+':'+viewing.campaignId);setReason('')}}>Reject</button></div>
+      {rejecting===viewing.supplierId+':'+viewing.campaignId&&<div className="supplier-rejection-form"><label>Rejection reason (optional)<textarea maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></label><div className="supplier-admin-tools"><button type="button" className="secondary" disabled={!!busy} onClick={()=>void review(viewing,'rejected')}>Confirm rejection</button><button type="button" className="secondary" disabled={!!busy} onClick={()=>setRejecting('')}>Cancel rejection</button></div></div>}
+      {busy&&<p role="status">Saving campaign review…</p>}
+      {error&&<p className="error" role="alert">{error}</p>}
+    </CampaignLightbox>}
     {error&&<div className="error" role="alert">{error}</div>}
     {notice&&<p className="notice" role="status">{notice}</p>}
   </div>
