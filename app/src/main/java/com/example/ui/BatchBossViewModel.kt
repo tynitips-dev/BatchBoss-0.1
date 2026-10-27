@@ -872,9 +872,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             for (pending in plan.uploads) {
                 checkSession()
                 repository.updateSupplier(pending)
-                BakerySupplierCloud.save(bakeryId, pending)
+                val saved = BakerySupplierCloud.save(bakeryId, pending)
+                checkSession()
                 val current = repository.getSupplierById(pending.id).first()
-                if (current == pending) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                if (current == pending) {
+                    if (saved) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                    else repository.deleteSupplier(pending.id)
+                }
             }
         }
     }
