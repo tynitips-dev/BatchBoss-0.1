@@ -10,6 +10,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.SupplierEntity
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplierDirectory
+import com.example.data.remote.SupplierSyncPlanner
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -67,5 +68,30 @@ class SupplierCompatibilityTest {
     @Test fun `public directory parses empty results and rejects a private cursor`() {
         assertTrue(PublicSupplierDirectory.parse("""{"result":{"suppliers":[],"nextCursor":null}}""").suppliers.isEmpty())
         assertThrows(IllegalArgumentException::class.java) { PublicSupplierDirectory.parse("""{"result":{"suppliers":[],"nextCursor":"private-account-id"}}""") }
+    }
+
+    private fun localSupplier() = SupplierEntity(id=9,userId=101,bakeryId="bakery-a",cloudDocumentId="shared-doc",cloudConfirmed=true,pendingSync=true,
+        name="Example",categories="Packaging",rating=0.0,reviewCount=0,openingHours="",phone="",email="",website="",about="Old description",isFavorite=true)
+    @Test fun `favorite upload retains a newer website description`() {
+        val local=localSupplier()
+        val remote=local.copy(id=0,userId=0,about="New website description",isFavorite=false,pendingSync=false)
+        val plan=SupplierSyncPlanner.plan(listOf(local),listOf(remote),101,"bakery-a")
+        assertTrue(plan.imports.isEmpty());assertTrue(plan.deletes.isEmpty())
+        assertEquals("New website description",plan.uploads.single().about)
+        assertTrue(plan.uploads.single().isFavorite);assertEquals(9L,plan.uploads.single().id)
+    }
+    @Test fun `confirmed website deletion wins over an offline favorite change`() {
+        val plan=SupplierSyncPlanner.plan(listOf(localSupplier()),emptyList(),101,"bakery-a")
+        assertEquals(listOf(9L),plan.deletes);assertTrue(plan.uploads.isEmpty())
+    }
+    @Test fun `unsent local supplier survives an empty server response`() {
+        val local=localSupplier().copy(cloudDocumentId="",cloudConfirmed=false)
+        val plan=SupplierSyncPlanner.plan(listOf(local),emptyList(),101,"bakery-a",newDocumentId={"new-doc"})
+        assertTrue(plan.deletes.isEmpty());assertEquals("new-doc",plan.uploads.single().cloudDocumentId)
+        assertTrue(plan.uploads.single().pendingSync)
+    }
+    @Test fun `sync planner rejects records belonging to another account or bakery`() {
+        assertThrows(IllegalArgumentException::class.java) { SupplierSyncPlanner.plan(listOf(localSupplier().copy(userId=202)),emptyList(),101,"bakery-a") }
+        assertThrows(IllegalArgumentException::class.java) { SupplierSyncPlanner.plan(listOf(localSupplier().copy(bakeryId="bakery-b")),emptyList(),101,"bakery-a") }
     }
 }

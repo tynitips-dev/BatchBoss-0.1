@@ -8,6 +8,7 @@ import com.example.data.remote.FirebaseService
 import com.example.data.remote.WebSyncService
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplier
+import com.example.data.remote.SupplierSyncPlanner
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -674,9 +675,11 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleFavoriteSupplier(id: Long) {
         viewModelScope.launch {
-            val supplier = repository.getSupplierById(id).first() ?: return@launch
-            if (supplier.userId != _currentUserId.value) return@launch
-            repository.updateSupplier(supplier.copy(isFavorite = !supplier.isFavorite, pendingSync = true))
+            supplierSyncMutex.withLock {
+                val supplier = repository.getSupplierById(id).first() ?: return@withLock
+                if (supplier.userId != _currentUserId.value) return@withLock
+                repository.updateSupplier(supplier.copy(isFavorite = !supplier.isFavorite, pendingSync = true))
+            }
             syncSupplierRecords()
         }
     }
@@ -836,25 +839,16 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val remote = BakerySupplierCloud.fetch(bakeryId)
             check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
             val local = repository.getSuppliersByUser(uid).first().filter { it.bakeryId.isBlank() || it.bakeryId == bakeryId }
-            val remoteIds = remote.map { it.cloudDocumentId }.toSet()
-            for (record in remote) {
-                val existing = local.firstOrNull { it.cloudDocumentId == record.cloudDocumentId && it.bakeryId == bakeryId }
-                if (existing?.pendingSync != true) repository.insertSupplier(record.copy(id = existing?.id ?: 0, userId = uid, bakeryId = bakeryId))
-            }
-            for (record in local) {
-                check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
-                if (record.cloudConfirmed && record.cloudDocumentId.isNotBlank() && record.cloudDocumentId !in remoteIds) {
-                    repository.deleteSupplier(record.id)
-                } else if (record.pendingSync || record.cloudDocumentId.isBlank()) {
-                    // Favorite changes must not overwrite a description edited on the website.
-                    val fresh = remote.firstOrNull { it.cloudDocumentId == record.cloudDocumentId }
-                    val content = fresh?.copy(id = record.id, userId = uid, isFavorite = record.isFavorite) ?: record
-                    val pending = content.copy(bakeryId = bakeryId, cloudDocumentId = record.cloudDocumentId.ifBlank { UUID.randomUUID().toString() }, pendingSync = true)
-                    repository.updateSupplier(pending)
-                    BakerySupplierCloud.save(bakeryId, pending)
-                    val current = repository.getSupplierById(pending.id).first()
-                    if (current == pending) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
-                }
+            val plan = SupplierSyncPlanner.plan(local, remote, uid, bakeryId)
+            fun checkSession() { check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." } }
+            for (record in plan.imports) { checkSession(); repository.insertSupplier(record) }
+            for (id in plan.deletes) { checkSession(); repository.deleteSupplier(id) }
+            for (pending in plan.uploads) {
+                checkSession()
+                repository.updateSupplier(pending)
+                BakerySupplierCloud.save(bakeryId, pending)
+                val current = repository.getSupplierById(pending.id).first()
+                if (current == pending) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
             }
         }
     }
