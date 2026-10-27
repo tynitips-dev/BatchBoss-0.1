@@ -8,7 +8,9 @@ class PublicSupplierDirectoryContractTest {
         "businessName" to "Fixture Baking Supplies",
         "category" to "Packaging",
         "city" to "Johannesburg",
-        "province" to "Gauteng"
+        "province" to "Gauteng",
+        "description" to "",
+        "delivery" to ""
     )
 
     @Test fun acceptsApprovedPublicShape() {
@@ -28,6 +30,8 @@ class PublicSupplierDirectoryContractTest {
         assertNull(PublicSupplierDirectoryContract.parse(safe + ("category" to "Unmoderated")))
         assertNull(PublicSupplierDirectoryContract.parse(safe + ("businessName" to "")))
         assertNull(PublicSupplierDirectoryContract.parse(safe - "province"))
+        assertNull(PublicSupplierDirectoryContract.parse(safe - "description"))
+        assertNull(PublicSupplierDirectoryContract.parse(safe + ("delivery" to null)))
     }
 
     @Test fun rejectsOversizedPublicFields() {
