@@ -1,4 +1,5 @@
-import SupplierDirectory from './SupplierDirectory'
+import SupplierDirectory, { type Supplier as PublicSupplier } from './SupplierDirectory'
+import { directorySupplierDocumentId, savedSupplierRecord } from './supplierRecord'
 import { type ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen, Boxes, CalendarDays, ChevronRight, ClipboardList,
@@ -9,7 +10,7 @@ import {
   createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword,
   signOut, type User,
 } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
@@ -379,6 +380,19 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     }
   }
 
+  const savedDirectoryIds = (items.suppliers || []).map(item => String(item.publicListingId || '')).filter(Boolean)
+  async function saveDirectorySupplier(supplier: PublicSupplier) {
+    if (!isPro) { setActive('subscription'); return }
+    if (savedDirectoryIds.includes(supplier.id)) return
+    const target = doc(db, 'bakeries', profile.bakeryId, 'suppliers', directorySupplierDocumentId(supplier.id))
+    await runTransaction(db, async transaction => {
+      if ((await transaction.get(target)).exists()) return
+      transaction.set(target, {
+        ...savedSupplierRecord(supplier), createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      })
+    })
+  }
+
   return <div className="dashboard-shell">
     <aside className={menuOpen ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span className="brand-mark">B</span><span>Batch<strong>Boss</strong></span></div>
@@ -398,7 +412,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
       <SetupGuide profile={profile} active={active} suspended={showEditor || showImporter} onOpen={key => { setActive(key); setMenuOpen(false) }} />
       {active === 'inventory' && <section className="content-card"><h2>Inventory</h2><p>Choose a stock folder. Finished products can include bakes stored for later sale.</p><div className="inventory-folders">{(['ingredients','packaging','products'] as const).map(folder=><button key={folder} className={inventoryFolder===folder?'active':''} onClick={()=>setInventoryFolder(folder)}><strong>{folder==='products'?'Finished products':folder==='ingredients'?'Ingredients':'Packaging'}</strong><span>{(items[folder]||[]).filter(i=>!i.archived).length} records</span></button>)}</div>{inventoryFolder==='products'?(isPro?<ProductsView stockMode bakeryId={profile.bakeryId} items={items.products||[]}/>:<LockedView title="Finished products" onUpgrade={()=>setActive('subscription')}/>):<><button className="outline-button" onClick={()=>setActive(inventoryFolder)}>Manage {inventoryFolder}</button><StockCards key={inventoryFolder} items={items[inventoryFolder]||[]} onEdit={item=>{setActive(inventoryFolder);setEditing(item);setShowEditor(true)}} bakeryId={profile.bakeryId} collectionName={inventoryFolder==='ingredients'?'inventory':'packaging'}/></>}</section>}
-      {active === 'supplierDirectory' && <SupplierDirectory initialCategory={supplierCategory} />}
+      {active === 'supplierDirectory' && <SupplierDirectory initialCategory={supplierCategory} savedIds={savedDirectoryIds} onSave={saveDirectorySupplier} />}
       {active === 'reports' && <ReportsView items={items} />}
       {['orders','receipts'].includes(active) && (active !== 'receipts' || isPro) && <RecordsView kind={active as 'orders'|'receipts'} bakeryId={profile.bakeryId} items={selectedItems} invoices={items.invoices || []} customers={items.customers || []} />}
       {active === 'home' && <HomeView invoices={items.invoices || []} counts={counts} onOpen={setActive} />}
@@ -424,6 +438,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
           <div className="section-heading"><div><span className="eyebrow">Your workspace</span><h2>{selectedModule.label}</h2><p className="section-copy">Changes are saved to the same Firebase bakery workspace used by the app.</p></div><div className="card-actions">{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>{setSupplierCategory(active==='packaging'?'Packaging':'Ingredients');setActive('supplierDirectory')}}>Find suppliers</button>}{['ingredients','packaging'].includes(active)&&<button className="outline-button" onClick={()=>setShowImporter(true)}>Upload list</button>}<button className="primary-button compact" onClick={() => openEditor()}><Plus size={18} /> Add {selectedModule.label.replace(/s$/, '').toLowerCase()}</button></div></div>
           {['ingredients','inventory','packaging'].includes(active) ? <StockCards items={selectedItems} onEdit={openEditor} bakeryId={profile.bakeryId} collectionName={selectedModule.collection!} /> : <WorkspaceList onView={active==='recipes'?setViewRecipe:undefined} items={selectedItems} label={selectedModule.label} onAdd={() => openEditor()} onEdit={openEditor} onDelete={removeItem} />}
         </section>}
+      {active === 'suppliers' && <SupplierDirectory savedIds={savedDirectoryIds} onSave={saveDirectorySupplier} />}
     </main>
     {viewRecipe && <RecipeReader recipe={viewRecipe} bakeryId={profile.bakeryId} close={()=>setViewRecipe(null)} edit={()=>{openEditor(viewRecipe);setViewRecipe(null)}}/>}
     {showEditor && <ItemEditor module={selectedModule} item={editing} bakeryId={profile.bakeryId} onClose={() => { setShowEditor(false); setEditing(null) }} onSave={saveItem} />}

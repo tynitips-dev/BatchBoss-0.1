@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
 import com.example.data.remote.FirebaseService
 import com.example.data.remote.WebSyncService
+import com.example.data.remote.BakerySupplierCloud
+import com.example.data.remote.PublicSupplier
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.UUID
 import com.example.data.repository.AppRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -145,7 +150,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         .flatMapLatest { id -> repository.getCustomersByUser(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allSuppliers: StateFlow<List<SupplierEntity>> = repository.allSuppliers
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allSuppliers: StateFlow<List<SupplierEntity>> = _currentUserId.flatMapLatest { repository.getSuppliersByUser(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allSpecials: StateFlow<List<SpecialDealEntity>> = repository.allSpecials
@@ -236,9 +242,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Selected supplier stream
     private val _selectedSupplierId = MutableStateFlow<Long?>(1L)
-    val selectedSupplier: StateFlow<SupplierEntity?> = _selectedSupplierId
-        .flatMapLatest { id ->
-            if (id != null) repository.getSupplierById(id) else flowOf(null)
+    val selectedSupplier: StateFlow<SupplierEntity?> = combine(_selectedSupplierId, _currentUserId) { id, uid -> id to uid }
+        .flatMapLatest { (id, uid) ->
+            if (id != null) repository.getSupplierById(id).map { supplier -> supplier?.takeIf { it.userId == uid } } else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -668,7 +674,10 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleFavoriteSupplier(id: Long) {
         viewModelScope.launch {
-            repository.toggleFavoriteSupplier(id)
+            val supplier = repository.getSupplierById(id).first() ?: return@launch
+            if (supplier.userId != _currentUserId.value) return@launch
+            repository.updateSupplier(supplier.copy(isFavorite = !supplier.isFavorite, pendingSync = true))
+            syncSupplierRecords()
         }
     }
 
@@ -784,6 +793,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private val supplierSyncMutex = Mutex()
+
     fun saveNewSupplier(
         name: String,
         category: String,
@@ -794,20 +805,72 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val id = repository.insertSupplier(
                 SupplierEntity(
+                    userId = _currentUserId.value,
+                    bakeryId = userProfile.value?.bakeryId.orEmpty(),
+                    cloudDocumentId = UUID.randomUUID().toString(),
+                    pendingSync = true,
                     name = name,
                     categories = category,
-                    rating = 4.5,
-                    reviewCount = 10,
-                    openingHours = "Open • Closes 17:00",
+                    rating = 0.0,
+                    reviewCount = 0,
+                    openingHours = "",
                     phone = phone,
                     email = email,
                     website = website,
-                    about = "Bakery supplier providing wholesale baking items and equipment.",
+                    about = "",
                     isFavorite = true,
                     isMySupplier = true
                 )
             )
+            syncSupplierRecords()
             navigateTo(Screen.SupplierDetail(id))
+        }
+    }
+
+    suspend fun syncSupplierRecords(): Result<Unit> = supplierSyncMutex.withLock {
+        runCatching {
+            val uid = _currentUserId.value
+            val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+            require(profile.userId == uid && profile.bakeryId.isNotBlank()) { "Sign in to your bakery before syncing suppliers." }
+            val bakeryId = profile.bakeryId
+            val remote = BakerySupplierCloud.fetch(bakeryId)
+            check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
+            val local = repository.getSuppliersByUser(uid).first().filter { it.bakeryId.isBlank() || it.bakeryId == bakeryId }
+            val remoteIds = remote.map { it.cloudDocumentId }.toSet()
+            for (record in remote) {
+                val existing = local.firstOrNull { it.cloudDocumentId == record.cloudDocumentId && it.bakeryId == bakeryId }
+                if (existing?.pendingSync != true) repository.insertSupplier(record.copy(id = existing?.id ?: 0, userId = uid, bakeryId = bakeryId))
+            }
+            for (record in local) {
+                check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
+                if (record.cloudConfirmed && record.cloudDocumentId.isNotBlank() && record.cloudDocumentId !in remoteIds) {
+                    repository.deleteSupplier(record.id)
+                } else if (record.pendingSync || record.cloudDocumentId.isBlank()) {
+                    // Favorite changes must not overwrite a description edited on the website.
+                    val fresh = remote.firstOrNull { it.cloudDocumentId == record.cloudDocumentId }
+                    val content = fresh?.copy(id = record.id, userId = uid, isFavorite = record.isFavorite) ?: record
+                    val pending = content.copy(bakeryId = bakeryId, cloudDocumentId = record.cloudDocumentId.ifBlank { UUID.randomUUID().toString() }, pendingSync = true)
+                    repository.updateSupplier(pending)
+                    BakerySupplierCloud.save(bakeryId, pending)
+                    val current = repository.getSupplierById(pending.id).first()
+                    if (current == pending) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                }
+            }
+        }
+    }
+
+    suspend fun savePublicSupplier(supplier: PublicSupplier): Result<Unit> {
+        return supplierSyncMutex.withLock {
+            runCatching {
+                val uid = _currentUserId.value
+                val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+                require(profile.userId == uid && profile.bakeryId.isNotBlank()) { "Sign in to your bakery before saving suppliers." }
+                val cloud = BakerySupplierCloud.saveDirectory(profile.bakeryId, supplier)
+                check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
+                val existing = repository.getSuppliersByUser(uid).first().firstOrNull { it.bakeryId == profile.bakeryId && it.cloudDocumentId == cloud.cloudDocumentId }
+                repository.insertSupplier(cloud.copy(id = existing?.id ?: 0, userId = uid, bakeryId = profile.bakeryId))
+                Unit
+            }
         }
     }
 
@@ -1739,6 +1802,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     onComplete(false, upload.message)
                     return@launch
                 }
+                syncSupplierRecords().getOrThrow()
                 WebSyncService.syncProfile(bId, profile)
                 onComplete(true, "Sync complete: ${recipesList.size} recipes, ${inventoryList.size} ingredients/stock items, ${customersList.size} customers and ${packagingList.size} packaging items.")
             } catch (error: Throwable) {
