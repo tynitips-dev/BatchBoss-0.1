@@ -29,7 +29,10 @@ object PublicSupplierDirectoryContract {
         val city = raw["city"] as? String ?: return null
         val province = raw["province"] as? String ?: return null
         if (name.isBlank() || city.isBlank() || province.isBlank() || category !in categories) return null
+        if (name.length > 120 || city.length > 100 || province.length > 100) return null
         if (raw.values.any { it != null && it !is String }) return null
+        if ((raw["description"] as? String)?.length ?: 0 > 1000) return null
+        if ((raw["delivery"] as? String)?.length ?: 0 > 150) return null
         return PublicSupplierListing(
             name.trim(), category, city.trim(), province.trim(),
             (raw["description"] as? String).orEmpty(),
