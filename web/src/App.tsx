@@ -16,6 +16,7 @@ import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, 
 import SubscriptionView from './SubscriptionView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
+import SupplierAdBanner from './SupplierAdBanner'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
 import { priceRecipe } from './recipe-pricing'
@@ -409,6 +410,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     <main className="dashboard-main">
       <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{displayName(profile)} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
       <AnnouncementBanner />
+      {['home','suppliers','supplierDirectory'].includes(active)&&<SupplierAdBanner/>}
       <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
       <SetupGuide profile={profile} active={active} suspended={showEditor || showImporter} onOpen={key => { setActive(key); setMenuOpen(false) }} />
       {active === 'inventory' && <section className="content-card"><h2>Inventory</h2><p>Choose a stock folder. Finished products can include bakes stored for later sale.</p><div className="inventory-folders">{(['ingredients','packaging','products'] as const).map(folder=><button key={folder} className={inventoryFolder===folder?'active':''} onClick={()=>setInventoryFolder(folder)}><strong>{folder==='products'?'Finished products':folder==='ingredients'?'Ingredients':'Packaging'}</strong><span>{(items[folder]||[]).filter(i=>!i.archived).length} records</span></button>)}</div>{inventoryFolder==='products'?(isPro?<ProductsView stockMode bakeryId={profile.bakeryId} items={items.products||[]}/>:<LockedView title="Finished products" onUpgrade={()=>setActive('subscription')}/>):<><button className="outline-button" onClick={()=>setActive(inventoryFolder)}>Manage {inventoryFolder}</button><StockCards key={inventoryFolder} items={items[inventoryFolder]||[]} onEdit={item=>{setActive(inventoryFolder);setEditing(item);setShowEditor(true)}} bakeryId={profile.bakeryId} collectionName={inventoryFolder==='ingredients'?'inventory':'packaging'}/></>}</section>}
