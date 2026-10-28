@@ -15,6 +15,7 @@ export default function SupplierAccounts({functions}:{functions:Functions}) {
   const [granting,setGranting]=useState<string|null>(null)
   const [days,setDays]=useState(30)
   const [reason,setReason]=useState('')
+  const [confirmation,setConfirmation]=useState('')
   async function load(after?:string) {
     setBusy(true);setError('')
     try {
@@ -35,18 +36,19 @@ export default function SupplierAccounts({functions}:{functions:Functions}) {
     finally {setBusy(false)}
   }
   async function access(item:Account,action:'grant'|'revoke') {
-    if(!window.confirm(action==='grant'?`Grant ${plan} access to ${item.businessName} for ${days} days without charging? This overrides package access, not their paid subscription.`:`Revoke the admin grant for ${item.businessName}? Any independently paid subscription remains unchanged.`))return
+    const key=item.uid+':'+action
+    if(confirmation!==key){setConfirmation(key);return}
     setBusy(true);setError('');setNotice('')
     try {
       await httpsCallable(functions,'setSupplierAdminAccess')({supplierId:item.uid,action,planId:plan,days,reason,expectedVersion:item.manualVersion||0})
-      setGranting(null);await load();setNotice('Administrator access updated and audited. No Paystack charge was created.')
+      setGranting(null);setConfirmation('');await load();setNotice('Administrator access updated and audited. No Paystack charge was created.')
     }catch(e){setError(e instanceof Error?e.message:'Unable to update access.')}
     finally{setBusy(false)}
   }
   async function publishProfile(item:Account){
-    if(!window.confirm(`Publish ${item.businessName}'s business profile in the baker supplier directory?`))return
+    if(confirmation!==item.uid+':profile'){setConfirmation(item.uid+':profile');return}
     setBusy(true);setError('')
-    try{await httpsCallable(functions,'reviewSupplierProfile')({supplierId:item.uid,decision:'publish'});await load();setNotice('Business profile published.')}
+    try{await httpsCallable(functions,'reviewSupplierProfile')({supplierId:item.uid,decision:'publish'});await load();setConfirmation('');setNotice('Business profile published.')}
     catch(e){setError(e instanceof Error?e.message:'Unable to publish profile.')}
     finally{setBusy(false)}
   }
@@ -57,9 +59,9 @@ export default function SupplierAccounts({functions}:{functions:Functions}) {
     <div className="supplier-admin-tools"><label>Search loaded suppliers<input value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="secondary" disabled={busy} onClick={()=>{setEditing(null);void load()}}>Refresh list</button></div>
     {filtered.map(item=><article className="supplier-admin-item" key={item.uid}>
       <div><strong>{item.businessName||'Unnamed supplier'}</strong><p>{item.contactName||'No contact'} · {item.email||'No email'}</p><p>Status: {item.status}</p><p>Chosen package: <strong>{item.selectedPlanId||'Not selected'}</strong></p><p>Verified paid package: {item.paidPlanId||'None'} · {item.paidStatus}</p><p>Active package: <strong>{item.activePlanId||'None'}</strong> · {item.accessSource||'None'}{item.accessExpiresAt?` · until ${new Date(item.accessExpiresAt).toLocaleDateString('en-ZA')}`:''}</p><p>Directory profile: {item.profileStatus||'missing'}</p></div>
-      {editing===item.uid?<div className="supplier-admin-tools"><label>Chosen package<select value={plan} onChange={e=>setPlan(e.target.value)}>{plans.map(value=><option key={value} value={value}>{value}</option>)}</select></label><button className="secondary" disabled={busy} onClick={()=>void save(item)}>Save package</button><button className="secondary" disabled={busy} onClick={()=>setEditing(null)}>Cancel</button></div>:<button className="secondary" disabled={busy} onClick={()=>{setEditing(item.uid);setPlan(item.selectedPlanId||'directory')}}>Change package</button>}
-      <div className="supplier-admin-tools"><button className="secondary" disabled={busy||item.status!=='approved'} onClick={()=>{setGranting(item.uid);setEditing(null);setPlan(item.activePlanId||item.selectedPlanId||'growth');setDays(30);setReason('')}}>Manage active package</button>{item.profileStatus!=='published'&&<button className="secondary" disabled={busy||!item.activePlanId} onClick={()=>void publishProfile(item)}>Publish directory profile</button>}</div>
-      {granting===item.uid&&<div className="supplier-admin-tools" style={{flexWrap:'wrap'}}><label>Active package<select value={plan} onChange={e=>setPlan(e.target.value)}>{plans.map(value=><option key={value} value={value}>{value}</option>)}</select></label><label>Access duration (days)<input type="number" min={1} max={365} value={days} onChange={e=>setDays(Number(e.target.value))}/></label><label>Reason for access change<input maxLength={500} value={reason} onChange={e=>setReason(e.target.value)}/></label><button className="secondary" disabled={busy||reason.trim().length<5||!Number.isInteger(days)||days<1||days>365} onClick={()=>void access(item,'grant')}>Grant package without charge</button>{item.manualActive&&<button className="secondary" disabled={busy||reason.trim().length<5} onClick={()=>void access(item,'revoke')}>Revoke admin grant</button>}<button className="secondary" disabled={busy} onClick={()=>setGranting(null)}>Cancel access change</button></div>}
+      {editing===item.uid?<div className="supplier-admin-tools"><label>Chosen package<select value={plan} onChange={e=>{setPlan(e.target.value);setConfirmation('')}}>{plans.map(value=><option key={value} value={value}>{value}</option>)}</select></label><button className="secondary" disabled={busy} onClick={()=>void save(item)}>Save package</button><button className="secondary" disabled={busy} onClick={()=>setEditing(null)}>Cancel</button></div>:<button className="secondary" disabled={busy} onClick={()=>{setEditing(item.uid);setGranting(null);setConfirmation('');setPlan(item.selectedPlanId||'directory')}}>Change package</button>}
+      <div className="supplier-admin-tools"><button className="secondary" disabled={busy||item.status!=='approved'} onClick={()=>{setGranting(item.uid);setEditing(null);setConfirmation('');setPlan(item.activePlanId||item.selectedPlanId||'growth');setDays(30);setReason('')}}>Manage active package</button>{item.profileStatus!=='published'&&<button className="secondary" disabled={busy||!item.activePlanId} onClick={()=>void publishProfile(item)}>{confirmation===item.uid+':profile'?'Confirm public directory listing':'Publish directory profile'}</button>}</div>
+      {granting===item.uid&&<div className="supplier-admin-tools" style={{flexWrap:'wrap'}}><label>Active package<select value={plan} onChange={e=>{setPlan(e.target.value);setConfirmation('')}}>{plans.map(value=><option key={value} value={value}>{value}</option>)}</select></label><label>Access duration (days)<input type="number" min={1} max={365} value={days} onChange={e=>{setDays(Number(e.target.value));setConfirmation('')}}/></label><label>Reason for access change<input maxLength={500} value={reason} onChange={e=>{setReason(e.target.value);setConfirmation('')}}/></label><button className="secondary" disabled={busy||reason.trim().length<5||!Number.isInteger(days)||days<1||days>365} onClick={()=>void access(item,'grant')}>{confirmation===item.uid+':grant'?'Confirm no-charge package grant':'Grant package without charge'}</button>{item.manualActive&&<button className="secondary" disabled={busy||reason.trim().length<5} onClick={()=>void access(item,'revoke')}>{confirmation===item.uid+':revoke'?'Confirm revocation':'Revoke admin grant'}</button>}<button className="secondary" disabled={busy} onClick={()=>setGranting(null)}>Cancel access change</button></div>}
     </article>)}
     {!busy&&!filtered.length&&<p>No suppliers found{search?' in the loaded records':''}.</p>}
     {cursor&&<button className="secondary" disabled={busy} onClick={()=>void load(cursor)}>Load more suppliers</button>}

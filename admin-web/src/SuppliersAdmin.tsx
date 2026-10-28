@@ -106,7 +106,7 @@ function SupplierCampaignReviews() {
   useEffect(()=>{void refresh()},[refresh])
   async function review(item:CampaignReviewItem,decision:'approved'|'rejected'){
     const key=item.supplierId+':'+item.campaignId
-    if(!window.confirm(`${decision==='approved'?'Approve and publish':'Reject'} creative for "${item.title}"? Publishing shows its reviewed artwork to bakers during the campaign dates; it does not charge the supplier.`))return
+    if(decision==='approved'&&(viewing?.campaignId!==item.campaignId||viewing?.supplierId!==item.supplierId)){setViewing(item);return}
     setBusy(key);setError('');setNotice('')
     try{
       const call=httpsCallable(supplierServices().functions,decision==='approved'?'publishSupplierCampaign':'reviewSupplierCampaign')
