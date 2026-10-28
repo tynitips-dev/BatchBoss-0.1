@@ -3,9 +3,10 @@ import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { getBlob, getStorage, ref } from 'firebase/storage'
+import SupplierAccounts from './SupplierAccounts'
 
 type SupplierStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
-type CampaignReviewItem = { supplierId:string; campaignId:string; title:string; description:string; placement:string; startDate:string; endDate:string }
+type CampaignReviewItem = { supplierId:string; campaignId:string; revision?:number; title:string; description:string; placement:string; startDate:string; endDate:string }
 type SupplierApplication = { uid: string; businessName?: string; contactName?: string; email?: string; status: SupplierStatus }
 const projectId = import.meta.env.VITE_SUPPLIER_FIREBASE_PROJECT_ID
 const ready = projectId === 'batchboss-suppliers' && Boolean(import.meta.env.VITE_SUPPLIER_FIREBASE_API_KEY && import.meta.env.VITE_SUPPLIER_FIREBASE_APP_ID)
@@ -76,7 +77,7 @@ function CampaignLightbox({item,onClose,children}:{item:CampaignReviewItem;onClo
   return <dialog ref={dialog} className="campaign-lightbox" onClose={onClose} onClick={event=>{if(event.target===event.currentTarget)dialog.current?.close()}} aria-labelledby="campaign-review-title">
     <button className="secondary" type="button" autoFocus onClick={()=>dialog.current?.close()}>Close campaign</button>
     <h2 id="campaign-review-title">{item.title}</h2>
-    <CampaignArtwork supplierId={item.supplierId} campaignId={item.campaignId}/>
+    <CampaignArtwork key={`${item.supplierId}:${item.campaignId}:${item.revision||0}`} supplierId={item.supplierId} campaignId={item.campaignId}/>
     <p>{item.description||'No description provided.'}</p>
     <dl><dt>Placement</dt><dd>{item.placement}</dd><dt>Start date</dt><dd>{item.startDate}</dd><dt>End date</dt><dd>{item.endDate}</dd><dt>Supplier ID</dt><dd>{item.supplierId}</dd><dt>Campaign ID</dt><dd>{item.campaignId}</dd></dl>
     {children}
@@ -109,7 +110,7 @@ function SupplierCampaignReviews() {
     setBusy(key);setError('');setNotice('')
     try{
       const call=httpsCallable(supplierServices().functions,'reviewSupplierCampaign')
-      await call({supplierId:item.supplierId,campaignId:item.campaignId,decision,...(decision==='rejected'?{reason:reason.trim()}:{})})
+      await call({supplierId:item.supplierId,campaignId:item.campaignId,expectedRevision:item.revision||0,decision,...(decision==='rejected'?{reason:reason.trim()}:{})})
       setRejecting('');setReason('')
       await refresh()
       setViewing(null)
@@ -123,7 +124,7 @@ function SupplierCampaignReviews() {
     {loading?<p>Loading campaign reviews…</p>:items.length===0?<p>No campaigns awaiting review.</p>:items.map(item=>{
       const key=item.supplierId+':'+item.campaignId
       return <article key={key} className="supplier-review-item">
-        <CampaignArtwork supplierId={item.supplierId} campaignId={item.campaignId}/>
+        <CampaignArtwork key={`${item.supplierId}:${item.campaignId}:${item.revision||0}`} supplierId={item.supplierId} campaignId={item.campaignId}/>
         <div className="supplier-review-copy">
           <h3>{item.title}</h3>
           <p>{item.description||'No description provided.'}</p>
@@ -152,12 +153,12 @@ function SupplierCampaignReviews() {
 }
 
 /** Isolated supplier login: the customer-admin Firebase identity is NOT a supplier-admin grant. */
-export default function SuppliersAdmin({initialTab='applications'}:{initialTab?:'applications'|'campaigns'}) {
+export default function SuppliersAdmin({initialTab='accounts'}:{initialTab?:'accounts'|'applications'|'campaigns'}) {
   const [user,setUser] = useState<User|null>(null)
   const [authorized,setAuthorized] = useState(false)
   const [checking,setChecking] = useState(ready)
   const [status,setStatus] = useState<SupplierStatus>('pending')
-  const [tab,setTab] = useState<'applications'|'campaigns'>(initialTab)
+  const [tab,setTab] = useState<'accounts'|'applications'|'campaigns'>(initialTab)
   const [applications,setApplications] = useState<SupplierApplication[]>([])
   const [loading,setLoading] = useState(false)
   const [busy,setBusy] = useState('')
@@ -223,8 +224,8 @@ export default function SuppliersAdmin({initialTab='applications'}:{initialTab?:
       </form> :
       !authorized ? <div className="error">This account is signed in but does not have supplier administrator permissions. An existing customer administrator is not automatically authorized in the separate supplier project. <button className="secondary" onClick={()=>signOut(supplierServices().auth)}>Switch supplier account</button></div> :
       <>
-        <div className="supplier-admin-tabs"><button type="button" className={tab==='applications'?'active':''} onClick={()=>setTab('applications')}>Supplier applications</button><button type="button" className={tab==='campaigns'?'active':''} onClick={()=>setTab('campaigns')}>Campaign reviews</button></div>
-        {tab==='campaigns'?<CampaignReviewBoundary><SupplierCampaignReviews/></CampaignReviewBoundary>:<>
+        <div className="supplier-admin-tabs"><button type="button" className={tab==='accounts'?'active':''} onClick={()=>setTab('accounts')}>Supplier list</button><button type="button" className={tab==='applications'?'active':''} onClick={()=>setTab('applications')}>Supplier applications</button><button type="button" className={tab==='campaigns'?'active':''} onClick={()=>setTab('campaigns')}>Campaign reviews</button></div>
+        {tab==='accounts'?<SupplierAccounts functions={supplierServices().functions}/>:tab==='campaigns'?<CampaignReviewBoundary><SupplierCampaignReviews/></CampaignReviewBoundary>:<>
         <p>Connected to supplier administration as {user.email}. Approval does not activate a paid listing.</p>
         <div className="supplier-admin-tools">
           <label>Status <select value={status} onChange={event=>setStatus(event.target.value as SupplierStatus)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="suspended">Suspended</option></select></label>
