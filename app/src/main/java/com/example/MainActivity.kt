@@ -195,9 +195,7 @@ fun BatchBossApp(
                         },
                         onLoginWithDetails = { emailOrPhone, branch ->
                             viewModel.loginUser(emailOrPhone) { success, msg ->
-                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                result(success, msg)
-                            }
+                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }                            }
                         }
                     )
                 }

@@ -177,16 +177,6 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         else repository.getLowStockPackagingByUser(userId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val allPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
-        .flatMapLatest { id -> repository.getPackagingByUser(id) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val lowStockPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
-        .flatMapLatest { id -> repository.getLowStockPackagingByUser(id) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     // Customers scoped to active user
     @OptIn(ExperimentalCoroutinesApi::class)
     val allCustomers: StateFlow<List<CustomerEntity>> = activeUserAndBakery.flatMapLatest { (userId, bakeryId) ->
