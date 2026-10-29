@@ -20,7 +20,7 @@ function calculateCommission(amountCents, planId) {
     throw new Error("Invalid positive payment amount in cents");
   }
   const plan = PLANS[planId];
-  if (!plan) throw new Error("Unknown plan");
+  if (!Object.hasOwn(PLANS, planId)) throw new Error("Unknown plan");
   return Math.round(amountCents * plan.rateBps / 10000);
 }
 function canTransition(from, to) {

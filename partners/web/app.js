@@ -341,7 +341,7 @@ root.addEventListener("click", async event => {
   if (action === "signin-mode" || action === "register-mode") { state.authMode = action === "signin-mode" ? "signin" : "register"; state.error = ""; render(); return; }
   if (action === "logout") { await perform(async () => firebase.authSignOut(firebase.auth)); return; }
   if (action === "refresh") { await refresh(); return; }
-  if (action === "verify-email") { await perform(async () => { await state.user.reload(); await refresh(); }); return; }
+  if (action === "verify-email") { await perform(async () => { await state.user.reload(); await state.user.getIdToken(true); await refresh(); }); return; }
   if (action === "resend-verification") { await perform(async () => { await firebase.sendEmailVerification(state.user); toast("Verification email requested."); }); return; }
   if (action === "copy-ref") {
     const code = state.overview.partner.referralCode;

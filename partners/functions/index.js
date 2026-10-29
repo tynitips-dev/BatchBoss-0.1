@@ -202,7 +202,7 @@ exports.adminRecordVerifiedSale = onCall(async (request) => {
   const provider = request.data?.provider;
   const reference = safe(request.data?.reference, 150);
   const amountCents = request.data?.amountCents;
-  if (!/^[a-zA-Z0-9_-]{10,160}$/.test(leadId) || !PLANS[planId] ||
+  if (!/^[a-zA-Z0-9_-]{10,160}$/.test(leadId) || !Object.hasOwn(PLANS, planId) ||
       !PAYMENT_PROVIDERS.includes(provider) || !/^[A-Za-z0-9_./:-]{6,150}$/.test(reference) ||
       request.data?.merchantPaymentConfirmed !== true) {
     throw new HttpsError("invalid-argument", "Provide verified payment evidence and a valid product.");
@@ -283,3 +283,12 @@ exports.adminChangeCommissionStatus = onCall(async request => {
   // "paid" records a verified manual payout; it does not send money.
   return { status: nextStatus };
 });
+
+// Test bridge is deliberately absent from every deployed Functions export.
+if (process.env.FUNCTIONS_EMULATOR === "true") {
+  exports.ingestPartnerTestEvent = onCall(async request => {
+    adminUser(request);
+    const { ingestTestEvent } = require("./referralTestIngest");
+    return ingestTestEvent(db(), request.data);
+  });
+}
