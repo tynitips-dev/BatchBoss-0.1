@@ -23,3 +23,7 @@ The existing BatchBoss CSS, branding and checkout security checks are preserved.
 - A connected designated Android phone and the reviewed test build for actual signup-to-browser/return-to-app acceptance. ADB reported no connected devices during this pass; no phone installation or distribution occurred. A phone-width browser check is not native Android acceptance.
 - Hosted-staging browser/callable tests, real test-mode merchant checkout acceptance, approval validation at signup, production cross-project identities/delivery/reconciliation, policy decisions and stacked branch/security review.
 - Xneelo/DNS deployment and real payments remain disabled. All PRs remain drafts.
+
+Account-switch review additionally clears the previous profile before observing a new account and ignores stale callbacks after account changes/unmount. Native phone acceptance remains outstanding.
+
+Two automated regressions now execute the actual App source with controlled SDK callbacks: form identity is preserved during auth/setup failure, and account changes/unmount discard old profile/error callbacks. Both passed locally and are included in CI.

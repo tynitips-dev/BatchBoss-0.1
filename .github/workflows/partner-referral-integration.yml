@@ -5,6 +5,7 @@ on:
       - 'functions/**'
       - 'web/**'
       - 'tests/partner-referral-emulator.cjs'
+      - 'tests/auth-flow.cjs'
       - 'tests/referral-emulators/**'
       - '.github/workflows/partner-referral-integration.yml'
 permissions:
@@ -21,7 +22,7 @@ jobs:
         working-directory: functions
       - run: npm run build
         working-directory: functions
-      - run: node --test tests/paystack-flow.cjs
+      - run: node --test tests/paystack-flow.cjs tests/auth-flow.cjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
         working-directory: web
       - run: npm run build

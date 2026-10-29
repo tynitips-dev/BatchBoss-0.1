@@ -62,8 +62,11 @@ function App() {
 
   useEffect(() => {
     let stopProfile = () => {}
+    let activeUid: string | null = null
     const stopAuth = onAuthStateChanged(auth, current => {
       stopProfile()
+      activeUid = current?.uid || null
+      setProfile(null)
       setUser(current)
       if (!current) {
         setProfile(null)
@@ -72,14 +75,16 @@ function App() {
       }
       setLoading(true)
       stopProfile = onSnapshot(doc(db, 'users', current.uid), snapshot => {
+        if (activeUid !== current.uid) return
         setProfile(snapshot.exists() ? snapshot.data() as UserProfile : null)
         setLoading(false)
       }, () => {
+        if (activeUid !== current.uid) return
         setProfile(null)
         setLoading(false)
       })
     })
-    return () => { stopProfile(); stopAuth() }
+    return () => { activeUid = null; stopProfile(); stopAuth() }
   }, [])
 
   if (!firebaseConfigured) return <SetupNotice />
