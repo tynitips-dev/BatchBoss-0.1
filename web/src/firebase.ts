@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
+import { getFirestore, initializeFirestore, connectFirestoreEmulator } from 'firebase/firestore'
 import { getStorage, connectStorageEmulator } from 'firebase/storage'
 
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions'
@@ -23,7 +23,9 @@ if (referralPilot && (!['localhost','127.0.0.1'].includes(window.location.hostna
 }
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+export const db = referralPilot
+  ? initializeFirestore(app, { experimentalForceLongPolling: true })
+  : getFirestore(app)
 export const storage = getStorage(app)
 
 export const bakerFunctions = getFunctions(app, 'europe-west1')

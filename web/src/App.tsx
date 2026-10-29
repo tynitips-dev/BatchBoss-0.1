@@ -58,6 +58,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authFlow, setAuthFlow] = useState({ started: false, busy: false })
 
   useEffect(() => {
     let stopProfile = () => {}
@@ -82,8 +83,8 @@ function App() {
   }, [])
 
   if (!firebaseConfigured) return <SetupNotice />
-  if (loading) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
-  if (!user || !profile) return <AuthScreen />
+  if (loading && !authFlow.started) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
+  if (!user || !profile || authFlow.busy) return <AuthScreen onBusyChange={busy => setAuthFlow({ started: true, busy })} />
   return <Dashboard key={user.uid} profile={profile} />
 }
 
@@ -95,14 +96,16 @@ function SetupNotice() {
   </main>
 }
 
-function AuthScreen() {
+function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>(() => new URLSearchParams(location.search).has('signup') || (referralPilot && new URLSearchParams(location.search).has('ref')) ? 'signup' : 'login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
+    onBusyChange(true)
     setError('')
     const data = new FormData(event.currentTarget)
     const email = String(data.get('email')).trim()
@@ -146,7 +149,7 @@ function AuthScreen() {
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
       setError(message.includes('invalid-credential') ? 'Email or password not recognised. Please try again.' : message.replace('Firebase: ', ''))
-    } finally { setBusy(false) }
+    } finally { setBusy(false); onBusyChange(false) }
   }
 
   return <div className="auth-page">
