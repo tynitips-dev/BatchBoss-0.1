@@ -285,9 +285,13 @@ exports.adminChangeCommissionStatus = onCall(async request => {
 });
 
 // Test bridge is deliberately absent from every deployed Functions export.
-if (process.env.FUNCTIONS_EMULATOR === "true") {
+if (process.env.FUNCTIONS_EMULATOR === "true" && /^demo-[a-z0-9-]+$/.test(process.env.GCLOUD_PROJECT || "") && process.env.BATCHBOSS_PARTNER_TEST_ENABLED === "true") {
   exports.ingestPartnerTestEvent = onCall(async request => {
     adminUser(request);
+    const source = request.auth.token.batchbossPartnerBridgeSource;
+    if (source && (!["baker", "supplier"].includes(source) || source !== request.data?.source)) {
+      throw new HttpsError("permission-denied", "Test bridge source does not match.");
+    }
     const { ingestTestEvent } = require("./referralTestIngest");
     return ingestTestEvent(db(), request.data);
   });

@@ -46,7 +46,7 @@ test("supplier actual signup and verified checkout flow reaches test attribution
 },async()=>{
  const db=setup();
  const supplierPath=process.env.SUPPLIER_SOURCE;
- const signup=loadFunctions(path.join(supplierPath,"partnerReferral.js"),db,{FUNCTIONS_EMULATOR:"true"});
+ const signup=loadFunctions(path.join(supplierPath,"partnerReferral.js"),db,{FUNCTIONS_EMULATOR:"true",GCLOUD_PROJECT:"demo-batchboss-partners",BATCHBOSS_PARTNER_TEST_ENABLED:"true"});
  const request={auth:{uid:"supplier-private-id",token:{email:"supplier@example.test",email_verified:true}},
  data:{businessName:"Test business",contactName:"Test owner",referralCode:code}};
  await signup.registerReferredSupplierTest(request);
@@ -64,7 +64,7 @@ test("supplier actual signup and verified checkout flow reaches test attribution
   const ref=url.split("/").at(-1);
   return {ok:true,json:async()=>({status:true,data:{reference:ref,status:"success",amount:39900,currency:"ZAR",domain:"test",customer:{email:"supplier@example.test"}}})};
  };
- const checkout=loadFunctions(path.join(supplierPath,"supplierCheckout.js"),db,{PAYSTACK_SECRET_KEY:"sk_test_fake"},fakePaystack);
+ const checkout=loadFunctions(path.join(supplierPath,"supplierCheckout.js"),db,{PAYSTACK_SECRET_KEY:"sk_test_fake",FUNCTIONS_EMULATOR:"true",GCLOUD_PROJECT:"demo-batchboss-suppliers",BATCHBOSS_PARTNER_TEST_ENABLED:"true"},fakePaystack);
  const started=await checkout.startSupplierTestCheckout({...request,data:{planId:"growth"}});
  const verification={...request,data:{reference:started.reference}};
  await checkout.verifySupplierTestCheckout(verification);await checkout.verifySupplierTestCheckout(verification);
@@ -79,10 +79,11 @@ test("supplier actual signup and verified checkout flow reaches test attribution
 test("central test bridge is absent in production and requires a verified admin in emulator",async()=>{
  const db=setup(),file=path.join(__dirname,"index.js");
  assert.equal(loadFunctions(file,db,{}).ingestPartnerTestEvent,undefined);
- const handler=loadFunctions(file,db,{FUNCTIONS_EMULATOR:"true"}).ingestPartnerTestEvent;
+ const handler=loadFunctions(file,db,{FUNCTIONS_EMULATOR:"true",GCLOUD_PROJECT:"demo-batchboss-partners",BATCHBOSS_PARTNER_TEST_ENABLED:"true"}).ingestPartnerTestEvent;
  await assert.rejects(handler({data:event("registration")}),{code:"unauthenticated"});
  await assert.rejects(handler({auth:{uid:"agent",token:{email_verified:true}},data:event("registration")}),{code:"permission-denied"});
  await assert.rejects(handler({auth:{uid:"admin",token:{email_verified:false,batchbossPartnerAdmin:true}},data:event("registration")}),{code:"unauthenticated"});
+ await assert.rejects(handler({auth:{uid:"bridge",token:{email_verified:true,batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:"supplier"}},data:event("registration",88,"baker")}),{code:"permission-denied"});
  const result=await handler({auth:{uid:"admin",token:{email_verified:true,batchbossPartnerAdmin:true}},data:event("registration")});
  assert.equal(result.payable,false);
 });

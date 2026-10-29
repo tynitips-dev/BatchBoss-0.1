@@ -193,7 +193,9 @@ function planLabel(id) {
 function renderOverview() {
   const p = state.overview.partner;
   const code = p.referralCode || "Pending approval";
-  const url = "https://batchboss.co.za/?ref=" + encodeURIComponent(code);
+  const bakerUrl = "https://app.batchboss.co.za/?signup=1&ref=" + encodeURIComponent(code);
+  const supplierUrl = "https://suppliers.batchboss.co.za/?ref=" + encodeURIComponent(code);
+  const linkDisabled = !configured || !/^BB-[A-F0-9]{12}$/.test(code) ? " disabled" : "";
   const banner = !configured ? notice("Preview data only. This is a visual demonstration, not a live sales or payment system.", "blue") : "";
   return '<div class="heading"><div><div class="eyebrow">Your growth hub</div><h1>Welcome back, ' +
     esc(p.fullName.split(" ")[0]) + ' 👋</h1><p class="subtext">Your businesses, sales and commissions in one place.</p></div>' +
@@ -204,9 +206,11 @@ function renderOverview() {
     '<div class="grid-two"><div>' + card("Recent introductions", leadTable(state.overview.leads.slice(0, 5)), "Businesses you have brought to BatchBoss") +
     '</div><div>' + card("Your referral details",
       '<p class="subtext">Partner code</p><h2 style="font-size:24px">' + esc(code) + '</h2>' +
-      '<div class="referral"><small>Your sharing link</small><code>' + esc(url) +
-      '</code><button data-action="copy-ref" type="button" class="btn light small">Copy link</button></div>' +
-      notice("Automatic link attribution is not connected to the baker and supplier checkouts yet. Register your leads in this portal while integration is completed.", "blue"),
+      '<div class="referral"><small>Baker signup link — not live</small><code>' + esc(bakerUrl) +
+      '</code><button data-action="copy-ref" data-kind="baker" type="button" class="btn light small"' + linkDisabled + '>Copy baker link</button></div>' +
+      '<div class="referral"><small>Supplier signup link — not live</small><code>' + esc(supplierUrl) +
+      '</code><button data-action="copy-ref" data-kind="supplier" type="button" class="btn light small"' + linkDisabled + '>Copy supplier link</button></div>' +
+      notice("Referral attribution is tested locally only. These signup links do not earn automatic commission yet. Register your leads here while launch checks are completed.", "blue"),
       "One code for baker and supplier introductions") + '</div></div>';
 }
 function renderLeads() {
@@ -345,7 +349,9 @@ root.addEventListener("click", async event => {
   if (action === "resend-verification") { await perform(async () => { await firebase.sendEmailVerification(state.user); toast("Verification email requested."); }); return; }
   if (action === "copy-ref") {
     const code = state.overview.partner.referralCode;
-    await navigator.clipboard.writeText("https://batchboss.co.za/?ref=" + encodeURIComponent(code));
+    if (!configured || !/^BB-[A-F0-9]{12}$/.test(code)) return;
+    const base = buttonEl.dataset.kind === "supplier" ? "https://suppliers.batchboss.co.za/?ref=" : "https://app.batchboss.co.za/?signup=1&ref=";
+    await navigator.clipboard.writeText(base + encodeURIComponent(code));
     toast("Link copied. Attribution is not live yet."); return;
   }
   if (action === "copy-pitch") {
