@@ -14,6 +14,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -49,7 +52,9 @@ data class CloudUserWorkspace(
     val email: String,
     val role: String,
     val subscriptionPlan: String,
-    val subscriptionStatus: String
+    val subscriptionStatus: String,
+    val subscriptionExpiresAtMillis: Long? = null,
+    val subscriptionSource: String = ""
 )
 
 /**
@@ -158,13 +163,36 @@ object FirebaseService {
                     email = snapshot.getString("email").orEmpty(),
                     role = snapshot.getString("role") ?: "owner",
                     subscriptionPlan = snapshot.getString("subscriptionPlan") ?: "free",
-                    subscriptionStatus = snapshot.getString("subscriptionStatus") ?: "free"
+                    subscriptionStatus = snapshot.getString("subscriptionStatus") ?: "free",
+                    subscriptionExpiresAtMillis = snapshot.getTimestamp("subscriptionExpiresAt")?.toDate()?.time,
+                    subscriptionSource = snapshot.getString("subscriptionSource").orEmpty()
                 )
             )
         } catch (e: Throwable) {
             Log.e(TAG, "Unable to load Firebase workspace", e)
             Result.failure(e)
         }
+    }
+
+    /** Watches only the authenticated baker's main-project subscription record. */
+    fun observeUserWorkspace(uid: String): Flow<CloudUserWorkspace?> = callbackFlow {
+        val db = firestore
+        if (db == null || currentUser?.uid != uid) { trySend(null); close(); return@callbackFlow }
+        val listener = db.collection("users").document(uid).addSnapshotListener { snapshot, error ->
+            if (error != null || snapshot == null || !snapshot.exists() || currentUser?.uid != uid) {
+                trySend(null)
+            } else {
+                val workspace = runCatching {
+                    CloudUserWorkspace(uid, snapshot.getString("bakeryId").orEmpty(), snapshot.getString("bakeryName").orEmpty(),
+                        snapshot.getString("firstName").orEmpty(), snapshot.getString("surname").orEmpty(),
+                        snapshot.getString("email").orEmpty(), snapshot.getString("role") ?: "owner",
+                        snapshot.getString("subscriptionPlan") ?: "free", snapshot.getString("subscriptionStatus") ?: "free",
+                        snapshot.getTimestamp("subscriptionExpiresAt")?.toDate()?.time, snapshot.getString("subscriptionSource").orEmpty())
+                }.getOrNull()
+                trySend(workspace)
+            }
+        }
+        awaitClose { listener.remove() }
     }
 
     /**

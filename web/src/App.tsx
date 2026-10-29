@@ -16,6 +16,7 @@ import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, 
 import SubscriptionView from './SubscriptionView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
+import { subscriptionAccess } from './subscriptionAccess'
 import SupplierAdBanner from './SupplierAdBanner'
 import type { ModuleKey, UserProfile } from './types'
 import { calculateIngredientUsageCost } from './costing'
@@ -195,8 +196,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     } catch { setSyncMessage('Could not reach the cloud. Check your connection and try again.') } finally { setSyncing(false) }
   }
   const subscriptionExpiry = (profile.subscriptionExpiresAt as { toDate?: () => Date } | undefined)?.toDate?.()
-  const promoValid = subscriptionExpiry ? subscriptionExpiry.getTime() > Date.now() : profile.subscriptionPlan !== 'promo' && profile.subscriptionSource !== 'paystack'
-  const isPro = ['active', 'trialing'].includes(profile.subscriptionStatus || '') && promoValid
+  const isPro = subscriptionAccess(profile.subscriptionStatus,profile.subscriptionPlan,profile.subscriptionSource,subscriptionExpiry?.getTime())
   const counts = Object.fromEntries(dataModules.map(module => [module.key, items[module.key]?.filter(i=>!i.archived).length || 0])) as Record<ModuleKey, number>
   const selectedModule = modules.find(module => module.key === active) || modules[0]
   const selectedItems = items[active] || []

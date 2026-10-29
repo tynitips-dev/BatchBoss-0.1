@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
 import com.example.data.remote.FirebaseService
+import com.example.data.remote.BakerySubscriptionAccess
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.delay
 import com.example.data.remote.WebSyncService
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplier
@@ -214,12 +217,45 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     private val _paywallDescription = MutableStateFlow("Upgrade to unlock all bakery tools.")
     val paywallDescription: StateFlow<String> = _paywallDescription.asStateFlow()
 
+    private val subscriptionRefresh = MutableStateFlow(0)
+    private val firebaseUid = MutableStateFlow(FirebaseService.currentUser?.uid)
+    private val firebaseAuth = FirebaseService.auth
+    private val subscriptionAuthListener = FirebaseAuth.AuthStateListener { auth -> firebaseUid.value = auth.currentUser?.uid }
+
+    fun refreshSubscriptionAccess() { subscriptionRefresh.value += 1 }
+
+    override fun onCleared() {
+        firebaseAuth?.removeAuthStateListener(subscriptionAuthListener)
+        super.onCleared()
+    }
+
     init {
-        // Observe user profile to sync premium status
+        firebaseAuth?.addAuthStateListener(subscriptionAuthListener)
+        // Local profile flags never grant access; account changes cancel the previous cloud listener.
         viewModelScope.launch {
-            repository.userProfile.collect { profile ->
-                if (profile != null) {
-                    _isPremiumUser.value = profile.isPremium
+            combine(_isUserLoggedIn, _currentUserId, firebaseUid, subscriptionRefresh) { loggedIn, localId, uid, _ ->
+                Triple(loggedIn, localId, uid)
+            }.collectLatest { (loggedIn, localId, uid) ->
+                _isPremiumUser.value = false
+                if (!loggedIn || uid == null) return@collectLatest
+                val account = repository.getUserByIdOnce(localId) ?: return@collectLatest
+                FirebaseService.observeUserWorkspace(uid).collectLatest subscription@{ workspace ->
+                    _isPremiumUser.value = false
+                    if (workspace == null || !BakerySubscriptionAccess.matchesAccount(_isUserLoggedIn.value, uid,
+                            FirebaseService.currentUser?.uid, account.email, FirebaseService.currentUser?.email,
+                            account.bakeryId, workspace.bakeryId) || localId != _currentUserId.value) return@subscription
+                    fun update() {
+                        val sameAccount = localId == _currentUserId.value && BakerySubscriptionAccess.matchesAccount(_isUserLoggedIn.value, uid,
+                            FirebaseService.currentUser?.uid, account.email, FirebaseService.currentUser?.email, account.bakeryId, workspace.bakeryId)
+                        _isPremiumUser.value = sameAccount && BakerySubscriptionAccess.active(workspace.subscriptionStatus, workspace.subscriptionPlan,
+                            workspace.subscriptionSource, workspace.subscriptionExpiresAtMillis)
+                    }
+                    update()
+                    val expiry = workspace.subscriptionExpiresAtMillis
+                    if (_isPremiumUser.value && expiry != null) {
+                        delay((expiry - System.currentTimeMillis()).coerceAtLeast(1))
+                        update()
+                    }
                 }
             }
         }
@@ -872,9 +908,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             for (pending in plan.uploads) {
                 checkSession()
                 repository.updateSupplier(pending)
-                BakerySupplierCloud.save(bakeryId, pending)
+                val saved = BakerySupplierCloud.save(bakeryId, pending)
+                checkSession()
                 val current = repository.getSupplierById(pending.id).first()
-                if (current == pending) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                if (current == pending) {
+                    if (saved) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                    else repository.deleteSupplier(pending.id)
+                }
             }
         }
     }
@@ -956,29 +996,6 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteBakingSupplyStore(id: Long) {
         viewModelScope.launch {
             repository.deleteBakingSupplyStore(id)
-        }
-    }
-
-    fun upgradeToPremium(plan: String = "Pro Monthly") {
-        viewModelScope.launch {
-            _isPremiumUser.value = true
-            repository.updateSubscriptionStatus(true, plan)
-            _showPaywall.value = false
-        }
-    }
-
-    fun cancelPremium() {
-        viewModelScope.launch {
-            _isPremiumUser.value = false
-            repository.updateSubscriptionStatus(false, "Free")
-        }
-    }
-
-    fun togglePremium() {
-        if (_isPremiumUser.value) {
-            cancelPremium()
-        } else {
-            upgradeToPremium("Pro Monthly")
         }
     }
 
@@ -1469,8 +1486,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             _currentUserId.value = localUserId
             _isUserLoggedIn.value = true
             authPrefs.edit().putLong("active_user_id", localUserId).apply()
-            val proActive = workspace.subscriptionStatus.equals("active", true) || workspace.subscriptionStatus.equals("trialing", true)
-            _isPremiumUser.value = proActive
+            val proActive = BakerySubscriptionAccess.active(workspace.subscriptionStatus, workspace.subscriptionPlan, workspace.subscriptionSource, workspace.subscriptionExpiresAtMillis)
+            refreshSubscriptionAccess()
             repository.saveUserProfile(
                 UserProfileEntity(
                     id = 1,
@@ -1511,6 +1528,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        _isPremiumUser.value = false
+        FirebaseService.signOut()
         authPrefs.edit().remove("active_user_id").apply()
         _isUserLoggedIn.value = false
         _currentScreen.value = Screen.Login
@@ -1734,9 +1753,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val user = repository.getUserByIdOnce(userId)
             if (user != null) {
                 repository.updateUserAccount(user.copy(isPremium = isPro))
-                if (_currentUserId.value == userId) {
-                    _isPremiumUser.value = isPro
-                }
+                // This historical local flag cannot change the server-managed subscription.
+                refreshSubscriptionAccess()
             }
         }
     }
