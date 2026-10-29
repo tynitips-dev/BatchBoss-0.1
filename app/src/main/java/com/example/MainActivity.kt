@@ -73,7 +73,6 @@ fun BatchBossApp(
     val showPaywall by viewModel.showPaywall.collectAsStateWithLifecycle()
     val paywallFeature by viewModel.paywallFeatureName.collectAsStateWithLifecycle()
     val paywallDesc by viewModel.paywallDescription.collectAsStateWithLifecycle()
-    val bakingSupplyStores by viewModel.allBakingSupplyStores.collectAsStateWithLifecycle()
     val allRegisteredUsers by viewModel.allRegisteredUsers.collectAsStateWithLifecycle()
     val allLoginLogs by viewModel.allLoginLogs.collectAsStateWithLifecycle()
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
@@ -195,7 +194,8 @@ fun BatchBossApp(
                         },
                         onLoginWithDetails = { emailOrPhone, branch ->
                             viewModel.loginUser(emailOrPhone) { success, msg ->
-                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }                            }
+                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                            }
                         }
                     )
                 }
@@ -929,27 +929,13 @@ fun BatchBossApp(
                 }
 
                 is Screen.BakingSupplyStoreLocator, is Screen.BakingSupplyStoreDetail -> {
-                    BakingSupplyStoreLocatorScreen(
-                        stores = bakingSupplyStores,
+                    SupplierDirectoryScreen(
+                        savedIds = suppliers.map { it.publicListingId }.filter { it.isNotBlank() }.toSet(),
+                        canSave = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.SuppliersList) },
-                        onToggleFavorite = { id -> viewModel.toggleFavoriteBakingSupplyStore(id) },
-                        onAddCustomStore = { name, category, address, city, phone, website, specialties, highlights ->
-                            viewModel.addCustomBakingSupplyStore(
-                                name = name,
-                                category = category,
-                                address = address,
-                                city = city,
-                                phone = phone,
-                                website = website,
-                                specialties = specialties,
-                                inStockHighlights = highlights
-                            )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to store locator!") }
-                        },
-                        onDeleteStore = { id ->
-                            viewModel.deleteBakingSupplyStore(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Store removed") }
-                        }
+                        onUnlock = { viewModel.triggerPaywall("Suppliers", "Save suppliers to your bakery with Pro.") },
+                        onSave = { viewModel.savePublicSupplier(it) },
+                        onSync = { viewModel.syncSupplierRecords() }
                     )
                 }
 

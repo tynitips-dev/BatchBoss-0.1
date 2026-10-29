@@ -952,13 +952,6 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun deleteBakingSupplyStore(id: Long) =
         bakingSupplyStoreDao.deleteStore(id)
 
-    suspend fun ensureInitialBakingStores() {
-        val count = bakingSupplyStoreDao.getCount()
-        if (count == 0) {
-            bakingSupplyStoreDao.insertStores(AppDatabase.getSeedBakingSupplyStores())
-        }
-    }
-
     // Products & Services
     fun getProductsByUser(userId: Long): Flow<List<ProductServiceEntity>> =
         productServiceDao.getProductsByUser(userId)

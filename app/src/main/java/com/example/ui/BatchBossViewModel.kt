@@ -302,10 +302,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        // Ensure baking supply stores are seeded
-        viewModelScope.launch {
-            repository.ensureInitialBakingStores()
-        }
+
     }
 
     // Selected recipe detail stream
