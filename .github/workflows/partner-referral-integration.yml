@@ -1,0 +1,68 @@
+name: Sales partner baker integration checks
+on:
+  pull_request:
+    paths:
+      - 'functions/**'
+      - 'web/**'
+      - 'tests/partner-referral-emulator.cjs'
+      - 'tests/auth-flow.cjs'
+      - 'tests/referral-emulators/**'
+      - '.github/workflows/partner-referral-integration.yml'
+permissions:
+  contents: read
+jobs:
+  compile-and-regress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+        working-directory: functions
+      - run: npm run build
+        working-directory: functions
+      - run: node --test tests/paystack-flow.cjs tests/auth-flow.cjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+        env:
+          VITE_FIREBASE_API_KEY: emulator-fake-key
+          VITE_FIREBASE_AUTH_DOMAIN: demo-batchboss-baker.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: demo-batchboss-baker
+          VITE_FIREBASE_STORAGE_BUCKET: demo-batchboss-baker.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '123'
+          VITE_FIREBASE_APP_ID: '1:123:web:test'
+          VITE_PARTNER_REFERRAL_EMULATOR: 'true'
+  baker-partner-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the exact companion partner implementation
+        uses: actions/checkout@v4
+        with:
+          ref: ce1e27b679f11788b586c944857f8ce0810dac8b
+          path: partner-pilot
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+        working-directory: functions
+      - run: npm run build
+        working-directory: functions
+      - run: npm install --ignore-scripts --no-audit --no-fund
+        working-directory: partner-pilot/partners/functions
+      - name: Exercise actual handlers with local Auth, Firestore and mocked Paystack
+        env:
+          BATCHBOSS_PARTNER_SOURCE: ${{ github.workspace }}/partner-pilot
+        run: >-
+          npx --yes firebase-tools@15.34.1 emulators:exec
+          --only auth,firestore --project demo-referral-tests
+          --config tests/referral-emulators/firebase.json
+          "node tests/partner-referral-emulator.cjs"
