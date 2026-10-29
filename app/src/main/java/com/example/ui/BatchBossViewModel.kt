@@ -5,7 +5,18 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
 import com.example.data.remote.FirebaseService
+import com.example.data.remote.BakerySubscriptionAccess
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.delay
 import com.example.data.remote.WebSyncService
+import com.example.data.remote.BakerySupplierCloud
+import com.example.data.remote.PublicSupplier
+import com.example.data.remote.SupplierSyncPlanner
+import com.example.data.local.LegacySupplierRecovery
+import com.example.data.local.LegacySupplierRecoveryState
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.UUID
 import com.example.data.repository.AppRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -166,6 +177,16 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         else repository.getLowStockPackagingByUser(userId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getPackagingByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lowStockPackaging: StateFlow<List<PackagingItemEntity>> = _currentUserId
+        .flatMapLatest { id -> repository.getLowStockPackagingByUser(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Customers scoped to active user
     @OptIn(ExperimentalCoroutinesApi::class)
     val allCustomers: StateFlow<List<CustomerEntity>> = activeUserAndBakery.flatMapLatest { (userId, bakeryId) ->
@@ -173,7 +194,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         else repository.getCustomersByUser(userId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allSuppliers: StateFlow<List<SupplierEntity>> = repository.allSuppliers
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val allSuppliers: StateFlow<List<SupplierEntity>> = _currentUserId.flatMapLatest { repository.getSuppliersByUser(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allSpecials: StateFlow<List<SpecialDealEntity>> = repository.allSpecials
@@ -248,12 +270,45 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         _syncMessage.value = null
     }
 
+    private val subscriptionRefresh = MutableStateFlow(0)
+    private val firebaseUid = MutableStateFlow(FirebaseService.currentUser?.uid)
+    private val firebaseAuth = FirebaseService.auth
+    private val subscriptionAuthListener = FirebaseAuth.AuthStateListener { auth -> firebaseUid.value = auth.currentUser?.uid }
+
+    fun refreshSubscriptionAccess() { subscriptionRefresh.value += 1 }
+
+    override fun onCleared() {
+        firebaseAuth?.removeAuthStateListener(subscriptionAuthListener)
+        super.onCleared()
+    }
+
     init {
-        // Observe user profile to sync premium status
+        firebaseAuth?.addAuthStateListener(subscriptionAuthListener)
+        // Local profile flags never grant access; account changes cancel the previous cloud listener.
         viewModelScope.launch {
-            repository.userProfile.collect { profile ->
-                if (profile != null) {
-                    _isPremiumUser.value = profile.isPremium
+            combine(_isUserLoggedIn, _currentUserId, firebaseUid, subscriptionRefresh) { loggedIn, localId, uid, _ ->
+                Triple(loggedIn, localId, uid)
+            }.collectLatest { (loggedIn, localId, uid) ->
+                _isPremiumUser.value = false
+                if (!loggedIn || uid == null) return@collectLatest
+                val account = repository.getUserByIdOnce(localId) ?: return@collectLatest
+                FirebaseService.observeUserWorkspace(uid).collectLatest subscription@{ workspace ->
+                    _isPremiumUser.value = false
+                    if (workspace == null || !BakerySubscriptionAccess.matchesAccount(_isUserLoggedIn.value, uid,
+                            FirebaseService.currentUser?.uid, account.email, FirebaseService.currentUser?.email,
+                            account.bakeryId, workspace.bakeryId) || localId != _currentUserId.value) return@subscription
+                    fun update() {
+                        val sameAccount = localId == _currentUserId.value && BakerySubscriptionAccess.matchesAccount(_isUserLoggedIn.value, uid,
+                            FirebaseService.currentUser?.uid, account.email, FirebaseService.currentUser?.email, account.bakeryId, workspace.bakeryId)
+                        _isPremiumUser.value = sameAccount && BakerySubscriptionAccess.active(workspace.subscriptionStatus, workspace.subscriptionPlan,
+                            workspace.subscriptionSource, workspace.subscriptionExpiresAtMillis)
+                    }
+                    update()
+                    val expiry = workspace.subscriptionExpiresAtMillis
+                    if (_isPremiumUser.value && expiry != null) {
+                        delay((expiry - System.currentTimeMillis()).coerceAtLeast(1))
+                        update()
+                    }
                 }
             }
         }
@@ -279,9 +334,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Selected supplier stream
     private val _selectedSupplierId = MutableStateFlow<Long?>(1L)
-    val selectedSupplier: StateFlow<SupplierEntity?> = _selectedSupplierId
-        .flatMapLatest { id ->
-            if (id != null) repository.getSupplierById(id) else flowOf(null)
+    val selectedSupplier: StateFlow<SupplierEntity?> = combine(_selectedSupplierId, _currentUserId) { id, uid -> id to uid }
+        .flatMapLatest { (id, uid) ->
+            if (id != null) repository.getSupplierById(id).map { supplier -> supplier?.takeIf { it.userId == uid } } else flowOf(null)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -767,7 +822,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleFavoriteSupplier(id: Long) {
         viewModelScope.launch {
-            repository.toggleFavoriteSupplier(id)
+            supplierSyncMutex.withLock {
+                val supplier = repository.getSupplierById(id).first() ?: return@withLock
+                if (supplier.userId != _currentUserId.value) return@withLock
+                repository.updateSupplier(supplier.copy(isFavorite = !supplier.isFavorite, pendingSync = true))
+            }
+            syncSupplierRecords()
         }
     }
 
@@ -883,6 +943,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private val supplierSyncMutex = Mutex()
+
     fun saveNewSupplier(
         name: String,
         category: String,
@@ -893,20 +955,91 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val id = repository.insertSupplier(
                 SupplierEntity(
+                    userId = _currentUserId.value,
+                    bakeryId = userProfile.value?.bakeryId.orEmpty(),
+                    cloudDocumentId = UUID.randomUUID().toString(),
+                    pendingSync = true,
                     name = name,
                     categories = category,
-                    rating = 4.5,
-                    reviewCount = 10,
-                    openingHours = "Open • Closes 17:00",
+                    rating = 0.0,
+                    reviewCount = 0,
+                    openingHours = "",
                     phone = phone,
                     email = email,
                     website = website,
-                    about = "Bakery supplier providing wholesale baking items and equipment.",
+                    about = "",
                     isFavorite = true,
                     isMySupplier = true
                 )
             )
+            syncSupplierRecords()
             navigateTo(Screen.SupplierDetail(id))
+        }
+    }
+
+    private suspend fun legacyRecoveryContext(): Pair<Long, String> {
+        val uid = _currentUserId.value
+        val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+        val account = repository.getUserByIdOnce(uid) ?: error("Sign in before recovering suppliers.")
+        val firebaseUser = FirebaseService.auth?.currentUser ?: error("Sign in before recovering suppliers.")
+        require(_isUserLoggedIn.value && profile.userId == uid && profile.bakeryId.isNotBlank()
+            && account.bakeryId == profile.bakeryId && account.email.equals(firebaseUser.email, ignoreCase = true)) {
+            "Sign in to the matching bakery account before recovering suppliers."
+        }
+        return uid to profile.bakeryId
+    }
+
+    suspend fun inspectLegacySuppliers(): Result<LegacySupplierRecoveryState> = runCatching {
+        val (uid, bakeryId) = legacyRecoveryContext()
+        LegacySupplierRecovery.inspect(database, uid, bakeryId)
+    }
+
+    suspend fun recoverLegacySuppliers(confirmedOwnership: Boolean): Result<Int> = supplierSyncMutex.withLock {
+        runCatching {
+            val (uid, bakeryId) = legacyRecoveryContext()
+            LegacySupplierRecovery.recover(database, uid, bakeryId, confirmedOwnership)
+        }
+    }
+
+    suspend fun syncSupplierRecords(): Result<Unit> = supplierSyncMutex.withLock {
+        runCatching {
+            val uid = _currentUserId.value
+            val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+            require(profile.userId == uid && profile.bakeryId.isNotBlank()) { "Sign in to your bakery before syncing suppliers." }
+            val bakeryId = profile.bakeryId
+            val remote = BakerySupplierCloud.fetch(bakeryId)
+            check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
+            val local = repository.getSuppliersByUser(uid).first().filter { it.bakeryId.isBlank() || it.bakeryId == bakeryId }
+            val plan = SupplierSyncPlanner.plan(local, remote, uid, bakeryId)
+            fun checkSession() { check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." } }
+            for (record in plan.imports) { checkSession(); repository.insertSupplier(record) }
+            for (id in plan.deletes) { checkSession(); repository.deleteSupplier(id) }
+            for (pending in plan.uploads) {
+                checkSession()
+                repository.updateSupplier(pending)
+                val saved = BakerySupplierCloud.save(bakeryId, pending)
+                checkSession()
+                val current = repository.getSupplierById(pending.id).first()
+                if (current == pending) {
+                    if (saved) repository.updateSupplier(pending.copy(pendingSync = false, cloudConfirmed = true))
+                    else repository.deleteSupplier(pending.id)
+                }
+            }
+        }
+    }
+
+    suspend fun savePublicSupplier(supplier: PublicSupplier): Result<Unit> {
+        return supplierSyncMutex.withLock {
+            runCatching {
+                val uid = _currentUserId.value
+                val profile = userProfile.value ?: error("Your bakery workspace is not ready.")
+                require(profile.userId == uid && profile.bakeryId.isNotBlank()) { "Sign in to your bakery before saving suppliers." }
+                val cloud = BakerySupplierCloud.saveDirectory(profile.bakeryId, supplier)
+                check(uid == _currentUserId.value && _isUserLoggedIn.value) { "The active account changed." }
+                val existing = repository.getSuppliersByUser(uid).first().firstOrNull { it.bakeryId == profile.bakeryId && it.cloudDocumentId == cloud.cloudDocumentId }
+                repository.insertSupplier(cloud.copy(id = existing?.id ?: 0, userId = uid, bakeryId = profile.bakeryId))
+                Unit
+            }
         }
     }
 
@@ -972,29 +1105,6 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteBakingSupplyStore(id: Long) {
         viewModelScope.launch {
             repository.deleteBakingSupplyStore(id)
-        }
-    }
-
-    fun upgradeToPremium(plan: String = "Pro Monthly") {
-        viewModelScope.launch {
-            _isPremiumUser.value = true
-            repository.updateSubscriptionStatus(true, plan)
-            _showPaywall.value = false
-        }
-    }
-
-    fun cancelPremium() {
-        viewModelScope.launch {
-            _isPremiumUser.value = false
-            repository.updateSubscriptionStatus(false, "Free")
-        }
-    }
-
-    fun togglePremium() {
-        if (_isPremiumUser.value) {
-            cancelPremium()
-        } else {
-            upgradeToPremium("Pro Monthly")
         }
     }
 
@@ -1506,7 +1616,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
             _currentUserId.value = userId
             _isUserLoggedIn.value = true
-            _isPremiumUser.value = loginResult.isPro
+            _isPremiumUser.value = false
+            refreshSubscriptionAccess()
 
             authPrefs.edit()
                 .putLong("active_user_id", userId)
@@ -1547,44 +1658,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // Legacy callback has no password and must never unlock a cached account.
     fun loginUser(emailOrPhone: String, branch: String = "Main Flagship", onResult: (Boolean, String) -> Unit) {
-        viewModelScope.launch {
-            val cleanInput = emailOrPhone.trim().lowercase()
-            val user = repository.getUserByEmail(cleanInput)
-            if (user != null) {
-                _currentUserId.value = user.id
-                _isUserLoggedIn.value = true
-                authPrefs.edit().putLong("active_user_id", user.id).putString("active_bakery_id", user.bakeryId).apply()
-                val userBakeryId = user.bakeryId
-                if (userBakeryId.isNotBlank()) {
-                    com.example.data.remote.FirebaseService.currentBakeryId = userBakeryId
-                    com.example.data.remote.FirebaseService.startAllRealtimeListeners(userBakeryId, repository)
-                }
-                updateUserProfile(
-                    fullName = user.fullName,
-                    bakeryName = user.bakeryName,
-                    specialty = user.specialty,
-                    phone = user.phone,
-                    city = user.city,
-                    operatingModel = user.operatingModel,
-                    currency = user.currency,
-                    email = user.email,
-                    bakeryId = userBakeryId
-                )
-                repository.recordLoginLog(
-                    userId = user.id,
-                    email = user.email,
-                    bakeryName = user.bakeryName,
-                    action = "LOGIN",
-                    branch = branch,
-                    notes = "Signed in successfully"
-                )
-                onResult(true, "Welcome back, ${user.firstName.ifBlank { "Baker" }}!")
-            } else {
-                // Requirement 6: Do not automatically create a local account when login fails.
-                onResult(false, "No registered account found for '$cleanInput'. Please enter your Firebase email and password.")
-            }
-        }
+        onResult(false, "Sign in with your owner email address and password.")
     }
 
     fun logoutUser() {
@@ -1607,6 +1683,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        _isPremiumUser.value = false
+        FirebaseService.signOut()
+        authPrefs.edit().remove("active_user_id").apply()
         _isUserLoggedIn.value = false
         _currentScreen.value = Screen.Login
     }
@@ -1842,9 +1921,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val user = repository.getUserByIdOnce(userId)
             if (user != null) {
                 repository.updateUserAccount(user.copy(isPremium = isPro))
-                if (_currentUserId.value == userId) {
-                    _isPremiumUser.value = isPro
-                }
+                // This historical local flag cannot change the server-managed subscription.
+                refreshSubscriptionAccess()
             }
         }
     }
@@ -1872,14 +1950,14 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val uid = _currentUserId.value
             for (r in recipes) {
-                val newRecipeId = repository.insertRecipe(r.copy(id = 0, userId = uid))
+                val newRecipeId = repository.insertRecipe(r.copy(userId = uid))
                 val matchingIngs = ingredients.filter { it.recipeId == r.id }
                 for (ing in matchingIngs) {
-                    repository.insertIngredient(ing.copy(id = 0, recipeId = newRecipeId, userId = uid))
+                    repository.insertIngredient(ing.copy(recipeId = newRecipeId, userId = uid))
                 }
             }
             for (item in inventory) {
-                repository.insertInventoryItem(item.copy(id = 0, userId = uid))
+                repository.insertInventoryItem(item.copy(userId = uid))
             }
             onComplete()
         }
@@ -1889,7 +1967,11 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val uid = _currentUserId.value
             val profile = userProfile.value ?: UserProfileEntity()
-            val bId = profile.bakeryId.ifBlank { generateBakeryId(uid, profile.bakeryName) }
+            val bId = profile.bakeryId
+            if (bId.isBlank()) {
+                onComplete(false, "Your Firebase account is missing its bakery workspace ID.")
+                return@launch
+            }
 
             val customersList = repository.getCustomersByUser(uid).first()
             val recipesList = repository.getRecipesByUser(uid).first()
@@ -1927,7 +2009,29 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             try {
-                FirebaseService.backupDataToCloud(
+                // Download website changes first. Room REPLACE uses the stable cloud IDs,
+                // so repeated syncs update records instead of creating duplicates.
+                val restore = FirebaseService.restoreDataFromCloud(bId)
+                if (!restore.success || restore.data == null) {
+                    onComplete(false, restore.message)
+                    return@launch
+                }
+                val cloud = restore.data
+                for (recipe in cloud.recipes) repository.insertRecipe(recipe.copy(userId = uid, bakeryId = bId))
+                for (ingredient in cloud.ingredients) repository.insertIngredient(ingredient.copy(userId = uid))
+                for (item in cloud.inventory) repository.insertInventoryItem(item.copy(userId = uid))
+                for (customer in cloud.customers) repository.insertCustomer(customer.copy(userId = uid, bakeryId = bId))
+                repository.insertPackagingList(cloud.packaging.map { it.copy(userId = uid, bakeryId = bId) })
+
+                // Read the merged Room data and upload local additions/edits using the
+                // same numeric document IDs used by the website importer.
+                val customersList = repository.getCustomersByUser(uid).first()
+                val recipesList = repository.getRecipesByUser(uid).first()
+                val inventoryList = repository.getInventoryByUser(uid).first()
+                val packagingList = repository.getPackagingByUser(uid).first()
+                val ingredientsList = recipesList.flatMap { repository.getIngredientsForRecipeOnce(it.id) }
+
+                val upload = FirebaseService.backupDataToCloud(
                     recipes = recipesList,
                     ingredients = emptyList(),
                     inventory = repository.getInventoryByBakery(bId).first(),
@@ -1935,9 +2039,16 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     packaging = repository.getPackagingByBakery(bId).first(),
                     bakeryId = bId
                 )
-            } catch (_: Throwable) {}
-
-            onComplete(true, "Synchronized with Website for Bakery ID: $bId ($syncedItems entities updated)")
+                if (!upload.success) {
+                    onComplete(false, upload.message)
+                    return@launch
+                }
+                syncSupplierRecords().getOrThrow()
+                WebSyncService.syncProfile(bId, profile)
+                onComplete(true, "Sync complete: ${recipesList.size} recipes, ${inventoryList.size} ingredients/stock items, ${customersList.size} customers and ${packagingList.size} packaging items.")
+            } catch (error: Throwable) {
+                onComplete(false, error.localizedMessage ?: "Website synchronisation failed.")
+            }
         }
     }
 }

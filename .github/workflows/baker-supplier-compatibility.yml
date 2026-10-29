@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: '22'
       - name: Compile Android and run isolated supplier tests
-        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' -x :app:processDebugGoogleServices --stacktrace
+        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' --tests 'com.example.Version22MigrationTest' -x :app:processDebugGoogleServices --stacktrace
       - name: Verify actual Android supplier transactions against local Firestore
         run: >-
           npx --yes firebase-tools@14.22.0 emulators:exec

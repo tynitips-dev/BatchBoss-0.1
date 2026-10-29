@@ -850,6 +850,8 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun insertSupplier(supplier: SupplierEntity): Long = supplierDao.insertSupplier(supplier)
 
+    suspend fun updateSupplier(supplier: SupplierEntity) = supplierDao.updateSupplier(supplier)
+
     suspend fun deleteSupplier(id: Long) = supplierDao.deleteSupplier(id)
 
     // Specials

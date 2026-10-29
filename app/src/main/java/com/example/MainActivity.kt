@@ -24,19 +24,12 @@ import com.example.ui.screens.*
 import com.example.ui.theme.BatchBossTheme
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.ProductPriceHistoryEntity
-import com.example.data.model.Recipe
-import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.FirebaseFirestore
-import android.util.Log
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Initialize Firestore and write a new recipe
-        initializeFirestoreAndWriteRecipe()
 
         setContent {
             BatchBossTheme {
@@ -45,37 +38,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeFirestoreAndWriteRecipe() {
-        try {
-            if (FirebaseApp.getApps(this).isNotEmpty()) {
-                val db = FirebaseFirestore.getInstance()
-                val newRecipe = Recipe(
-                    title = "Artisan Sourdough Loaf",
-                    prepTimeMinutes = 120,
-                    ingredients = listOf(
-                        "500g Bread Flour",
-                        "350g Water",
-                        "100g Sourdough Starter",
-                        "10g Sea Salt"
-                    ),
-                    instructions = "Mix, autolyse 30m, stretch and fold 4 times over 2h, cold retard 12h, bake at 230°C for 40m."
-                )
 
-                db.collection("recipes")
-                    .add(newRecipe)
-                    .addOnSuccessListener { documentReference ->
-                        Log.d("MainActivity", "Firestore recipe written successfully with ID: ${documentReference.id}")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("MainActivity", "Error adding recipe document to Firestore", e)
-                    }
-            } else {
-                Log.i("MainActivity", "FirebaseApp not configured yet; ready for google-services.json.")
-            }
-        } catch (e: Throwable) {
-            Log.w("MainActivity", "Firestore initialization notice: ${e.message}")
-        }
-    }
 }
 
 @Composable
@@ -118,6 +81,20 @@ fun BatchBossApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val subscriptionUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val subscriptionLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(subscriptionLifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.refreshSubscriptionAccess()
+        }
+        subscriptionLifecycle.lifecycle.addObserver(observer)
+        onDispose { subscriptionLifecycle.lifecycle.removeObserver(observer) }
+    }
+    fun openSubscriptionWebsite() {
+        runCatching { subscriptionUriHandler.openUri(com.example.data.remote.BakerySubscriptionAccess.MANAGEMENT_URL) }
+            .onFailure { coroutineScope.launch { snackbarHostState.showSnackbar("Open the BatchBoss website to manage your subscription.") } }
+    }
+
 
     // Determine if bottom navigation bar should be visible
     val showBottomBar = when (currentScreen) {
@@ -219,6 +196,7 @@ fun BatchBossApp(
                         onLoginWithDetails = { emailOrPhone, branch ->
                             viewModel.loginUser(emailOrPhone) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                result(success, msg)
                             }
                         }
                     )
@@ -562,7 +540,11 @@ fun BatchBossApp(
                                 "Unlock verified supplier directory, wholesale contact lines, and exclusive supplier discounts."
                             )
                         },
-                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) }
+                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) },
+                        onSavePublicSupplier = { viewModel.savePublicSupplier(it) },
+                        onSyncSuppliers = { viewModel.syncSupplierRecords() },
+                        onInspectLegacy = { viewModel.inspectLegacySuppliers() },
+                        onRecoverLegacy = { viewModel.recoverLegacySuppliers(it) }
                     )
                 }
 
@@ -881,14 +863,9 @@ fun BatchBossApp(
                     PremiumSubscriptionScreen(
                         isPremium = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onUpgrade = { plan ->
-                            viewModel.upgradeToPremium(plan)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Upgraded to BatchBoss Pro! All features unlocked.") }
-                        },
-                        onCancelSubscription = {
-                            viewModel.cancelPremium()
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Subscription reverted to Free tier.") }
-                        },
+                        onUpgrade = { _ -> openSubscriptionWebsite() },
+                        onCancelSubscription = { openSubscriptionWebsite() },
+                        onRefreshAccess = { viewModel.refreshSubscriptionAccess() },
                         onOpenAiScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
                         onOpenBarcodeScanner = { viewModel.navigateTo(Screen.BarcodeScanner) }
                     )
