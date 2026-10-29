@@ -1,0 +1,2 @@
+# BatchBoss public homepage release overlay
+These two files are the authorised 29 October 2026 homepage update for Xneelo /public_html. They depend on the existing style.css, costing.js and assets/ in that folder, which this release does not replace. Upload homepage-20261029.js before index.html. The sponsored section uses the existing public homepage-feature campaign feed and is hidden when no approved eligible artwork is available. No checkout or payment activation is part of this release.
