@@ -13,6 +13,8 @@ import com.example.data.local.LegacySupplierRecovery
 import com.example.data.remote.BakerySupplierCloud
 import com.example.data.remote.PublicSupplierDirectory
 import com.example.data.remote.SupplierSyncPlanner
+import com.example.data.remote.SupplierWrite
+import com.example.data.remote.supplierWrite
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -85,6 +87,12 @@ class SupplierCompatibilityTest {
     @Test fun `confirmed website deletion wins over an offline favorite change`() {
         val plan=SupplierSyncPlanner.plan(listOf(localSupplier()),emptyList(),101,"bakery-a")
         assertEquals(listOf(9L),plan.deletes);assertTrue(plan.uploads.isEmpty())
+    }
+    @Test fun `write decision keeps concurrent website edits and deletions safe`() {
+        assertEquals(SupplierWrite.UPDATE_FAVOURITE, supplierWrite(exists=true, confirmed=true))
+        assertEquals(SupplierWrite.UPDATE_FAVOURITE, supplierWrite(exists=true, confirmed=false))
+        assertEquals(SupplierWrite.DELETED, supplierWrite(exists=false, confirmed=true))
+        assertEquals(SupplierWrite.CREATE, supplierWrite(exists=false, confirmed=false))
     }
     @Test fun `unsent local supplier survives an empty server response`() {
         val local=localSupplier().copy(cloudDocumentId="",cloudConfirmed=false)
