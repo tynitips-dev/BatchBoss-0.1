@@ -48,7 +48,6 @@ fun QuickActionsScreen(
     onOpenStoreLocator: () -> Unit = {},
     onOpenAboutBatchBoss: () -> Unit = {},
     onOpenAccountDataDeletion: () -> Unit = {},
-    onOpenMasterBackend: () -> Unit = {},
     onOpenFirebaseSync: () -> Unit = {},
     onOpenPackaging: () -> Unit = {}
 ) {
@@ -455,13 +454,13 @@ fun QuickActionsScreen(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "Baking Supply Store Locator", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text(text = "Find approved suppliers", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(shape = RoundedCornerShape(6.dp), color = MintGreen.copy(alpha = 0.2f)) {
-                                Text("MAP", color = Color(0xFF2E7D32), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                Text("DIRECTORY", color = Color(0xFF2E7D32), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                             }
                         }
-                        Text(text = "Locate baking ingredients, cake boards & packaging nearby", fontSize = 12.sp, color = LightText)
+                        Text(text = "Browse approved listings by city, province and category", fontSize = 12.sp, color = LightText)
                     }
                     Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = LightText)
                 }
@@ -494,7 +493,7 @@ fun QuickActionsScreen(
                     Divider(color = DividerColor)
                     ShortcutRow(
                         icon = Icons.Outlined.NearMe,
-                        title = "Baking Supply Locator",
+                        title = "Find suppliers",
                         onClick = onOpenStoreLocator
                     )
                     Divider(color = DividerColor)
@@ -626,44 +625,6 @@ fun QuickActionsScreen(
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onOpenMasterBackend)
-                    .testTag("tool_master_backend")
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1E293B).copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AdminPanelSettings,
-                            contentDescription = null,
-                            tint = Color(0xFF1E293B),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Master Backend (Owner)", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                        Text(text = "Check logins, store data & execute data deletions", fontSize = 12.sp, color = LightText)
-                    }
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = LightText)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = CardBackground,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
-                modifier = Modifier
-                    .fillMaxWidth()
                     .clickable(onClick = onOpenFirebaseSync)
                     .testTag("tool_firebase_sync")
             ) {
@@ -720,7 +681,7 @@ fun QuickActionsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "BatchBoss v10.0",
+                            text = "BatchBoss",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = BatchPink

@@ -5,6 +5,8 @@ import com.example.data.local.CustomerEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
 import com.example.data.local.UserProfileEntity
+import com.example.data.local.normalized
+import com.example.data.remote.FirebaseService.safeDouble
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -398,5 +400,104 @@ object WebSyncService {
             Log.w(TAG, "WebSyncService.deletePackaging: ${e.message}")
             false
         }
+    }
+
+    suspend fun syncInventory(bakeryId: String, item: com.example.data.local.InventoryItemEntity): Boolean = withContext(Dispatchers.IO) {
+        val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
+        val baseUrl = getWorkingBaseUrl()
+        val json = JSONObject().apply {
+            put("id", item.id)
+            put("firestoreId", item.firestoreId)
+            put("bakeryId", targetBakeryId)
+            put("name", item.name)
+            put("category", item.category)
+            put("unit", item.unit)
+            put("packagePrice", item.packagePrice)
+            put("packageQuantity", item.packageQuantity)
+            put("gramsPerUnit", item.gramsPerUnit)
+            put("unitPrice", item.unitPrice)
+            put("currentStock", item.currentStock)
+            put("minStock", item.minStock)
+            put("isLowStock", item.isLowStock)
+            put("alertEnabled", item.alertEnabled)
+            put("barcode", item.barcode)
+            put("createdAt", item.createdAt)
+            put("updatedAt", item.updatedAt)
+        }
+
+        try {
+            val body = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder()
+                .url("$baseUrl/api/bakery/$targetBakeryId/inventory")
+                .post(body)
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                resp.isSuccessful
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "WebSyncService.syncInventory: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun fetchBakeryInventory(bakeryId: String): List<com.example.data.local.InventoryItemEntity> = withContext(Dispatchers.IO) {
+        val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
+        val baseUrl = getWorkingBaseUrl()
+        val result = mutableListOf<com.example.data.local.InventoryItemEntity>()
+        try {
+            val request = Request.Builder()
+                .url("$baseUrl/api/bakery/$targetBakeryId/inventory")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: return@withContext emptyList()
+                    val array = JSONArray(body)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val rawName = obj.optString("name", "Unnamed item")
+                        val name = if (rawName.isBlank() || rawName == "null") "Unnamed item" else rawName.trim()
+                        val pQty = (if (obj.has("packageQuantity")) obj.opt("packageQuantity") else null).safeDouble(1.0)
+                        val pPrice = (if (obj.has("packagePrice")) obj.opt("packagePrice") else null).safeDouble(0.0)
+                        val unit = obj.optString("unit", "g").let { if (it.isBlank() || it == "null") "g" else it }
+                        val rawGpu = if (obj.has("gramsPerUnit")) obj.opt("gramsPerUnit").safeDouble(0.0) else 0.0
+                        val gramsPerUnit = if (rawGpu > 0.0) rawGpu else {
+                            if (unit.equals("kg", true) || unit.equals("l", true)) pQty * 1000.0 else pQty
+                        }
+                        val cStock = (if (obj.has("currentStock")) obj.opt("currentStock") else null).safeDouble(0.0)
+                        val mStock = (if (obj.has("minStock")) obj.opt("minStock") else null).safeDouble(0.0)
+                        val uPrice = if (obj.has("unitPrice")) obj.opt("unitPrice").safeDouble(0.0) else if (gramsPerUnit > 0) pPrice / gramsPerUnit else 0.0
+                        val isLow = if (obj.has("isLowStock")) obj.optBoolean("isLowStock") else cStock <= mStock
+
+                        result.add(
+                            com.example.data.local.InventoryItemEntity(
+                                id = obj.optLong("id", 0L),
+                                firestoreId = obj.optString("firestoreId", ""),
+                                userId = obj.optLong("userId", 0L),
+                                bakeryId = targetBakeryId,
+                                name = name,
+                                currentStock = cStock,
+                                minStock = mStock,
+                                unit = unit,
+                                isLowStock = isLow,
+                                alertEnabled = obj.optBoolean("alertEnabled", true),
+                                unitPrice = uPrice,
+                                packagePrice = pPrice,
+                                gramsPerUnit = gramsPerUnit,
+                                category = obj.optString("category", "Baking Staples").let { if (it.isBlank() || it == "null") "Baking Staples" else it },
+                                barcode = obj.optString("barcode", ""),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                            ).normalized()
+                        )
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "WebSyncService.fetchBakeryInventory: ${e.message}")
+        }
+        result
     }
 }

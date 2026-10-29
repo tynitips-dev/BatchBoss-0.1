@@ -73,10 +73,10 @@ fun BatchBossApp(
     val showPaywall by viewModel.showPaywall.collectAsStateWithLifecycle()
     val paywallFeature by viewModel.paywallFeatureName.collectAsStateWithLifecycle()
     val paywallDesc by viewModel.paywallDescription.collectAsStateWithLifecycle()
-    val bakingSupplyStores by viewModel.allBakingSupplyStores.collectAsStateWithLifecycle()
     val allRegisteredUsers by viewModel.allRegisteredUsers.collectAsStateWithLifecycle()
     val allLoginLogs by viewModel.allLoginLogs.collectAsStateWithLifecycle()
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -137,7 +137,7 @@ fun BatchBossApp(
             is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AddSupplier,
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
-            is Screen.AccountDataDeletion, is Screen.MasterBackend, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
+            is Screen.AccountDataDeletion, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
             is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
@@ -181,16 +181,20 @@ fun BatchBossApp(
                 is Screen.Login -> {
                     LoginScreen(
                         onLoginSuccess = {
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Logged in successfully!") }
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Logged in successfully to bakery workspace!") }
                             viewModel.navigateTo(Screen.Home)
                         },
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onLoginWithDetails = { email, password, branch, result ->
-                            viewModel.loginUser(email, password, branch) { success, msg ->
+                        onPerformLogin = { email, password, onResult ->
+                            viewModel.loginWithFirebase(email, password) { success, errorMsg ->
+                                onResult(success, errorMsg)
+                            }
+                        },
+                        onLoginWithDetails = { emailOrPhone, branch ->
+                            viewModel.loginUser(emailOrPhone) { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                                result(success, msg)
                             }
                         }
                     )
@@ -275,7 +279,13 @@ fun BatchBossApp(
                         onOpenCustomers = { viewModel.navigateTo(Screen.CustomersList) },
                         onOpenInvoices = { viewModel.navigateTo(Screen.InvoicesList) },
                         onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
-                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) },
+                        onSync = {
+                            viewModel.syncAllWithCloud { success, msg ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                            }
+                        },
+                        isSyncing = isSyncing
                     )
                 }
 
@@ -389,7 +399,12 @@ fun BatchBossApp(
                             viewModel.deletePackagingItem(id)
                             coroutineScope.launch { snackbarHostState.showSnackbar("Packaging item removed") }
                         },
-                        onNavigateToInventory = { viewModel.navigateTo(Screen.InventoryList) }
+                        onNavigateToInventory = { viewModel.navigateTo(Screen.InventoryList) },
+                        onRefreshSync = {
+                            viewModel.refreshPackagingFromCloud { success, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
+                        }
                     )
                 }
 
@@ -610,7 +625,6 @@ fun BatchBossApp(
                         onOpenProductsServices = { viewModel.navigateTo(Screen.ProductsServicesList) },
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
-                        onOpenMasterBackend = { viewModel.navigateTo(Screen.MasterBackend) },
                         onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) },
                         onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
@@ -915,27 +929,13 @@ fun BatchBossApp(
                 }
 
                 is Screen.BakingSupplyStoreLocator, is Screen.BakingSupplyStoreDetail -> {
-                    BakingSupplyStoreLocatorScreen(
-                        stores = bakingSupplyStores,
+                    SupplierDirectoryScreen(
+                        savedIds = suppliers.map { it.publicListingId }.filter { it.isNotBlank() }.toSet(),
+                        canSave = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.SuppliersList) },
-                        onToggleFavorite = { id -> viewModel.toggleFavoriteBakingSupplyStore(id) },
-                        onAddCustomStore = { name, category, address, city, phone, website, specialties, highlights ->
-                            viewModel.addCustomBakingSupplyStore(
-                                name = name,
-                                category = category,
-                                address = address,
-                                city = city,
-                                phone = phone,
-                                website = website,
-                                specialties = specialties,
-                                inStockHighlights = highlights
-                            )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to store locator!") }
-                        },
-                        onDeleteStore = { id ->
-                            viewModel.deleteBakingSupplyStore(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Store removed") }
-                        }
+                        onUnlock = { viewModel.triggerPaywall("Suppliers", "Save suppliers to your bakery with Pro.") },
+                        onSave = { viewModel.savePublicSupplier(it) },
+                        onSync = { viewModel.syncSupplierRecords() }
                     )
                 }
 
@@ -960,73 +960,6 @@ fun BatchBossApp(
                             viewModel.instantDeleteCurrentAccountAndData {
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar("Account and data permanently deleted.")
-                                }
-                            }
-                        }
-                    )
-                }
-
-                is Screen.MasterBackend -> {
-                    MasterBackendScreen(
-                        users = allRegisteredUsers,
-                        loginLogs = allLoginLogs,
-                        deletionRequests = allDeletionRequests,
-                        onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onDeleteUser = { uid ->
-                            viewModel.adminDeleteUserData(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("User account and data wiped.")
-                                }
-                            }
-                        },
-                        onProcessDeletionRequest = { reqId, uid ->
-                            viewModel.adminProcessDeletionRequest(reqId, uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Deletion request approved and executed.")
-                                }
-                            }
-                        },
-                        onRejectDeletionRequest = { reqId ->
-                            viewModel.adminRejectDeletionRequest(reqId) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Deletion request dismissed.")
-                                }
-                            }
-                        },
-                        onClearLogs = {
-                            viewModel.adminClearLoginLogs()
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Login audit logs cleared.")
-                            }
-                        },
-                        onFactoryReset = {
-                            viewModel.adminFactoryResetDatabase {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Database reset to zero state.")
-                                }
-                            }
-                        },
-                        onCreateUser = { first, last, email, bakery, phone, city, opModel, curr, isPro ->
-                            viewModel.adminCreateUserAccount(first, last, email, bakery, phone, city, opModel, curr, isPro) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Bakery account stored successfully!")
-                                }
-                            }
-                        },
-                        onToggleUserPro = { uid, isPro ->
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Manage paid access in the BatchBoss admin website.") }
-                        },
-                        onPurgeInvoices = { uid ->
-                            viewModel.adminPurgeUserInvoices(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Invoices purged for user.")
-                                }
-                            }
-                        },
-                        onPurgeQuotes = { uid ->
-                            viewModel.adminPurgeUserQuotes(uid) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Quotes purged for user.")
                                 }
                             }
                         }

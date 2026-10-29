@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
         DataDeletionRequestEntity::class,
         PackagingItemEntity::class
     ],
-    version = 13,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -61,16 +61,26 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+        private fun addColumnIfMissing(db: SupportSQLiteDatabase, table: String, column: String, definition: String) {
+            val exists = db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val name = cursor.getColumnIndexOrThrow("name")
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(name) == column) found = true
+                found
+            }
+            if (!exists) db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudDocumentId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `publicListingId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `city` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `province` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudConfirmed` INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `pendingSync` INTEGER NOT NULL DEFAULT 0")
-                // Old records with no owner are retained. Do not silently assign them to a different account.
+                addColumnIfMissing(db, "suppliers", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "suppliers", "cloudDocumentId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "suppliers", "publicListingId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "suppliers", "city", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "suppliers", "province", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "suppliers", "cloudConfirmed", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "suppliers", "pendingSync", "INTEGER NOT NULL DEFAULT 0")
+                // Preserve unknown legacy ownership; recovery requires explicit confirmation.
             }
         }
 
@@ -108,198 +118,99 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addColumnIfMissing(db, "packaging_items", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_firestoreId` ON `packaging_items` (`firestoreId`)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_12_13.migrate(db) // Repair the alternate supplier-only schema13 before adding schema14 fields.
+                // Customers
+                addColumnIfMissing(db, "customers", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "customers", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_bakeryId` ON `customers` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_firestoreId` ON `customers` (`firestoreId`)")
+
+                // Orders
+                addColumnIfMissing(db, "orders", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "orders", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "orders", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_orders_bakeryId` ON `orders` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_orders_firestoreId` ON `orders` (`firestoreId`)")
+
+                // Recipes
+                addColumnIfMissing(db, "recipes", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "recipes", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "recipes", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipes_bakeryId` ON `recipes` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipes_firestoreId` ON `recipes` (`firestoreId`)")
+
+                // Recipe Ingredients
+                addColumnIfMissing(db, "recipe_ingredients", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "recipe_ingredients", "recipeFirestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "recipe_ingredients", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "recipe_ingredients", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "recipe_ingredients", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_recipeFirestoreId` ON `recipe_ingredients` (`recipeFirestoreId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_firestoreId` ON `recipe_ingredients` (`firestoreId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_bakeryId` ON `recipe_ingredients` (`bakeryId`)")
+
+                // Tasks
+                addColumnIfMissing(db, "tasks", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "tasks", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "tasks", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "tasks", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_bakeryId` ON `tasks` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_firestoreId` ON `tasks` (`firestoreId`)")
+
+                // Inventory Items
+                addColumnIfMissing(db, "inventory_items", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "inventory_items", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "inventory_items", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "inventory_items", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_bakeryId` ON `inventory_items` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_firestoreId` ON `inventory_items` (`firestoreId`)")
+
+                // Products & Services
+                addColumnIfMissing(db, "products_services", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "products_services", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_services_bakeryId` ON `products_services` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_services_firestoreId` ON `products_services` (`firestoreId`)")
+
+                // Invoices
+                addColumnIfMissing(db, "invoices", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "invoices", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "invoices", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "invoices", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_invoices_bakeryId` ON `invoices` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_invoices_firestoreId` ON `invoices` (`firestoreId`)")
+
+                // Quotes
+                addColumnIfMissing(db, "quotes", "firestoreId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "quotes", "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                addColumnIfMissing(db, "quotes", "createdAt", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, "quotes", "updatedAt", "INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_bakeryId` ON `quotes` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_firestoreId` ON `quotes` (`firestoreId`)")
+            }
+        }
+
+        internal fun builder(context: Context, name: String): RoomDatabase.Builder<AppDatabase> =
+            Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "batchboss_database"
-                )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13)
-                .fallbackToDestructiveMigration()
-                .addCallback(DatabaseCallback(scope))
+                val instance = builder(context, "batchboss_database")
                 .build()
                 INSTANCE = instance
                 instance
             }
         }
 
-        private class DatabaseCallback(
-            private val scope: CoroutineScope
-        ) : RoomDatabase.Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                INSTANCE?.let { database ->
-                    scope.launch(Dispatchers.IO) {
-                        populateInitialData(database)
-                    }
-                }
-            }
-        }
-
-        suspend fun populateInitialData(database: AppDatabase) {
-            val storeDao = database.bakingSupplyStoreDao()
-            // Only seed the public baking supply store directory if empty.
-            // NO sample recipes, NO sample inventory, NO sample customers,
-            // NO sample suppliers, NO sample invoices, NO sample quotes, NO fake profits!
-            if (storeDao.getCount() == 0) {
-                storeDao.insertStores(getSeedBakingSupplyStores())
-            }
-        }
-
-        fun getSeedBakingSupplyStores(): List<BakingSupplyStoreEntity> = listOf(
-            BakingSupplyStoreEntity(
-                name = "The Baking Tin & Cake Emporium",
-                category = "Cake Decorating",
-                address = "42 Baker Street, Rosebank Central",
-                city = "Johannesburg",
-                distanceKm = 1.4,
-                rating = 4.9,
-                reviewCount = 248,
-                openingHours = "Open • Closes 17:30",
-                phone = "+27 11 447 9120",
-                website = "https://thebakingtin.co.za",
-                specialties = "Satin Ice Fondant, Callebaut Callets, AmeriColor Gel Colors, Silicone Flower Molds, PME Nozzles, Cake Scrapers & Turners",
-                inStockHighlights = "Callebaut 811 54.5% Dark, AmeriColor 12-Pack, 10-inch Heavy Masonite Drums, Tylose Powder",
-                lat = -26.1472,
-                lng = 28.0413,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = true
-            ),
-            BakingSupplyStoreEntity(
-                name = "Pack & Bake Supply Depot",
-                category = "Packaging & Boxes",
-                address = "15 Commercial Rd, Strydom Park",
-                city = "Randburg",
-                distanceKm = 2.8,
-                rating = 4.8,
-                reviewCount = 175,
-                openingHours = "Open • Closes 17:00",
-                phone = "+27 11 792 5540",
-                website = "https://packandbake.co.za",
-                specialties = "Window Cake Boxes (6\", 8\", 10\", 12\"), Corrugated Heavy Cake Drums, Cupcake Inserts (6s & 12s), Macaron Display Boxes, Clear Gusset Bags",
-                inStockHighlights = "12-inch Tall Cake Boxes with Window, White Cupcake Boxes x50, Heavy Foil Cake Boards, Satin Ribbons",
-                lat = -26.0891,
-                lng = 27.9734,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = false
-            ),
-            BakingSupplyStoreEntity(
-                name = "Golden Harvest Artisan Flour Mill",
-                category = "Flour & Grains",
-                address = "8 Millers Way, Industria West",
-                city = "Johannesburg",
-                distanceKm = 4.5,
-                rating = 4.9,
-                reviewCount = 132,
-                openingHours = "Open • Closes 16:30",
-                phone = "+27 11 839 2110",
-                website = "https://goldenharvestmill.co.za",
-                specialties = "Stoneground Unbleached Cake Flour, 00 Italian Pizza & Brioche Flour, Whole Wheat Stoneground, Rye Flour, Active Sourdough Cultures, French T55 Flour",
-                inStockHighlights = "12.5kg Unbleached Cake Flour Bags, Rye Flour 5kg, Belgian Malted Flour, Organic Polenta",
-                lat = -26.1950,
-                lng = 27.9850,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = true
-            ),
-            BakingSupplyStoreEntity(
-                name = "Sweet Art Fondant & Sugar Studio",
-                category = "Cake Decorating",
-                address = "72 Oxford Rd, Parktown North",
-                city = "Johannesburg",
-                distanceKm = 5.6,
-                rating = 4.7,
-                reviewCount = 94,
-                openingHours = "Open • Closes 17:00",
-                phone = "+27 11 646 3390",
-                website = "https://sweetartstudio.co.za",
-                specialties = "Metallic Edible Lustre Dusts, Crystal Isomalt, Edible Wafer Paper, Chocolate Transfer Sheets, Petal Dust, Sugar Pearl Dragees",
-                inStockHighlights = "Egyptian Gold Lustre Dust 10g, Rolkem Super Gold, Flexible Silicone Lace Mats, Airbrush Color Sets",
-                lat = -26.1550,
-                lng = 28.0320,
-                hasDelivery = false,
-                hasPickup = true,
-                isFavorite = false
-            ),
-            BakingSupplyStoreEntity(
-                name = "ChocCraft & Pastry Pro Wholesalers",
-                category = "Dairy & Chocolate",
-                address = "104 Enterprise Blvd, Midrand",
-                city = "Midrand",
-                distanceKm = 7.2,
-                rating = 4.9,
-                reviewCount = 310,
-                openingHours = "Open • Closes 17:30",
-                phone = "+27 11 315 8820",
-                website = "https://choccraftpro.co.za",
-                specialties = "Valrhona & Callebaut Chocolate Blocks & Drops, 82% Unsalted Cultured Butter (25kg bulk), Cocoa Butter Mycryo, Praline Pastes, Pure Vanilla Bean Paste",
-                inStockHighlights = "Callebaut W2 White 2.5kg, Valrhona Guanaja 70%, 82% Fat Butter Blocks, 500g Nielsen-Massey Vanilla Paste",
-                lat = -26.0120,
-                lng = 28.1250,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = true
-            ),
-            BakingSupplyStoreEntity(
-                name = "Bakery Equipment & Pan World",
-                category = "Tools & Bakeware",
-                address = "23 Machine Street, Booysens",
-                city = "Johannesburg South",
-                distanceKm = 9.1,
-                rating = 4.8,
-                reviewCount = 88,
-                openingHours = "Open • Closes 16:30",
-                phone = "+27 11 493 6700",
-                website = "https://bakeryequipmentworld.co.za",
-                specialties = "USA Pan Non-Stick Bakeware, KitchenAid Heavy Duty Accessories, Perforated Silpat Baking Mats, Precision Gram Digital Scales, Multi-Tier Cooling Racks",
-                inStockHighlights = "8-inch Deep Anodised Cake Pans (3-pack), Silform Tart Molds, Thermapen One Digital Food Thermometer",
-                lat = -26.2310,
-                lng = 28.0290,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = false
-            ),
-            BakingSupplyStoreEntity(
-                name = "Spice & Essence Boutique",
-                category = "Specialty Flavors",
-                address = "56 4th Avenue, Linden",
-                city = "Johannesburg",
-                distanceKm = 11.4,
-                rating = 4.8,
-                reviewCount = 115,
-                openingHours = "Open • Closes 17:00",
-                phone = "+27 11 782 1190",
-                website = "https://spiceandessence.co.za",
-                specialties = "Madagascar Bourbon Vanilla Pods, Almond Baking Emulsion, Freeze-Dried Berry Powders, Culinary Lavender, Natural Citrus Oils, Tonka Beans",
-                inStockHighlights = "Grade A Vanilla Pods (10x vacuum pack), LorAnn Bakery Emulsions, Freeze-Dried Raspberry Crumbles",
-                lat = -26.1360,
-                lng = 27.9940,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = false
-            ),
-            BakingSupplyStoreEntity(
-                name = "Cape Sugar & Yeast Distributors",
-                category = "Flour & Grains",
-                address = "31 Sacks Circle, Bellville South",
-                city = "Cape Town",
-                distanceKm = 14.0,
-                rating = 4.6,
-                reviewCount = 64,
-                openingHours = "Open • Closes 16:00",
-                phone = "+27 21 951 4400",
-                website = "https://capesugaryeast.co.za",
-                specialties = "25kg Castor Sugar, Instant Dry Baker's Yeast, Liquid Invert Sugar, Golden Syrup Bulk Tins, Pure Glucose Syrup, Baking Soda Bulk",
-                inStockHighlights = "25kg Fine Castor Sugar Sacks, SAF-Instant Red Yeast 500g, Liquid Glucose 5kg Tub",
-                lat = -33.9249,
-                lng = 18.6341,
-                hasDelivery = true,
-                hasPickup = true,
-                isFavorite = false
-            )
-        )
+        // Legacy local locator records remain stored. Public discovery uses approved listings.
     }
 }

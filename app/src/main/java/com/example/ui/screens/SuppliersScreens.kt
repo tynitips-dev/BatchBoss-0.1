@@ -118,7 +118,7 @@ fun SuppliersListScreen(
                             ) {
                                 Icon(Icons.Filled.NearMe, contentDescription = null, tint = BatchPink, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Store Locator", color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Find suppliers", color = BatchPink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -181,14 +181,14 @@ fun SuppliersListScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Baking Supply Store Locator", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                Text("Find approved suppliers", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Surface(shape = RoundedCornerShape(6.dp), color = MintGreen.copy(alpha = 0.2f)) {
-                                    Text("MAP", color = Color(0xFF2E7D32), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                    Text("DIRECTORY", color = Color(0xFF2E7D32), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
                                 }
                             }
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text("Find local baking shops, cake boxes, flour & tools near you", fontSize = 11.sp, color = MediumText)
+                            Text("Browse supplier listings by city, province and category", fontSize = 11.sp, color = MediumText)
                         }
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
                     }
@@ -895,6 +895,37 @@ fun SpecialDetailScreen(
                     lineHeight = 18.sp
                 )
             }
+        }
+    }
+}
+
+
+@Composable
+fun SupplierDirectoryScreen(
+    savedIds: Set<String>,
+    canSave: Boolean,
+    onBack: () -> Unit,
+    onUnlock: () -> Unit,
+    onSave: suspend (PublicSupplier) -> Result<Unit>,
+    onSync: suspend () -> Result<Unit>
+) {
+    Scaffold(
+        topBar = {
+            Surface(color = SurfaceWhite, modifier = Modifier.statusBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to suppliers")
+                    }
+                    Text("Find suppliers", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).testTag("screen_supplier_directory"),
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            item { SupplierDiscoveryPanel(savedIds, canSave, onUnlock, onSave, onSync) }
         }
     }
 }

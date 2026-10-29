@@ -57,7 +57,9 @@ fun HomeScreen(
     onOpenCustomers: () -> Unit = {},
     onOpenInvoices: () -> Unit = {},
     onOpenScanner: () -> Unit = {},
-    onOpenPackaging: () -> Unit = {}
+    onOpenPackaging: () -> Unit = {},
+    onSync: () -> Unit = {},
+    isSyncing: Boolean = false
 ) {
     var showTimeFrameMenu by remember { mutableStateOf(false) }
 
@@ -103,6 +105,26 @@ fun HomeScreen(
                 BatchBossBrandLogo(size = 38)
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Manual Cloud Sync shortcut
+                    IconButton(
+                        onClick = onSync,
+                        modifier = Modifier.testTag("btn_home_sync")
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = BatchPink
+                            )
+                        } else {
+                            Icon(
+                                Icons.Outlined.Sync,
+                                contentDescription = "Sync with Cloud",
+                                tint = DarkText
+                            )
+                        }
+                    }
+
                     // Task button shortcut
                     IconButton(
                         onClick = onOpenTasks,
@@ -186,6 +208,32 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold,
                     color = DarkText
                 )
+            }
+        }
+
+        // 2b. Clearly visible Sync button on Dashboard
+        item {
+            Button(
+                onClick = onSync,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_sync_dashboard"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = BatchPink)
+            ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Synchronizing...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                } else {
+                    Icon(Icons.Filled.Sync, contentDescription = "Sync", tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sync with Cloud", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
         }
 

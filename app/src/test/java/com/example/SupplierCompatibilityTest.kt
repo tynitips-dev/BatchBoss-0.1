@@ -52,7 +52,7 @@ class SupplierCompatibilityTest {
             }).build())
         try {
             val db=helper.writableDatabase
-            AppDatabase.MIGRATION_12_13.migrate(db)
+            AppDatabase.MIGRATION_14_15.migrate(db)
             db.query("SELECT id,userId,name,bakeryId,cloudDocumentId,cloudConfirmed,pendingSync FROM suppliers").use { cursor ->
                 assertTrue(cursor.moveToFirst());assertEquals(7,cursor.getInt(0));assertEquals(0,cursor.getInt(1))
                 assertEquals("Existing supplier",cursor.getString(2));assertEquals("",cursor.getString(3));assertEquals("",cursor.getString(4))
