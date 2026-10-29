@@ -13,11 +13,13 @@ import java.util.UUID
         Index(value = ["userId"]),
         Index(value = ["bakeryId"]),
         Index(value = ["category"]),
-        Index(value = ["isLowStock"])
+        Index(value = ["isLowStock"]),
+        Index(value = ["firestoreId"])
     ]
 )
 data class PackagingItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val firestoreId: String = "",
     val userId: Long = 0,
     val bakeryId: String = "bakery_1",
     val name: String,
@@ -36,7 +38,9 @@ data class PackagingItemEntity(
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val firestoreDocumentId: String get() = firestoreId
+}
 
 data class InvoicePackagingItem(
     val id: String = UUID.randomUUID().toString(),

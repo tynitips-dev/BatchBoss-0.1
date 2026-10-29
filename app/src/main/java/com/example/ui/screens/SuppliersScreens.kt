@@ -30,10 +30,6 @@ import com.example.R
 import com.example.data.local.SpecialDealEntity
 import com.example.data.local.SupplierEntity
 import com.example.ui.theme.*
-import com.example.ui.components.SupplierDiscoveryPanel
-import com.example.ui.components.LegacySupplierRecoveryPanel
-import com.example.data.local.LegacySupplierRecoveryState
-import com.example.data.remote.PublicSupplier
 
 @Composable
 fun SuppliersListScreen(
@@ -43,11 +39,7 @@ fun SuppliersListScreen(
     onAddSupplier: () -> Unit,
     isPremium: Boolean = true,
     onUnlockPremium: () -> Unit = {},
-    onOpenStoreLocator: () -> Unit = {},
-    onSavePublicSupplier: suspend (PublicSupplier) -> Result<Unit> = { Result.failure(IllegalStateException("Saving is unavailable.")) },
-    onSyncSuppliers: suspend () -> Result<Unit> = { Result.success(Unit) },
-    onInspectLegacy: suspend () -> Result<LegacySupplierRecoveryState> = { Result.success(LegacySupplierRecoveryState(0, false)) },
-    onRecoverLegacy: suspend (Boolean) -> Result<Int> = { Result.failure(IllegalStateException("Recovery is unavailable.")) }
+    onOpenStoreLocator: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) } // 0: All, 1: My Suppliers, 2: Favourites
     var searchQuery by remember { mutableStateOf("") }
@@ -232,16 +224,6 @@ fun SuppliersListScreen(
                         }
                     }
                 }
-            }
-            item(key = "legacy-supplier-recovery") {
-                LegacySupplierRecoveryPanel(onInspectLegacy, onRecoverLegacy)
-            }
-            item(key = "public-supplier-discovery") {
-                SupplierDiscoveryPanel(
-                    savedIds = suppliers.map { it.publicListingId }.filter { it.isNotBlank() }.toSet(),
-                    canSave = isPremium, onUnlock = onUnlockPremium,
-                    onSave = onSavePublicSupplier, onSync = onSyncSuppliers
-                )
             }
             // Search Input
             item {

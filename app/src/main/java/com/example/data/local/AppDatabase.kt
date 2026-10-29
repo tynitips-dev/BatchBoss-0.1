@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
         DataDeletionRequestEntity::class,
         PackagingItemEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,19 +60,6 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
-
-        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudDocumentId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `publicListingId` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `city` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `province` TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `cloudConfirmed` INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `pendingSync` INTEGER NOT NULL DEFAULT 0")
-                // Old records with no owner are retained. Do not silently assign them to a different account.
-            }
-        }
 
         val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -108,6 +95,85 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `packaging_items` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_packaging_items_firestoreId` ON `packaging_items` (`firestoreId`)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Customers
+                db.execSQL("ALTER TABLE `customers` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `customers` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_bakeryId` ON `customers` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_firestoreId` ON `customers` (`firestoreId`)")
+
+                // Orders
+                db.execSQL("ALTER TABLE `orders` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `orders` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `orders` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_orders_bakeryId` ON `orders` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_orders_firestoreId` ON `orders` (`firestoreId`)")
+
+                // Recipes
+                db.execSQL("ALTER TABLE `recipes` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `recipes` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `recipes` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipes_bakeryId` ON `recipes` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipes_firestoreId` ON `recipes` (`firestoreId`)")
+
+                // Recipe Ingredients
+                db.execSQL("ALTER TABLE `recipe_ingredients` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `recipe_ingredients` ADD COLUMN `recipeFirestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `recipe_ingredients` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `recipe_ingredients` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `recipe_ingredients` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_recipeFirestoreId` ON `recipe_ingredients` (`recipeFirestoreId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_firestoreId` ON `recipe_ingredients` (`firestoreId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_ingredients_bakeryId` ON `recipe_ingredients` (`bakeryId`)")
+
+                // Tasks
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_bakeryId` ON `tasks` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_firestoreId` ON `tasks` (`firestoreId`)")
+
+                // Inventory Items
+                db.execSQL("ALTER TABLE `inventory_items` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `inventory_items` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `inventory_items` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `inventory_items` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_bakeryId` ON `inventory_items` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_firestoreId` ON `inventory_items` (`firestoreId`)")
+
+                // Products & Services
+                db.execSQL("ALTER TABLE `products_services` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `products_services` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_services_bakeryId` ON `products_services` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_services_firestoreId` ON `products_services` (`firestoreId`)")
+
+                // Invoices
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `invoices` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_invoices_bakeryId` ON `invoices` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_invoices_firestoreId` ON `invoices` (`firestoreId`)")
+
+                // Quotes
+                db.execSQL("ALTER TABLE `quotes` ADD COLUMN `firestoreId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `quotes` ADD COLUMN `bakeryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `quotes` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `quotes` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_bakeryId` ON `quotes` (`bakeryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_firestoreId` ON `quotes` (`firestoreId`)")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -115,7 +181,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "batchboss_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()

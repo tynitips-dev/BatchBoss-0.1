@@ -49,6 +49,12 @@ private fun formatZar(amount: Double): String {
     return format.format(amount).replace("ZAR", "R").trim()
 }
 
+fun formatUnitCost(amount: Double): String {
+    return if (amount == 0.0) "R0"
+    else if (amount % 1.0 == 0.0) "R${amount.toInt()}"
+    else String.format(Locale.US, "R%.2f", amount)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PackagingListScreen(
@@ -77,7 +83,8 @@ fun PackagingListScreen(
         minStock: Double
     ) -> Unit,
     onDeletePackaging: (Long) -> Unit,
-    onNavigateToInventory: (() -> Unit)? = null
+    onNavigateToInventory: (() -> Unit)? = null,
+    onRefreshSync: (() -> Unit)? = null
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     var selectedCategoryFilter by remember { mutableStateOf("All") }
@@ -142,7 +149,26 @@ fun PackagingListScreen(
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (onRefreshSync != null) {
+                            OutlinedButton(
+                                onClick = onRefreshSync,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, BatchPink),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .height(38.dp)
+                                    .testTag("btn_sync_packaging")
+                            ) {
+                                Icon(Icons.Filled.Sync, contentDescription = "Sync", tint = BatchPink, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Sync", color = BatchPink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+
                         IconButton(
                             onClick = { showAddDialog = true },
                             modifier = Modifier
@@ -761,10 +787,11 @@ fun PackagingItemCard(
                         color = LightText
                     )
                     Text(
-                        text = "${formatZar(item.unitPrice)} / ${item.unit}",
+                        text = "${formatUnitCost(item.unitPrice)} / ${item.unit}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = BatchPink
+                        color = BatchPink,
+                        modifier = Modifier.testTag("txt_unit_cost_${item.id}")
                     )
                 }
             }

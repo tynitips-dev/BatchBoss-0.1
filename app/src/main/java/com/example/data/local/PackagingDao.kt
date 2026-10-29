@@ -14,6 +14,18 @@ interface PackagingDao {
     @Query("SELECT * FROM packaging_items WHERE bakeryId = :bakeryId ORDER BY isLowStock DESC, category ASC, name ASC")
     fun getPackagingByBakery(bakeryId: String): Flow<List<PackagingItemEntity>>
 
+    @Query("SELECT * FROM packaging_items WHERE bakeryId = :bakeryId AND isLowStock = 1 ORDER BY name ASC")
+    fun getLowStockPackagingByBakery(bakeryId: String): Flow<List<PackagingItemEntity>>
+
+    @Query("SELECT * FROM packaging_items WHERE bakeryId = :bakeryId ORDER BY isLowStock DESC, category ASC, name ASC")
+    suspend fun getPackagingByBakeryOnce(bakeryId: String): List<PackagingItemEntity>
+
+    @Query("SELECT * FROM packaging_items WHERE firestoreId = :firestoreId LIMIT 1")
+    suspend fun getPackagingByFirestoreId(firestoreId: String): PackagingItemEntity?
+
+    @Query("SELECT * FROM packaging_items WHERE (firestoreId != '' AND firestoreId = :docId) OR id = :id LIMIT 1")
+    suspend fun findPackagingByLocalOrFirestoreId(id: Long, docId: String): PackagingItemEntity?
+
     @Query("SELECT * FROM packaging_items WHERE isLowStock = 1 ORDER BY name ASC")
     fun getLowStockPackaging(): Flow<List<PackagingItemEntity>>
 
@@ -62,6 +74,9 @@ interface PackagingDao {
 
     @Query("DELETE FROM packaging_items WHERE id = :id")
     suspend fun deletePackaging(id: Long)
+
+    @Query("DELETE FROM packaging_items WHERE id IN (:ids)")
+    suspend fun deletePackagingByIds(ids: List<Long>)
 
     @Query("DELETE FROM packaging_items WHERE bakeryId = :bakeryId")
     suspend fun deletePackagingByBakery(bakeryId: String)

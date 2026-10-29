@@ -186,7 +186,7 @@ fun BatchBossBrandLogo(
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, BatchPink.copy(alpha = 0.35f))
                 ) {
                     Text(
-                        text = "v7",
+                        text = "PRO",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = BatchPink,
