@@ -520,3 +520,11 @@ export { sendBatchBossGiftProEmail } from './giftProEmail';
 export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
 
 export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
+
+
+// The referral pilot is not included in production function exports.
+if (process.env.FUNCTIONS_EMULATOR === 'true' &&
+    /^demo-[a-z0-9-]+$/.test(process.env.GCLOUD_PROJECT || '') &&
+    process.env.BATCHBOSS_PARTNER_TEST_ENABLED === 'true') {
+  exports.registerReferredBakerTest = require('./partnerReferral').registerReferredBakerTest;
+}

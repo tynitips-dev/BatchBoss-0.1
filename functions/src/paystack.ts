@@ -1,3 +1,4 @@
+import {referralTestRuntime,testAttributionForCheckout,recordBakerTestPayment} from './partnerReferral';
 import {randomUUID} from 'node:crypto';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
@@ -53,6 +54,7 @@ function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol
 export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
+ if(referralTestRuntime()&&mode()!=='test')throw new HttpsError('failed-precondition','Live checkout is disabled in the referral pilot.');
  const requestedPlan=String(request.data?.plan);
  const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
  if(promotional && !promotionEnabled(requestedPlan))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');
@@ -79,7 +81,8 @@ export const createPaystackCheckout=onCall(options,async request=>{
   const customer=await api('/customer',{email:user.email});const customerCode=String(customer.customer_code);if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new Error('Invalid customer');
   const customerRef=db().doc(`paystackCustomers/${customerCode}`);
   await db().runTransaction(async t=>{const mapped=await t.get(customerRef);if(mapped.exists&&mapped.data()?.uid!==uid)throw new HttpsError('failed-precondition','This payment customer is linked to another account. Contact support.');t.set(customerRef,{uid,domain:plan.domain,updatedAt:now()},{merge:true});});
-  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',createdAt:now()});
+  const partnerReferral=await testAttributionForCheckout(db(),uid,plan.domain);
+  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',createdAt:now(),...(partnerReferral?{partnerReferral}:{} )});
   const result=await api('/transaction/initialize',{email:user.email,amount:plan.amount,currency:'ZAR',plan:plan.planCode,reference,channels:['card'],callback_url:`${APP}/?payment=paystack`,metadata:{batchbossReference:reference}});
   const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
   await lockRef.update({checkoutUrl});return {checkoutUrl};
@@ -96,6 +99,7 @@ async function settle(reference:string,expectedUid?:string,subscriptionCode?:str
  const expires=periodEnd(transaction.paid_at,expected.interval);const profileRef=db().doc(`users/${expected.uid}`);
  await db().runTransaction(async t=>{const [current,profile]=await Promise.all([t.get(paymentRef),t.get(profileRef)]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
  t.set(paymentRef,{...expected,reference,status:'success',transactionId:String(transaction.id),paidAt:transaction.paid_at,processedAt:now()},{merge:true});
+ recordBakerTestPayment(t,db(),expected,reference);
  // Test mode records test payments but never grants production entitlements.
  if(expected!.domain==='live' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
  });return {status:'success',testMode:expected.domain==='test'};

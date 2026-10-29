@@ -11,8 +11,9 @@ import {
   signOut, type User,
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
-import { auth, db, firebaseConfigured } from './firebase'
+import { auth, db, firebaseConfigured, referralPilot, bakerFunctions } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
+import { httpsCallable } from 'firebase/functions'
 import SubscriptionView from './SubscriptionView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -95,7 +96,7 @@ function SetupNotice() {
 }
 
 function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'login' | 'signup'>(() => new URLSearchParams(location.search).has('signup') || (referralPilot && new URLSearchParams(location.search).has('ref')) ? 'signup' : 'login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -113,7 +114,15 @@ function AuthScreen() {
         const bakeryName = String(data.get('bakeryName')).trim()
         const firstName = String(data.get('firstName')).trim()
         const surname = String(data.get('surname')).trim()
-        const credential = await createUserWithEmailAndPassword(auth, email, password)
+        const referralCode = referralPilot ? String(data.get('referralCode') || '').trim().toUpperCase() : ''
+        if (referralCode && !/^BB-[A-F0-9]{12}$/.test(referralCode)) throw new Error('Please check the referral code.')
+        const credential = referralPilot && referralCode && auth.currentUser?.email?.toLowerCase() === email.toLowerCase()
+          ? { user: auth.currentUser }
+          : await createUserWithEmailAndPassword(auth, email, password)
+        if (referralCode) {
+          await httpsCallable(bakerFunctions, 'registerReferredBakerTest')({ firstName, surname, bakeryName, referralCode })
+          return
+        }
         const uid = credential.user.uid
         const bakeryRef = doc(collection(db, 'bakeries'))
         const batch = writeBatch(db)
@@ -160,6 +169,9 @@ function AuthScreen() {
           <label>Surname<input name="surname" required /></label>
         </div>}
         {mode === 'signup' && <label>Bakery name<input name="bakeryName" required /></label>}
+        {mode === 'signup' && referralPilot && <label>Sales partner referral (test)<input name="referralCode"
+          defaultValue={new URLSearchParams(location.search).get('ref') || ''}
+          pattern="BB-[A-Fa-f0-9]{12}" maxLength={15} /></label>}
         <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
         <label>Password<input name="password" type="password" minLength={8} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required /></label>
         {error && <div className="error-message">{error}</div>}
