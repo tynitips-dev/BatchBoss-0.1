@@ -474,10 +474,10 @@ interface ProductServiceDao {
     @Query("SELECT * FROM products_services WHERE userId = :userId ORDER BY name ASC")
     fun getProductsByUser(userId: Long): Flow<List<ProductServiceEntity>>
 
-    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId OR (bakeryId = '' AND :bakeryId != '') ORDER BY name ASC")
     fun getProductsByBakery(bakeryId: String): Flow<List<ProductServiceEntity>>
 
-    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId ORDER BY name ASC")
+    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId OR (bakeryId = '' AND :bakeryId != '') ORDER BY name ASC")
     suspend fun getProductsByBakeryOnce(bakeryId: String): List<ProductServiceEntity>
 
     @Query("SELECT * FROM products_services WHERE firestoreId = :firestoreId LIMIT 1")
@@ -486,7 +486,7 @@ interface ProductServiceDao {
     @Query("SELECT * FROM products_services WHERE userId = :userId AND isActive = 1 ORDER BY name ASC")
     fun getActiveProductsByUser(userId: Long): Flow<List<ProductServiceEntity>>
 
-    @Query("SELECT * FROM products_services WHERE bakeryId = :bakeryId AND isActive = 1 ORDER BY name ASC")
+    @Query("SELECT * FROM products_services WHERE (bakeryId = :bakeryId OR (bakeryId = '' AND :bakeryId != '')) AND isActive = 1 ORDER BY name ASC")
     fun getActiveProductsByBakery(bakeryId: String): Flow<List<ProductServiceEntity>>
 
     @Query("SELECT * FROM products_services WHERE id = :id")

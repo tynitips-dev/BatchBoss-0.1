@@ -187,15 +187,28 @@ data class TaskEntity(
 fun Any?.safeDouble(default: Double = 0.0): Double {
     return when (this) {
         null -> default
-        is Number -> {
-            val d = this.toDouble()
-            if (d.isNaN() || d.isInfinite()) default else d
-        }
+        is Double -> if (this.isNaN() || this.isInfinite()) default else this
+        is Float -> if (this.isNaN() || this.isInfinite()) default else this.toDouble()
+        is Number -> this.toDouble()
         is String -> {
-            val trimmed = this.trim().replace(",", ".")
-            trimmed.toDoubleOrNull()?.let {
+            val clean = this.trim().replace("R", "", ignoreCase = true).replace(" ", "").replace(",", ".")
+            clean.toDoubleOrNull()?.let {
                 if (it.isNaN() || it.isInfinite()) default else it
             } ?: default
+        }
+        is Boolean -> if (this) 1.0 else 0.0
+        else -> default
+    }
+}
+
+fun Any?.safeLong(default: Long = 0L): Long {
+    return when (this) {
+        null -> default
+        is Long -> this
+        is Number -> this.toLong()
+        is String -> {
+            val clean = this.trim().replace(",", ".")
+            clean.toLongOrNull() ?: (clean.toDoubleOrNull()?.toLong() ?: default)
         }
         else -> default
     }
@@ -247,7 +260,7 @@ data class InventoryItemEntity(
         val normGpu = if (rawGpu > 0.0) {
             rawGpu
         } else {
-            if (normUnit.equals("kg", true) || normUnit.equals("l", true)) pQty * 1000.0 else pQty
+            com.example.util.UnitUtils.toBaseUnits(pQty, normUnit).let { if (it > 0.0) it else 1000.0 }
         }
 
         val rawUnitPrice = (unitPrice as Any?).safeDouble(-1.0)

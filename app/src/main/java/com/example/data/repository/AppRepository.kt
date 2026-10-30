@@ -279,8 +279,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             inventoryDao.deleteInventoryByIds(toDelete.map { it.id })
@@ -294,8 +293,7 @@ class AppRepository(private val database: AppDatabase) {
 
     /**
      * Recalculates cost for all recipe ingredients matching inventory items in this bakery.
-     * E.g. Sync Test Flour: 2.5 kg, R40 (R0.016/g) -> 250g in recipe is R4.00.
-     * When packagePrice updates to R50 (R0.02/g) -> 250g in recipe becomes R5.00.
+     * E.g. Package price R50 for 1 kg -> 240g in recipe becomes R12.00.
      */
     suspend fun recalculateRecipeIngredientCosts(bakeryId: String) {
         val inventory = inventoryDao.getInventoryByBakeryOnce(bakeryId)
@@ -303,9 +301,19 @@ class AppRepository(private val database: AppDatabase) {
         val allIngredients = ingredientDao.getIngredientsByBakeryOnce(bakeryId)
         for (ing in allIngredients) {
             val inv = inventoryByName[ing.name.trim().lowercase()]
-            if (inv != null && inv.unitPrice > 0.0) {
-                val newCost = com.example.util.UnitUtils.calculateCost(ing.quantity, ing.unit, inv.unitPrice)
-                if (Math.abs(newCost - ing.cost) > 0.0001) {
+            if (inv != null && (inv.packagePrice > 0.0 || inv.unitPrice > 0.0)) {
+                val newCost = if (inv.packagePrice > 0.0 && inv.packageQuantity > 0.0) {
+                    com.example.util.UnitUtils.calculateIngredientCost(
+                        recipeQuantity = ing.quantity,
+                        recipeUnit = ing.unit,
+                        packagePrice = inv.packagePrice,
+                        packageQuantity = inv.packageQuantity,
+                        packageUnit = inv.unit
+                    )
+                } else {
+                    com.example.util.UnitUtils.calculateCost(ing.quantity, ing.unit, inv.unitPrice)
+                }
+                if (newCost > 0.0 && Math.abs(newCost - ing.cost) > 0.0001) {
                     ingredientDao.updateIngredientCost(ing.id, newCost, ing.quantity, System.currentTimeMillis())
                 }
             }
@@ -355,8 +363,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             recipeDao.deleteRecipesByIds(toDelete.map { it.id })
@@ -429,8 +436,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localIngredients.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             ingredientDao.deleteIngredientsByIds(toDelete.map { it.id })
@@ -482,8 +488,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             customerDao.deleteCustomersByIds(toDelete.map { it.id })
@@ -535,8 +540,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             productServiceDao.deleteProductsByIds(toDelete.map { it.id })
@@ -588,8 +592,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             invoiceDao.deleteInvoicesByIds(toDelete.map { it.id })
@@ -641,8 +644,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             quoteDao.deleteQuotesByIds(toDelete.map { it.id })
@@ -694,8 +696,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             orderDao.deleteOrdersByIds(toDelete.map { it.id })
@@ -747,8 +748,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
-            val localKey = localItem.firestoreId.ifBlank { localItem.id.toString() }
-            !remoteDocIds.contains(localKey)
+            localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             taskDao.deleteTasksByIds(toDelete.map { it.id })

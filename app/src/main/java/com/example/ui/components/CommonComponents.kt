@@ -145,7 +145,7 @@ fun BatchBossEmblem(
         contentAlignment = Alignment.Center
     ) {
         Image(
-            painter = painterResource(id = R.drawable.ic_batchboss_emblem),
+            painter = painterResource(id = R.drawable.img_batchboss_emblem),
             contentDescription = "BatchBoss Emblem",
             modifier = Modifier.size(size.dp),
             contentScale = ContentScale.Fit

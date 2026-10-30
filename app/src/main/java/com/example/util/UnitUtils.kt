@@ -4,21 +4,82 @@ object UnitUtils {
     val RECIPE_UNITS = listOf("g", "kg", "ml", "tsp", "tbsp", "cup", "l", "unit")
 
     /**
-     * Converts a given quantity and unit to base grams (or ml for liquids, where 1ml ~ 1g).
-     * Supported: g, kg, ml, tsp, tbsp / tble, l, cup, unit / eggs
+     * Normalises ingredient package quantities to base units:
+     * - 1 kg = 1000 g
+     * - 500 g = 500 g
+     * - 1 litre / 1 l = 1000 ml
+     * - 500 ml = 500 ml
+     * - units such as eggs remain individual units
+     *
+     * Supports compatible unit conversions:
+     * - kg to g, g to kg
+     * - litre to ml, ml to litre
      */
-    fun toBaseGrams(quantity: Double, unit: String): Double {
+    fun toBaseUnits(quantity: Double, unit: String): Double {
         return when (unit.lowercase().trim()) {
-            "g", "gram", "grams" -> quantity
             "kg", "kilogram", "kilograms" -> quantity * 1000.0
-            "ml", "milliliter", "milliliters" -> quantity
-            "l", "liter", "litres", "liters" -> quantity * 1000.0
+            "g", "gram", "grams" -> quantity
+            "l", "liter", "litres", "liters", "litre" -> quantity * 1000.0
+            "ml", "milliliter", "milliliters", "millilitre" -> quantity
             "tsp", "teaspoon", "teaspoons" -> quantity * 5.0
             "tbsp", "tble", "tablespoon", "tablespoons" -> quantity * 15.0
             "cup", "cups" -> quantity * 240.0
             "pinch" -> quantity * 0.5
-            else -> quantity // unit, egg, bottle, pcs
+            else -> quantity // unit, egg, eggs, bottle, pcs
         }
+    }
+
+    /**
+     * Converts a given quantity and unit to base grams (or ml for liquids, where 1ml ~ 1g).
+     * Supported: g, kg, ml, tsp, tbsp / tble, l, cup, unit / eggs
+     */
+    fun toBaseGrams(quantity: Double, unit: String): Double = toBaseUnits(quantity, unit)
+
+    /**
+     * Calculates the ingredient cost per gram or millilitre (or per individual unit):
+     * costPerBaseUnit = packagePrice / packageQuantityInBaseUnits
+     */
+    fun calculateCostPerBaseUnit(packagePrice: Double, packageQuantity: Double, packageUnit: String): Double {
+        if (packagePrice <= 0.0) return 0.0
+        val baseQuantity = toBaseUnits(packageQuantity, packageUnit)
+        return if (baseQuantity > 0.0) packagePrice / baseQuantity else 0.0
+    }
+
+    /**
+     * Calculates the recipe ingredient cost automatically:
+     * ingredientCost = costPerBaseUnit * recipeQuantityUsed
+     *
+     * Example:
+     * Package price = R50, Package size = 1 kg
+     * Recipe amount = 240 g
+     * Cost per gram = R50 / 1000 = R0.05
+     * Ingredient cost = R0.05 * 240 = R12.00
+     */
+    fun calculateIngredientCost(
+        recipeQuantity: Double,
+        recipeUnit: String,
+        packagePrice: Double,
+        packageQuantity: Double,
+        packageUnit: String
+    ): Double {
+        if (recipeQuantity <= 0.0 || packagePrice <= 0.0) return 0.0
+        val costPerBase = calculateCostPerBaseUnit(packagePrice, packageQuantity, packageUnit)
+        val recipeBaseUnits = toBaseUnits(recipeQuantity, recipeUnit)
+        return costPerBase * recipeBaseUnits
+    }
+
+    /**
+     * Formats money display with full-stop decimal to two decimal places (e.g. R12.00).
+     */
+    fun formatMoney(amount: Double): String {
+        return String.format(java.util.Locale.US, "R%.2f", amount)
+    }
+
+    /**
+     * Formats decimal with full-stop to two decimal places (e.g. 12.00).
+     */
+    fun formatDecimal(amount: Double): String {
+        return String.format(java.util.Locale.US, "%.2f", amount)
     }
 
     /**
@@ -28,7 +89,7 @@ object UnitUtils {
      * - inventory unit price per base gram/unit (e.g. R0.022/g)
      */
     fun calculateCost(quantity: Double, unit: String, pricePerBaseGram: Double): Double {
-        val baseGrams = toBaseGrams(quantity, unit)
+        val baseGrams = toBaseUnits(quantity, unit)
         return baseGrams * pricePerBaseGram
     }
 

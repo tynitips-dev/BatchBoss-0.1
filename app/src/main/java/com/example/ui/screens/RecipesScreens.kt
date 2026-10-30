@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -2794,30 +2795,64 @@ fun AddRecipeIngredientDialog(
     var name by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("") }
     var selectedUnit by remember { mutableStateOf("g") }
+    var packagePriceText by remember { mutableStateOf("") }
+    var packageQtyText by remember { mutableStateOf("1") }
+    var packageUnit by remember { mutableStateOf("kg") }
     var costText by remember { mutableStateOf("") }
     var unitPricePerBaseUnit by remember { mutableDoubleStateOf(0.0) }
+    var isManualCostOverride by remember { mutableStateOf(false) }
     var isEstimatingPrice by remember { mutableStateOf(false) }
     var priceNote by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Filtered to ONLY the products requested by the user:
-    // baking soda, flour, chocolate, bicarbonate of soda, salt, eggs
+    // Standard Filtered Presets (with realistic package prices and sizes)
     val ingredientPresets = listOf(
-        "Flour" to "g",
-        "Sugar" to "g",
-        "Chocolate" to "g",
-        "Baking Soda" to "g",
-        "Bicarbonate of Soda" to "g",
-        "Salt" to "g",
-        "Eggs" to "unit"
+        Triple("Flour", "kg", 35.00 to 2.5),
+        Triple("Sugar", "kg", 38.50 to 2.0),
+        Triple("Chocolate", "g", 42.00 to 200.0),
+        Triple("Baking Soda", "g", 18.00 to 200.0),
+        Triple("Bicarbonate of Soda", "g", 16.50 to 200.0),
+        Triple("Salt", "g", 12.00 to 500.0),
+        Triple("Eggs", "unit", 68.00 to 30.0)
     )
 
-    val supportedUnits = listOf("g", "kg", "ml", "tsp", "tble", "cup", "unit")
+    val supportedUnits = listOf("g", "kg", "ml", "l", "tsp", "tbsp", "cup", "unit")
+    val packageUnits = listOf("kg", "g", "l", "ml", "unit")
 
-    fun updateCost(q: Double, u: String, rate: Double? = null) {
-        val activeRate = rate ?: if (unitPricePerBaseUnit > 0) unitPricePerBaseUnit else UnitUtils.getEstimatedRatePerGram(name)
-        val estimated = UnitUtils.calculateCost(q, u, activeRate)
-        costText = String.format("%.2f", estimated)
+    fun recalculateCost() {
+        val q = quantityText.replace(",", ".").toDoubleOrNull() ?: 0.0
+        val pPrice = packagePriceText.replace("R", "", ignoreCase = true).replace(" ", "").replace(",", ".").toDoubleOrNull() ?: 0.0
+        val pQty = packageQtyText.replace(",", ".").toDoubleOrNull() ?: 1.0
+
+        if (pPrice > 0.0 && pQty > 0.0) {
+            val costPerBase = UnitUtils.calculateCostPerBaseUnit(pPrice, pQty, packageUnit)
+            unitPricePerBaseUnit = costPerBase
+            val cost = UnitUtils.calculateIngredientCost(q, selectedUnit, pPrice, pQty, packageUnit)
+            if (!isManualCostOverride || q > 0.0) {
+                costText = UnitUtils.formatDecimal(cost)
+            }
+            val baseUnits = UnitUtils.toBaseUnits(pQty, packageUnit)
+            val baseUnitName = if (packageUnit.lowercase().trim() in listOf("kg", "g")) "g" else if (packageUnit.lowercase().trim() in listOf("l", "ml", "liter", "litre")) "ml" else packageUnit
+            val recipeBase = UnitUtils.toBaseUnits(q, selectedUnit)
+            priceNote = if (q > 0.0) {
+                "Package: R${UnitUtils.formatDecimal(pPrice)} for $pQty $packageUnit (= ${String.format(java.util.Locale.US, "%.0f", baseUnits)} $baseUnitName) • Rate: R${String.format(java.util.Locale.US, "%.4f", costPerBase)}/$baseUnitName • Used: $q $selectedUnit (= ${String.format(java.util.Locale.US, "%.0f", recipeBase)} $baseUnitName) = R${UnitUtils.formatDecimal(cost)}"
+            } else {
+                "Package: R${UnitUtils.formatDecimal(pPrice)} for $pQty $packageUnit • Rate: R${String.format(java.util.Locale.US, "%.4f", costPerBase)}/$baseUnitName"
+            }
+        } else if (unitPricePerBaseUnit > 0.0 && q > 0.0) {
+            val baseUnits = UnitUtils.toBaseUnits(q, selectedUnit)
+            val cost = baseUnits * unitPricePerBaseUnit
+            if (!isManualCostOverride) {
+                costText = UnitUtils.formatDecimal(cost)
+            }
+        } else if (name.isNotBlank() && q > 0.0) {
+            val estRate = UnitUtils.getEstimatedRatePerGram(name)
+            val baseUnits = UnitUtils.toBaseUnits(q, selectedUnit)
+            val cost = baseUnits * estRate
+            if (!isManualCostOverride) {
+                costText = UnitUtils.formatDecimal(cost)
+            }
+        }
     }
 
     AlertDialog(
@@ -2826,7 +2861,7 @@ fun AddRecipeIngredientDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.AddCircle, contentDescription = null, tint = BatchPink)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Add Ingredient", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Add Ingredient & Calculate Cost", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         },
         text = {
@@ -2843,7 +2878,7 @@ fun AddRecipeIngredientDialog(
                 // 1. Pick from Existing Inventory Items if available
                 if (inventoryItems.isNotEmpty()) {
                     Text(
-                        "Pick from Your Stock / Ingredients Tab",
+                        "Pick from Stock Inventory",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = DarkText
@@ -2855,15 +2890,19 @@ fun AddRecipeIngredientDialog(
                                 selected = isSelected,
                                 onClick = {
                                     name = item.name
-                                    selectedUnit = if (item.unit.isNotBlank()) item.unit else "g"
-                                    unitPricePerBaseUnit = item.unitPrice
-                                    priceNote = "Using Inventory Price: R${String.format("%.4f", item.unitPrice)}/${item.unit}"
-                                    val q = quantityText.toDoubleOrNull() ?: 0.0
-                                    if (q > 0) updateCost(q, selectedUnit, item.unitPrice)
+                                    val pPrice = if (item.packagePrice > 0) item.packagePrice else (item.unitPrice * item.gramsPerUnit)
+                                    packagePriceText = if (pPrice > 0) UnitUtils.formatDecimal(pPrice) else ""
+                                    val pQty = if (item.packageQuantity > 0) item.packageQuantity else 1.0
+                                    packageQtyText = if (pQty == pQty.toInt().toDouble()) pQty.toInt().toString() else pQty.toString()
+                                    packageUnit = item.unit.ifBlank { "kg" }
+                                    selectedUnit = if (item.unit.equals("kg", true)) "g" else if (item.unit.equals("l", true)) "ml" else item.unit
+                                    unitPricePerBaseUnit = if (item.unitPrice > 0) item.unitPrice else UnitUtils.calculateCostPerBaseUnit(pPrice, pQty, packageUnit)
+                                    isManualCostOverride = false
+                                    recalculateCost()
                                 },
                                 label = {
                                     Text(
-                                        text = "${item.name} (R${String.format("%.2f", item.unitPrice)}/${item.unit})",
+                                        text = "${item.name} (${if (item.packagePrice > 0) "R" + UnitUtils.formatDecimal(item.packagePrice) + "/" + item.packageQuantity + item.unit else "R" + UnitUtils.formatDecimal(item.unitPrice) + "/" + item.unit})",
                                         fontSize = 11.sp
                                     )
                                 },
@@ -2881,28 +2920,20 @@ fun AddRecipeIngredientDialog(
                 }
 
                 // 2. Standard Filtered Presets (Flour, Sugar, Chocolate, Baking Soda, Bicarbonate of Soda, Salt, Eggs)
-                Text("Standard Products (Filtered)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                Text("Standard Products", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(ingredientPresets) { (presetName, defUnit) ->
+                    items(ingredientPresets) { (presetName, defPkgUnit, priceAndQty) ->
+                        val isSelected = name == presetName
                         FilterChip(
-                            selected = name == presetName,
+                            selected = isSelected,
                             onClick = {
                                 name = presetName
-                                selectedUnit = defUnit
-                                val rate = UnitUtils.getEstimatedRatePerGram(presetName)
-                                unitPricePerBaseUnit = rate
-                                priceNote = when (presetName) {
-                                    "Flour" -> "Checkers Cake Flour: R35.00 for 2.5kg (~R0.014/g)"
-                                    "Sugar" -> "Checkers White Sugar: R38.50 for 2kg (~R0.019/g)"
-                                    "Chocolate" -> "Checkers Baking Chocolate: R42.00 for 200g (~R0.21/g)"
-                                    "Baking Soda" -> "Checkers Baking Soda: R18.00 for 200g (~R0.09/g)"
-                                    "Bicarbonate of Soda" -> "Checkers Bicarbonate of Soda: R16.50 for 200g (~R0.0825/g)"
-                                    "Salt" -> "Checkers Table Salt: R12.00 for 500g (~R0.024/g)"
-                                    "Eggs" -> "Checkers Farm Fresh Eggs: R68.00 for 30-pack (~R2.27/egg)"
-                                    else -> null
-                                }
-                                val q = quantityText.toDoubleOrNull() ?: 0.0
-                                if (q > 0) updateCost(q, defUnit, rate)
+                                packagePriceText = UnitUtils.formatDecimal(priceAndQty.first)
+                                packageQtyText = if (priceAndQty.second == priceAndQty.second.toInt().toDouble()) priceAndQty.second.toInt().toString() else priceAndQty.second.toString()
+                                packageUnit = defPkgUnit
+                                selectedUnit = if (defPkgUnit == "kg") "g" else if (defPkgUnit == "l") "ml" else defPkgUnit
+                                isManualCostOverride = false
+                                recalculateCost()
                             },
                             label = { Text(presetName, fontSize = 11.sp) }
                         )
@@ -2914,8 +2945,7 @@ fun AddRecipeIngredientDialog(
                     onValueChange = {
                         name = it
                         errorMessage = null
-                        val q = quantityText.toDoubleOrNull() ?: 0.0
-                        if (q > 0) updateCost(q, selectedUnit)
+                        recalculateCost()
                     },
                     label = { Text("Ingredient Name") },
                     placeholder = { Text("e.g. Flour, Sugar, Chocolate, Eggs") },
@@ -2924,7 +2954,75 @@ fun AddRecipeIngredientDialog(
                     singleLine = true
                 )
 
-                // 3. AI Estimate Price Button (Checkers Benchmark)
+                // Package Details Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = BackgroundLight,
+                    border = BorderStroke(1.dp, BorderLight),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Ingredient Package Size & Price (For Auto-Costing)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkText)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = packagePriceText,
+                                onValueChange = {
+                                    packagePriceText = it
+                                    errorMessage = null
+                                    isManualCostOverride = false
+                                    recalculateCost()
+                                },
+                                label = { Text("Package Price") },
+                                prefix = { Text("R ", fontWeight = FontWeight.Bold, color = BatchPink) },
+                                placeholder = { Text("50.00") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1.2f).testTag("input_ingredient_package_price"),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = packageQtyText,
+                                onValueChange = {
+                                    packageQtyText = it
+                                    errorMessage = null
+                                    isManualCostOverride = false
+                                    recalculateCost()
+                                },
+                                label = { Text("Size") },
+                                placeholder = { Text("1") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(0.9f).testTag("input_ingredient_package_qty"),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true
+                            )
+                        }
+
+                        // Package Unit
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Package Unit: ", fontSize = 11.sp, color = MediumText)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                items(packageUnits) { pu ->
+                                    FilterChip(
+                                        selected = packageUnit.equals(pu, ignoreCase = true),
+                                        onClick = {
+                                            packageUnit = pu
+                                            isManualCostOverride = false
+                                            recalculateCost()
+                                        },
+                                        label = { Text(pu, fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // AI Price Lookup Button
                 OutlinedButton(
                     onClick = {
                         if (name.isBlank()) {
@@ -2935,12 +3033,11 @@ fun AddRecipeIngredientDialog(
                             isEstimatingPrice = true
                             try {
                                 val estimate = AiProductPricingService.estimateProductPrice(name, "Checkers")
-                                unitPricePerBaseUnit = estimate.unitPricePerBaseGram
-                                priceNote = "Checkers Estimate: ${estimate.brand} - R${String.format("%.2f", estimate.packagePriceZar)} for ${estimate.packageSize}${estimate.packageUnit} (${estimate.note})"
-                                val q = quantityText.toDoubleOrNull() ?: 0.0
-                                if (q > 0) {
-                                    updateCost(q, selectedUnit, estimate.unitPricePerBaseGram)
-                                }
+                                packagePriceText = UnitUtils.formatDecimal(estimate.packagePriceZar)
+                                packageQtyText = estimate.packageSize.toString()
+                                packageUnit = estimate.packageUnit
+                                isManualCostOverride = false
+                                recalculateCost()
                             } catch (e: Exception) {
                                 errorMessage = "Price lookup error: ${e.message}"
                             } finally {
@@ -2949,7 +3046,7 @@ fun AddRecipeIngredientDialog(
                         }
                     },
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BatchPink),
+                    border = BorderStroke(1.dp, BatchPink),
                     modifier = Modifier.fillMaxWidth().testTag("btn_estimate_ingredient_price_ai")
                 ) {
                     if (isEstimatingPrice) {
@@ -2979,16 +3076,16 @@ fun AddRecipeIngredientDialog(
                     }
                 }
 
-                // Unit selection chips (g, kg, ml, tsp, tble, cup, unit)
-                Text("Unit", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
+                // Recipe Unit selection chips (g, kg, ml, l, tsp, tbsp, cup, unit)
+                Text("Recipe Unit Used", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(supportedUnits) { u ->
                         FilterChip(
                             selected = selectedUnit == u,
                             onClick = {
                                 selectedUnit = u
-                                val q = quantityText.toDoubleOrNull() ?: 0.0
-                                if (name.isNotBlank() && q > 0) updateCost(q, u)
+                                isManualCostOverride = false
+                                recalculateCost()
                             },
                             label = { Text(u, fontSize = 11.sp, fontWeight = if (selectedUnit == u) FontWeight.Bold else FontWeight.Normal) }
                         )
@@ -3004,10 +3101,11 @@ fun AddRecipeIngredientDialog(
                         onValueChange = {
                             quantityText = it
                             errorMessage = null
-                            val q = it.toDoubleOrNull() ?: 0.0
-                            if (name.isNotBlank() && q > 0) updateCost(q, selectedUnit)
+                            isManualCostOverride = false
+                            recalculateCost()
                         },
-                        label = { Text("Quantity") },
+                        label = { Text("Recipe Quantity") },
+                        placeholder = { Text("240") },
                         suffix = { Text(selectedUnit, color = MediumText, fontSize = 11.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f).testTag("input_recipe_ingredient_qty"),
@@ -3019,9 +3117,10 @@ fun AddRecipeIngredientDialog(
                         value = costText,
                         onValueChange = {
                             costText = it
+                            isManualCostOverride = true
                             errorMessage = null
                         },
-                        label = { Text("Cost") },
+                        label = { Text("Calculated Cost") },
                         prefix = { Text("R ", color = BatchPink, fontWeight = FontWeight.Bold) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f).testTag("input_recipe_ingredient_cost"),
@@ -3040,11 +3139,11 @@ fun AddRecipeIngredientDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Estimated Unit Conversion:", fontSize = 11.sp, color = DarkText)
-                        val q = quantityText.toDoubleOrNull() ?: 0.0
-                        val baseGrams = UnitUtils.toBaseGrams(q, selectedUnit)
+                        Text("Auto-Cost Calculation:", fontSize = 11.sp, color = DarkText)
+                        val q = quantityText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        val c = costText.replace(",", ".").toDoubleOrNull() ?: 0.0
                         Text(
-                            text = if (baseGrams > 0) "~${String.format("%.1f", baseGrams)} base g/ml" else "-",
+                            text = if (q > 0.0 && c > 0.0) "$q $selectedUnit = R${UnitUtils.formatDecimal(c)}" else "Enter quantity & package info",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = BatchPink
@@ -3056,12 +3155,12 @@ fun AddRecipeIngredientDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val q = quantityText.toDoubleOrNull()
-                    val c = costText.toDoubleOrNull()
+                    val q = quantityText.replace(",", ".").toDoubleOrNull()
+                    val c = costText.replace(",", ".").toDoubleOrNull()
                     when {
                         name.isBlank() -> errorMessage = "Please enter an ingredient name"
                         q == null || q <= 0 -> errorMessage = "Please enter a valid quantity"
-                        c == null || c < 0 -> errorMessage = "Please enter ingredient cost"
+                        c == null || c < 0 -> errorMessage = "Please enter or calculate ingredient cost"
                         else -> onAdd(name.trim(), q, selectedUnit, c)
                     }
                 },
@@ -3368,8 +3467,8 @@ fun EditIngredientCostDialog(
     onSave: (cost: Double, quantity: Double) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var costText by remember { mutableStateOf(String.format("%.2f", ingredient.cost)) }
-    var quantityText by remember { mutableStateOf(if (ingredient.quantity == ingredient.quantity.toInt().toDouble()) ingredient.quantity.toInt().toString() else ingredient.quantity.toString()) }
+    var costText by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", ingredient.cost)) }
+    var quantityText by remember { mutableStateOf(if (ingredient.quantity == ingredient.quantity.toInt().toDouble()) ingredient.quantity.toInt().toString() else String.format(java.util.Locale.US, "%.2f", ingredient.quantity).trimEnd('0').trimEnd('.')) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -3427,7 +3526,15 @@ fun EditIngredientCostDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                     OutlinedTextField(
                         value = quantityText,
-                        onValueChange = { quantityText = it; errorMessage = null },
+                        onValueChange = {
+                            quantityText = it
+                            errorMessage = null
+                            val newQ = it.replace(",", ".").toDoubleOrNull()
+                            if (newQ != null && ingredient.quantity > 0) {
+                                val rate = ingredient.cost / ingredient.quantity
+                                costText = String.format(java.util.Locale.US, "%.2f", rate * newQ)
+                            }
+                        },
                         suffix = { Text(ingredient.unit, color = MediumText) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier
@@ -3442,8 +3549,8 @@ fun EditIngredientCostDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val c = costText.toDoubleOrNull()
-                    val q = quantityText.toDoubleOrNull()
+                    val c = costText.replace(",", ".").toDoubleOrNull()
+                    val q = quantityText.replace(",", ".").toDoubleOrNull()
                     when {
                         c == null || c < 0 -> errorMessage = "Please enter valid cost"
                         q == null || q <= 0 -> errorMessage = "Please enter valid quantity"

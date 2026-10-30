@@ -753,15 +753,28 @@ object FirebaseService {
     fun Any?.safeDouble(default: Double = 0.0): Double {
         return when (this) {
             null -> default
-            is Number -> {
-                val d = this.toDouble()
-                if (d.isNaN() || d.isInfinite()) default else d
-            }
+            is Double -> if (this.isNaN() || this.isInfinite()) default else this
+            is Float -> if (this.isNaN() || this.isInfinite()) default else this.toDouble()
+            is Number -> this.toDouble()
             is String -> {
-                val trimmed = this.trim().replace(",", ".")
-                trimmed.toDoubleOrNull()?.let {
+                val clean = this.trim().replace("R", "", ignoreCase = true).replace(" ", "").replace(",", ".")
+                clean.toDoubleOrNull()?.let {
                     if (it.isNaN() || it.isInfinite()) default else it
                 } ?: default
+            }
+            is Boolean -> if (this) 1.0 else 0.0
+            else -> default
+        }
+    }
+
+    fun Any?.safeLong(default: Long = 0L): Long {
+        return when (this) {
+            null -> default
+            is Long -> this
+            is Number -> this.toLong()
+            is String -> {
+                val clean = this.trim().replace(",", ".")
+                clean.toLongOrNull() ?: (clean.toDoubleOrNull()?.toLong() ?: default)
             }
             else -> default
         }
@@ -934,6 +947,12 @@ object FirebaseService {
     // 1. Inventory Item Converter - Never returns null, normalises all fields with safe defaults
     fun documentToInventoryItem(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): InventoryItemEntity {
         val data = doc.data ?: emptyMap<String, Any?>()
+        // Repair existing Firestore ingredient records that have missing or null currentStock by setting currentStock to 0.0 without overwriting valid values
+        if (doc.get("currentStock") == null) {
+            try {
+                doc.reference.set(mapOf("currentStock" to 0.0), com.google.firebase.firestore.SetOptions.merge())
+            } catch (_: Throwable) {}
+        }
         return mapToInventoryItem(doc.id, data, targetBakeryId)
     }
 
@@ -941,14 +960,14 @@ object FirebaseService {
     fun documentToRecipe(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): RecipeEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else (doc.id.toLongOrNull() ?: 0L) }
         val category = doc.getString("category") ?: "Cakes"
         val description = doc.getString("description") ?: ""
-        val servings = (doc.getLong("servings") ?: 1L).toInt()
-        val batchSize = (doc.getLong("batchSize") ?: 1L).toInt()
+        val servings = (doc.get("servings").safeLong(1L)).toInt()
+        val batchSize = (doc.get("batchSize").safeLong(1L)).toInt()
         val difficulty = doc.getString("difficulty") ?: "Medium"
         val rating = extractNumber(doc, "rating", 5.0)
-        val reviewCount = (doc.getLong("reviewCount") ?: 0L).toInt()
+        val reviewCount = (doc.get("reviewCount").safeLong(0L)).toInt()
         val imageResName = doc.getString("imageResName") ?: "ic_cake"
         val labourCost = extractNumber(doc, "labourCost", 0.0)
         val overheadsCost = extractNumber(doc, "overheadsCost", 0.0)
@@ -961,7 +980,7 @@ object FirebaseService {
         val laborRatePerHour = extractNumber(doc, "laborRatePerHour", 120.0)
         val instructions = doc.getString("instructions") ?: ""
         val photoUri = doc.getString("photoUri") ?: ""
-        val createdAt = (doc.get("createdAt") as? Number)?.toLong() ?: System.currentTimeMillis()
+        val createdAt = doc.get("createdAt").safeLong(System.currentTimeMillis())
         val updatedAt = extractUpdatedAt(doc)
 
         return RecipeEntity(
@@ -1002,12 +1021,12 @@ object FirebaseService {
     ): RecipeIngredientEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
-        val recipeId = doc.getLong("recipeId") ?: 0L
+        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else (doc.id.toLongOrNull() ?: 0L) }
+        val recipeId = doc.get("recipeId").safeLong(0L)
         val quantity = extractNumber(doc, "quantity", 1.0)
-        val unit = doc.getString("unit") ?: "g"
+        val unit = doc.getString("unit") ?: (doc.get("unit")?.toString()) ?: "g"
         val cost = extractNumber(doc, "cost", 0.0)
-        val createdAt = (doc.get("createdAt") as? Number)?.toLong() ?: System.currentTimeMillis()
+        val createdAt = doc.get("createdAt").safeLong(System.currentTimeMillis())
         val updatedAt = extractUpdatedAt(doc)
 
         return RecipeIngredientEntity(
