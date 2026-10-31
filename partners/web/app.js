@@ -80,7 +80,7 @@ async function loadAdmin() {
 }
 function renderAuth() {
   const signup = state.authMode === "register";
-  return '<div class="auth-frame"><section class="auth-card">' + brand() +
+  return '<div class="auth-frame"><div class="portal-hero"><img src="./batchboss-partners-hero.webp" width="1983" height="232" alt="BatchBoss Partners Portal — Let’s create greater possibilities. Collaborate, support bakers and grow together." fetchpriority="high" decoding="async"></div><section class="auth-card">' + brand() +
     '<div class="eyebrow">Your opportunity starts here</div>' +
     '<h1>' + (signup ? "Apply to become a partner" : "Welcome back") + '</h1>' +
     '<p class="subtext">' + (signup ? "Create an account, verify your email and submit an application." :
@@ -102,13 +102,13 @@ function renderAuth() {
 function renderApplication() {
   const o = state.overview || {};
   if (!state.user?.emailVerified) {
-    return '<div class="auth-frame"><section class="auth-card">' + brand() +
+    return '<div class="auth-frame"><div class="portal-hero"><img src="./batchboss-partners-hero.webp" width="1983" height="232" alt="BatchBoss Partners Portal — Let’s create greater possibilities. Collaborate, support bakers and grow together." fetchpriority="high" decoding="async"></div><section class="auth-card">' + brand() +
       '<h1>Verify your email</h1><p class="subtext">Check your inbox for the Firebase verification link. You must verify your email before applying.</p>' +
       errorPanel() + '<div class="actions">' + button("I have verified my email", "verify-email") +
       button("Resend verification email", "resend-verification", "light") + button("Sign out", "logout", "light") + '</div></section></div>';
   }
   const applied = o.status && o.status !== "not-applied";
-  return '<div class="auth-frame"><section class="auth-card">' + brand() +
+  return '<div class="auth-frame"><div class="portal-hero"><img src="./batchboss-partners-hero.webp" width="1983" height="232" alt="BatchBoss Partners Portal — Let’s create greater possibilities. Collaborate, support bakers and grow together." fetchpriority="high" decoding="async"></div><section class="auth-card">' + brand() +
     '<div class="eyebrow">Partner onboarding</div><h1>' + (applied ? "Application: " + esc(o.status) : "Tell us about yourself") + '</h1>' +
     '<p class="subtext">' + (applied ?
       "Your application is being reviewed by BatchBoss. Approval is required before you can record leads." :
@@ -200,6 +200,7 @@ function renderOverview() {
   return '<div class="heading"><div><div class="eyebrow">Your growth hub</div><h1>Welcome back, ' +
     esc(p.fullName.split(" ")[0]) + ' 👋</h1><p class="subtext">Your businesses, sales and commissions in one place.</p></div>' +
     button("+ Add a lead", "go-leads", "pink") + '</div>' + banner +
+    '<div class="portal-hero"><img src="./batchboss-partners-hero.webp" width="1983" height="232" alt="BatchBoss Partners Portal — Let’s create greater possibilities. Collaborate, support bakers and grow together." fetchpriority="high" decoding="async"></div>' +
     '<div class="hero"><div><span class="pill pink">BATCHBOSS SALES PARTNERS</span><h2>Every introduction counts.</h2>' +
     '<p>Bring South African bakers and suppliers together with the tools they need. Your dashboard keeps the details organised.</p></div>' +
     '<div class="hero-graphic"><span class="coin">✦</span></div></div>' + stats() +
