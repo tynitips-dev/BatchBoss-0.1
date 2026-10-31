@@ -141,6 +141,7 @@ function AuthScreen() {
   }
 
   return <div className="auth-page">
+    <div className="portal-hero"><img src="/batchboss-bakers-hero.webp" width="1983" height="299" alt="BatchBoss Bakers Portal — Bake smarter, together. Recipes, costs, stock, quotes and grow." fetchPriority="high" decoding="async" /></div>
     <section className="auth-story">
       <div className="brand"><span className="brand-mark">B</span><span>Batch<strong>Boss</strong></span></div>
       <div>
@@ -410,6 +411,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
     <main className="dashboard-main">
       <header><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu /></button><div><span>{greeting},</span><h1>{displayName(profile)} 👋</h1></div><span className={isPro ? 'plan-badge pro' : 'plan-badge'}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</span></header>
       <AnnouncementBanner />
+      {active === 'home' && <div className="portal-hero"><img src="/batchboss-bakers-hero.webp" width="1983" height="299" alt="BatchBoss Bakers Portal — Bake smarter, together. Recipes, costs, stock, quotes and grow." fetchPriority="high" decoding="async" /></div>}
       {['home','suppliers','supplierDirectory'].includes(active)&&<SupplierAdBanner/>}
       <div className="sync-bar"><button className="outline-button" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button><span role="status">{syncMessage || 'Your bakery data syncs automatically while connected.'}</span></div>
       <SetupGuide profile={profile} active={active} suspended={showEditor || showImporter} onOpen={key => { setActive(key); setMenuOpen(false) }} />
