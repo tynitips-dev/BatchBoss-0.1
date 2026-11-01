@@ -4,6 +4,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, configured, db, functions } from './firebase'
+import ProCodesAdmin from './ProCodesAdmin'
 import SuppliersAdmin from './SuppliersAdmin'
 
 type Account = {
@@ -235,6 +236,7 @@ function Dashboard({ user }: { user: User }) {
       {section==='analytics'&&<section className="panel"><h2>Visitor tracking</h2><p>To measure app.batchboss.co.za visits, connect a Google Analytics 4 property and configure consent on the public web app.</p><p><strong>Tracking status:</strong> Not connected. No visitor totals are available yet.</p><p>After configuration, view verified figures in <a href="https://analytics.google.com/" target="_blank" rel="noreferrer">Google Analytics</a>. Displaying them inside this admin site requires a separate authenticated reporting connection.</p></section>}
       {section==='subscriptions'&&<section className="panel"><h2>Subscription summary</h2><p>Account status totals, not verified payment revenue.</p><p>Paid Pro: {accounts.filter(a=>a.subscriptionPlan==='pro'&&a.subscriptionStatus==='active').length}</p><p>Pro gifts: {accounts.filter(a=>a.subscriptionPlan==='promo'&&a.subscriptionStatus==='active').length}</p></section>}
       {(section==='suppliers'||section==='campaigns')&&<SuppliersAdmin key={section} initialTab={section==='campaigns'?'campaigns':'accounts'} />}
+      {section==='promotions'&&<ProCodesAdmin/>}
       {section==='promotions'&&<section className="panel"><h2>Pro gifts</h2><p>Choose a customer below, select the gift duration and click Gift Pro. Seven-day gifts use the existing email flow when deployed.</p></section>}
       {(section==='accounts'||section==='promotions')&&<section className="panel">
         <div className="panel-title"><div><h2>Bakery accounts</h2><p>Authentication and workspace records from Firebase.</p></div><label className="search"><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search users or bakeries…" /></label></div>

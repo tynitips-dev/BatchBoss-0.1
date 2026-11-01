@@ -33,7 +33,7 @@ export default function SupplierDirectory({ initialCategory = '', savedIds = [],
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const controller = useRef<AbortController | null>(null)
-  const endpoint = endpointUrl(import.meta.env.VITE_SUPPLIER_DIRECTORY_URL)
+  const endpoint = endpointUrl(import.meta.env.VITE_SUPPLIER_DIRECTORY_URL || 'https://us-central1-batchboss-suppliers.cloudfunctions.net/listPublicSuppliers')
   async function load(next: string | null = null) {
     controller.current?.abort()
     const request = new AbortController(); controller.current = request

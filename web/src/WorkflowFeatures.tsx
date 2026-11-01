@@ -1,6 +1,7 @@
 import {useEffect,useState,type ReactNode} from 'react'
 import {collection,onSnapshot} from 'firebase/firestore'
 import {db} from './firebase'
+import {recipePhoto} from './recipe-photo'
 import {money} from './workspace-utils'
 import {belongsToCustomer,recordDate,type RecordItem} from './workflow-utils'
 import './workflow-features.css'
@@ -23,7 +24,7 @@ export function RecipePhoto({initial,onBusy}:{initial:unknown;onBusy:(busy:boole
 export function RecipeReader({recipe,bakeryId,close,edit}:{recipe:RecordItem;bakeryId:string;close:()=>void;edit:()=>void}){
  const [rows,setRows]=useState<RecordItem[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('')
  useEffect(()=>onSnapshot(collection(db,'bakeries',bakeryId,'recipes',recipe.id,'ingredients'),s=>{setRows(s.docs.map(d=>({...d.data(),id:d.id})));setLoading(false)},()=>{setError('Could not load the ingredients. Please try again.');setLoading(false)}),[bakeryId,recipe.id])
- return <WorkflowDialog title={String(recipe.name||'Recipe')} close={close}><article className="recipe-reader">{!!recipe.photoDataUrl&&<img className="recipe-photo" src={String(recipe.photoDataUrl)} alt={String(recipe.name||'Recipe')}/>}<p>{String(recipe.description||'')}</p><p><strong>Batch yield:</strong> {Number(recipe.batchSize||1)} · <strong>Servings per item:</strong> {Number(recipe.servings||1)}</p><h3>Ingredients</h3>{loading?<p>Loading ingredients…</p>:error?<p role="alert">{error}</p>:<ul>{rows.map(row=><li key={row.id}><strong>{Number(row.quantity||0)} {String(row.unit||'')}</strong> {String(row.name||'')}</li>)}</ul>}<h3>Method</h3><p className="preserve-lines">{String(recipe.instructions||'No method saved yet.')}</p><button className="outline-button" onClick={edit}>Edit recipe</button></article></WorkflowDialog>
+ return <WorkflowDialog title={String(recipe.name||'Recipe')} close={close}><article className="recipe-reader">{!!recipePhoto(recipe)&&<img className="recipe-photo" src={recipePhoto(recipe)} alt={String(recipe.name||'Recipe')}/>}<p>{String(recipe.description||'')}</p><p><strong>Batch yield:</strong> {Number(recipe.batchSize||1)} · <strong>Servings per item:</strong> {Number(recipe.servings||1)}</p><h3>Ingredients</h3>{loading?<p>Loading ingredients…</p>:error?<p role="alert">{error}</p>:<ul>{rows.map(row=><li key={row.id}><strong>{Number(row.quantity||0)} {String(row.unit||'')}</strong> {String(row.name||'')}</li>)}</ul>}<h3>Method</h3><p className="preserve-lines">{String(recipe.instructions||'No method saved yet.')}</p><button className="outline-button" onClick={edit}>Edit recipe</button></article></WorkflowDialog>
 }
 export function CustomerHistory({customer,customers,records,close}:{customer:RecordItem;customers:RecordItem[];records:Record<string,RecordItem[]>;close:()=>void}){
  const [tab,setTab]=useState('orders')

@@ -505,9 +505,16 @@ object FirebaseService {
                     "laborHours" to recipe.laborHours,
                     "laborRatePerHour" to recipe.laborRatePerHour,
                     "instructions" to recipe.instructions,
-                    "photoUri" to recipe.photoUri,
+                    "photoDataUrl" to RecipePhoto.portable(recipe.photoUri),
+                    "photoUri" to "",
                     "updatedAt" to System.currentTimeMillis()
                 )
+                // An old phone without artwork must not erase a website photo during backup.
+                // Explicit removal uses saveRecipePhotoToCloud instead.
+                if (recipe.photoUri.isBlank()) {
+                    recipeData.remove("photoDataUrl")
+                    recipeData.remove("photoUri")
+                }
                 batch.set(recipeDoc, recipeData, SetOptions.merge())
 
                 // Attach related ingredients inside the recipe document sub-collection
@@ -736,7 +743,7 @@ object FirebaseService {
                 val laborHours = doc.getDouble("laborHours") ?: 1.5
                 val laborRatePerHour = doc.getDouble("laborRatePerHour") ?: 120.0
                 val instructions = doc.getString("instructions") ?: ""
-                val photoUri = doc.getString("photoUri") ?: ""
+                val photoUri = doc.getString("photoDataUrl") ?: doc.getString("photoUri") ?: ""
 
                 restoredRecipes.add(
                     RecipeEntity(
@@ -1048,7 +1055,7 @@ object FirebaseService {
         val laborHours = extractNumber(doc, "laborHours", 1.5)
         val laborRatePerHour = extractNumber(doc, "laborRatePerHour", 120.0)
         val instructions = doc.getString("instructions") ?: ""
-        val photoUri = doc.getString("photoUri") ?: ""
+        val photoUri = doc.getString("photoDataUrl") ?: doc.getString("photoUri") ?: ""
         val createdAt = doc.get("createdAt").safeLong(System.currentTimeMillis())
         val updatedAt = extractUpdatedAt(doc)
 
@@ -1459,16 +1466,33 @@ object FirebaseService {
                 "laborHours" to item.laborHours,
                 "laborRatePerHour" to item.laborRatePerHour,
                 "instructions" to item.instructions,
-                "photoUri" to item.photoUri,
+                "photoDataUrl" to RecipePhoto.portable(item.photoUri),
+                "photoUri" to "",
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
+            if (item.photoUri.isBlank()) {
+                data.remove("photoDataUrl")
+                data.remove("photoUri")
+            }
             docRef.set(data, SetOptions.merge()).awaitTask()
             Result.success(docId)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save recipe to cloud", e)
             Result.failure(e)
         }
+    }
+
+    // Update only artwork so a photo change cannot overwrite newer website recipe details.
+    suspend fun saveRecipePhotoToCloud(bakeryId: String, firestoreId: String, photo: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        return try {
+            require(bakeryId.isNotBlank() && firestoreId.isNotBlank())
+            db.collection("bakeries").document(bakeryId).collection("recipes").document(firestoreId)
+                .update(mapOf("photoDataUrl" to RecipePhoto.portable(photo), "photoUri" to "",
+                    "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp())).awaitTask()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     suspend fun deleteRecipeFromCloud(bakeryId: String, firestoreId: String): Result<Unit> {

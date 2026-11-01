@@ -23,6 +23,7 @@ import { calculateIngredientUsageCost } from './costing'
 import { priceRecipe } from './recipe-pricing'
 import { applianceElectricityCost, allocatedOverhead } from './recipe-expenses'
 import { extractRecipePdf } from './recipePdfImport'
+import { recipePhoto } from './recipe-photo'
 import { ClientFields, RecipePhoto, RecipeReader, CustomerHistory } from './WorkflowFeatures'
 import { pricedQuantity } from './workflow-utils'
 import * as XLSX from 'xlsx'
@@ -57,11 +58,15 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authFlow, setAuthFlow] = useState({ started: false, busy: false })
 
   useEffect(() => {
     let stopProfile = () => {}
+    let activeUid: string | null = null
     const stopAuth = onAuthStateChanged(auth, current => {
       stopProfile()
+      activeUid = current?.uid || null
+      setProfile(null)
       setUser(current)
       if (!current) {
         setProfile(null)
@@ -70,19 +75,21 @@ function App() {
       }
       setLoading(true)
       stopProfile = onSnapshot(doc(db, 'users', current.uid), snapshot => {
+        if (activeUid !== current.uid) return
         setProfile(snapshot.exists() ? snapshot.data() as UserProfile : null)
         setLoading(false)
       }, () => {
+        if (activeUid !== current.uid) return
         setProfile(null)
         setLoading(false)
       })
     })
-    return () => { stopProfile(); stopAuth() }
+    return () => { activeUid = null; stopProfile(); stopAuth() }
   }, [])
 
   if (!firebaseConfigured) return <SetupNotice />
-  if (loading) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
-  if (!user || !profile) return <AuthScreen />
+  if (loading && !authFlow.started) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
+  if (!user || !profile || authFlow.busy) return <AuthScreen onBusyChange={busy => setAuthFlow({ started: true, busy })} />
   return <Dashboard key={user.uid} profile={profile} />
 }
 
@@ -94,14 +101,16 @@ function SetupNotice() {
   </main>
 }
 
-function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>(new URLSearchParams(location.search).has('signup') ? 'signup' : 'login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
+    onBusyChange(true)
     setError('')
     const data = new FormData(event.currentTarget)
     const email = String(data.get('email')).trim()
@@ -137,7 +146,7 @@ function AuthScreen() {
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
       setError(message.includes('invalid-credential') ? 'Email or password not recognised. Please try again.' : message.replace('Firebase: ', ''))
-    } finally { setBusy(false) }
+    } finally { setBusy(false); onBusyChange(false) }
   }
 
   return <div className="auth-page">
@@ -178,7 +187,7 @@ type WorkspaceItem = { id: string; name?: string; title?: string; description?: 
 
 function Dashboard({ profile }: { profile: UserProfile }) {
   const [supplierCategory,setSupplierCategory]=useState('')
-  const [active, setActive] = useState<ModuleKey>(new URLSearchParams(location.search).has('payment') ? 'subscription' : 'home')
+  const [active, setActive] = useState<ModuleKey>((new URLSearchParams(location.search).has('payment') || new URLSearchParams(location.search).has('redeem')) ? 'subscription' : 'home')
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
@@ -478,7 +487,7 @@ function HomeView({ counts, onOpen, invoices }: { counts: Record<ModuleKey, numb
 
 function WorkspaceList({ items, label, onAdd, onEdit, onDelete, onView }: { onView?: (item:WorkspaceItem)=>void; items: WorkspaceItem[]; label: string; onAdd: () => void; onEdit: (item: WorkspaceItem) => void; onDelete: (item: WorkspaceItem) => void }) {
   if (!items.length) return <EmptyState title={`No ${label.toLowerCase()} yet`} text={`Add your first ${label.replace(/s$/, '').toLowerCase()} when you are ready. No sample data is added.`} action="Add new" onAction={onAdd} />
-  return <div className="workspace-grid">{items.map(item => <article className="workspace-card" key={item.id}><div><span className="item-status">{String(item.status || 'Active')}</span><h3>{onView?<button className="recipe-title-button" onClick={()=>onView(item)}>{String(item.name||'Untitled')}</button>:String(item.name || item.title || 'Untitled')}</h3>{!!item.photoDataUrl&&<img className="recipe-photo" src={String(item.photoDataUrl)} alt={String(item.name||'Recipe')}/>}<p>{String(item.description || item.notes || item.email || item.phone || 'Saved in your BatchBoss workspace')}</p>{typeof item.price === 'number' && item.price > 0 && <strong>{money.format(item.price)}</strong>}</div><div className="card-actions">{onView&&<button onClick={()=>onView(item)}>View recipe</button>}<button onClick={() => onEdit(item)}>Edit</button><button className="danger-link" onClick={() => onDelete(item)}>Delete</button></div></article>)}</div>
+  return <div className="workspace-grid">{items.map(item => <article className="workspace-card" key={item.id}><div><span className="item-status">{String(item.status || 'Active')}</span><h3>{onView?<button className="recipe-title-button" onClick={()=>onView(item)}>{String(item.name||'Untitled')}</button>:String(item.name || item.title || 'Untitled')}</h3>{!!recipePhoto(item)&&<img className="recipe-photo" src={recipePhoto(item)} alt={String(item.name||'Recipe')}/>}<p>{String(item.description || item.notes || item.email || item.phone || 'Saved in your BatchBoss workspace')}</p>{typeof item.price === 'number' && item.price > 0 && <strong>{money.format(item.price)}</strong>}</div><div className="card-actions">{onView&&<button onClick={()=>onView(item)}>View recipe</button>}<button onClick={() => onEdit(item)}>Edit</button><button className="danger-link" onClick={() => onDelete(item)}>Delete</button></div></article>)}</div>
 }
 
 function ItemEditor({ module, item, bakeryId, onClose, onSave }: { module: ModuleDefinition; item: WorkspaceItem | null; bakeryId: string; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
@@ -639,7 +648,7 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     }))
 
   return <Modal title={`${item ? 'Edit' : 'Create new'} recipe`} onClose={onClose}><form className="modal-form recipe-form" onSubmit={onSave}>
-    <RecipePhoto initial={item?.photoDataUrl} onBusy={setPhotoBusy}/><section className="content-card">
+    <RecipePhoto initial={recipePhoto(item)} onBusy={setPhotoBusy}/><section className="content-card">
       <h3>Import recipe from PDF</h3>
       <p>Upload a text-based PDF (up to 10 MB, 30 pages). Review all extracted values before saving. Scanned PDFs are not supported yet.</p>
       <label>Choose recipe PDF<input type="file" accept=".pdf,application/pdf" onChange={importPdf} disabled={importBusy} /></label>
@@ -652,28 +661,28 @@ function RecipeEditor({ item, bakeryId, onClose, onSave }: { item: WorkspaceItem
     <label>Description<textarea name="description" rows={3} defaultValue={String(item?.description || '')} /></label>
     <label>Method / instructions<textarea name="instructions" rows={5} key={importInstructions ?? "original"} defaultValue={importInstructions ?? String(item?.instructions || '')} placeholder="Preparation steps and baking instructions" /></label>
     <div className="split-fields"><label>Servings<input name="servings" type="number" min="1" value={servingsPerUnit} onChange={event => setServingsPerUnit(Number(event.target.value))} /></label><label>Batch size<input name="batchSize" type="number" min="1" value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} /></label></div>
-    <section className="costing-panel"><div className="mini-heading"><div><h3>Operations, Overheads & Labour</h3><p>Configure complete batch-costing details.</p></div><span>Fully editable</span></div><div className="cost-grid"><label>Labour hours<input name="laborHours" type="number" min="0" step="0.25" value={laborHours} onChange={event => setLaborHours(Number(event.target.value))} /></label><label>Rate/hour<input name="laborRatePerHour" type="number" min="0" step="0.01" value={laborRate} onChange={event => setLaborRate(Number(event.target.value))} /></label><label>Overheads cost<input name="overheadsCost" type="number" min="0" step="0.01" value={overheads} onChange={event => setOverheads(Number(event.target.value))} /></label><label>Utilities cost<input name="utilitiesCost" type="number" min="0" step="0.01" value={utilities} onChange={event => setUtilities(Number(event.target.value))} /></label><label>Packaging cost<input name="packagingCost" type="number" min="0" step="0.01" value={packaging} onChange={event => setPackaging(Number(event.target.value))} /></label><label>Profit margin %<input name="profitMarginPercent" type="number" min="0" max="99.9" step="0.1" value={profitMargin} onChange={event=>setProfitMargin(Number(event.target.value))} /></label></div><p className="calculated-line">Calculated labour cost <strong>{money.format(labourCost)}</strong></p></section>
-    <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Use g, kg, ml, L, tsp or tablespoon. Equivalent saved ingredients, such as cake flour and flour, can match automatically.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="0.01" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option value="tsp">tsp (teaspoon)</option><option value="tbsp">tablespoon</option><option>cup</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="0.01" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
+    <section className="costing-panel"><div className="mini-heading"><div><h3>Operations, Overheads & Labour</h3><p>Configure complete batch-costing details.</p></div><span>Fully editable</span></div><div className="cost-grid"><label>Labour hours<input name="laborHours" type="number" min="0" step="any" value={laborHours} onChange={event => setLaborHours(Number(event.target.value))} /></label><label>Rate/hour<input name="laborRatePerHour" type="number" min="0" step="any" value={laborRate} onChange={event => setLaborRate(Number(event.target.value))} /></label><label>Overheads cost<input name="overheadsCost" type="number" min="0" step="any" value={overheads} onChange={event => setOverheads(Number(event.target.value))} /></label><label>Utilities cost<input name="utilitiesCost" type="number" min="0" step="any" value={utilities} onChange={event => setUtilities(Number(event.target.value))} /></label><label>Packaging cost<input name="packagingCost" type="number" min="0" step="any" value={packaging} onChange={event => setPackaging(Number(event.target.value))} /></label><label>Profit margin %<input name="profitMarginPercent" type="number" min="0" max="99.9" step="any" value={profitMargin} onChange={event=>setProfitMargin(Number(event.target.value))} /></label></div><p className="calculated-line">Calculated labour cost <strong>{money.format(labourCost)}</strong></p></section>
+    <section className="recipe-ingredients"><div className="mini-heading"><div><h3>Recipe ingredients</h3><p>Use g, kg, ml, L, tsp or tablespoon. Equivalent saved ingredients, such as cake flour and flour, can match automatically.</p></div><strong>Total: {money.format(ingredientsCost)}</strong></div><datalist id="inventory-options">{inventory.map(stock => <option key={stock.id} value={String(stock.name || '')} />)}</datalist>{rows.map((row, index) => <div className="ingredient-row" key={index}><input aria-label="Ingredient name" name="ingredientName" list="inventory-options" placeholder="Ingredient" value={row.name} onChange={event => updateRow(index, { name: event.target.value })} /><input aria-label="Quantity" name="ingredientQuantity" type="number" min="0" step="any" value={row.quantity} onChange={event => updateRow(index, { quantity: Number(event.target.value) })} /><select aria-label="Unit" name="ingredientUnit" value={row.unit} onChange={event => updateRow(index, { unit: event.target.value })}><option>g</option><option>kg</option><option>ml</option><option>L</option><option value="tsp">tsp (teaspoon)</option><option value="tbsp">tablespoon</option><option>cup</option><option>unit</option></select><input aria-label="Ingredient cost" name="ingredientCost" type="number" min="0" step="any" value={row.cost} onChange={event => updateRow(index, { cost: Number(event.target.value) })} /><button type="button" aria-label="Remove ingredient" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))}>×</button></div>)}<button className="outline-button" type="button" onClick={() => setRows(current => [...current, { name: '', quantity: 0, unit: 'g', cost: 0 }])}><Plus size={17} /> Add ingredient</button></section>
     <details className="content-card"><summary><strong>Calculate utilities & overheads</strong> · electricity, water and shared business costs</summary>
-      <p>Use estimates from your appliance label and bills. Apply the result to the recipe using the buttons below. Your existing saved amounts are not changed until you apply and save.</p>
+      <p>Use estimates from your appliance label and bills. Apply the result to the recipe using the buttons below. This calculator is optional. You can save without applying either estimate. Your saved amounts change only when you apply an estimate and save.</p>
       <h4>Electricity & water per batch</h4>
       <div className="cost-grid">
         <label>Appliance power (watts)<input type="number" min="0" step="1" value={applianceWatts} onChange={e=>setApplianceWatts(Number(e.target.value))}/></label>
-        <label>Hours used<input type="number" min="0" step="0.1" value={applianceHours} onChange={e=>setApplianceHours(Number(e.target.value))}/></label>
-        <label>Electricity tariff (R/kWh)<input type="number" min="0" step="0.01" value={electricityRate} onChange={e=>setElectricityRate(Number(e.target.value))}/></label>
+        <label>Hours used<input type="number" min="0" step="any" value={applianceHours} onChange={e=>setApplianceHours(Number(e.target.value))}/></label>
+        <label>Electricity tariff (R/kWh)<input type="number" min="0" step="any" value={electricityRate} onChange={e=>setElectricityRate(Number(e.target.value))}/></label>
         <label>Average power usage (%)<input type="number" min="0" max="100" step="1" value={dutyPercent} onChange={e=>setDutyPercent(Number(e.target.value))}/></label>
-        <label>Water/other direct utility cost (R)<input type="number" min="0" step="0.01" value={waterCost} onChange={e=>setWaterCost(Number(e.target.value))}/></label>
+        <label>Water/other direct utility cost (R)<input type="number" min="0" step="any" value={waterCost} onChange={e=>setWaterCost(Number(e.target.value))}/></label>
       </div>
       <p><strong>Estimated utilities: {money.format(utilitiesEstimate)} per batch</strong></p>
       <button className="outline-button" type="button" onClick={()=>setUtilities(Number(utilitiesEstimate.toFixed(2)))}>Use this utilities amount</button>
       <h4>Monthly business overheads</h4>
       <p>Add up rent, insurance, admin, equipment depreciation and other indirect expenses per month. Do not include electricity already calculated above, ingredients, packaging or direct labour.</p>
       <div className="cost-grid">
-        <label>Monthly indirect expenses (R)<input type="number" min="0" step="0.01" value={monthlyOverheads} onChange={e=>setMonthlyOverheads(Number(e.target.value))}/></label>
-        <label>Monthly productive baking hours<input type="number" min="0.01" step="0.1" value={monthlyProductionHours} onChange={e=>setMonthlyProductionHours(Number(e.target.value))}/></label>
-        <label>Hours allocated to this batch<input type="number" min="0" step="0.1" value={batchProductionHours} onChange={e=>setBatchProductionHours(Number(e.target.value))}/></label>
+        <label>Monthly indirect expenses (R)<input type="number" min="0" step="any" value={monthlyOverheads} onChange={e=>setMonthlyOverheads(Number(e.target.value))}/></label>
+        <label>Monthly productive baking hours<input type="number" min="0" step="any" value={monthlyProductionHours} onChange={e=>setMonthlyProductionHours(Number(e.target.value))}/></label>
+        <label>Hours allocated to this batch<input type="number" min="0" step="any" value={batchProductionHours} onChange={e=>setBatchProductionHours(Number(e.target.value))}/></label>
       </div>
-      <p><strong>Estimated overheads: {overheadEstimate===null?'Enter monthly hours above zero':money.format(overheadEstimate)} per batch</strong></p>
+      <p><strong>Estimated overheads: {overheadEstimate===null?'Enter monthly hours above zero to estimate (optional)':money.format(overheadEstimate)} per batch</strong></p>
       <button className="outline-button" type="button" disabled={overheadEstimate===null} onClick={()=>{if(overheadEstimate!==null)setOverheads(Number(overheadEstimate.toFixed(2)))}}>Use this overhead amount</button>
       <p className="setup-hint">Estimates cover one batch. If multiple recipes share the oven simultaneously, allocate electricity between batches to avoid double-counting.</p>
     </details>
