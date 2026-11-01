@@ -6,6 +6,8 @@ import { getStorage } from "firebase-admin/storage";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 
+import {accountPlatform} from './accountPlatform';
+
 initializeApp();
 
 const db = getFirestore();
@@ -92,6 +94,10 @@ export const listAccounts = onCall({ region: "europe-west1", invoker: "public" }
         subscriptionPlan: String(data.subscriptionPlan || "free"),
         subscriptionStatus: String(data.subscriptionStatus || "free"),
         subscriptionExpiresAt,
+        registrationPlatform: accountPlatform(data.registrationPlatform),
+        lastLoginPlatform: accountPlatform(data.lastLoginPlatform),
+        lastLoginPlatformAt: typeof data.lastLoginPlatformAt?.toDate === 'function'
+          ? data.lastLoginPlatformAt.toDate().toISOString() : null,
       };
     }));
 

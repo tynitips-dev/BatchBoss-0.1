@@ -11,6 +11,7 @@ import {
   signOut, type User,
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
+import { signupPlatform } from './accountPlatform'
 import { auth, db, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
@@ -117,7 +118,11 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
     const password = String(data.get('password'))
     try {
       if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email, password)
+        const credential = await signInWithEmailAndPassword(auth, email, password)
+        // Analytics metadata is best-effort; failure must not block a valid sign-in.
+        await updateDoc(doc(db, 'users', credential.user.uid), {
+          lastLoginPlatform: 'web', lastLoginPlatformAt: serverTimestamp(),
+        }).catch(() => {})
       } else {
         const bakeryName = String(data.get('bakeryName')).trim()
         const firstName = String(data.get('firstName')).trim()
@@ -136,6 +141,8 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
         batch.set(doc(db, 'users', uid), {
           uid, bakeryId: bakeryRef.id, bakeryName, firstName, surname, email,
           role: 'owner', subscriptionPlan: 'free', subscriptionStatus: 'free',
+          registrationPlatform: signupPlatform(location.search),
+          lastLoginPlatform: 'web', lastLoginPlatformAt: serverTimestamp(),
           createdAt: serverTimestamp(),
         })
         batch.set(doc(db, 'bakeries', bakeryRef.id, 'members', uid), {
