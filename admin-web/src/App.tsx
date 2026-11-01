@@ -21,6 +21,9 @@ type Account = {
   surname: string
   subscriptionPlan: string
   subscriptionStatus: string
+  registrationPlatform?: 'android' | 'web' | 'unknown'
+  lastLoginPlatform?: 'android' | 'web' | 'unknown'
+  lastLoginPlatformAt?: string | null
   subscriptionExpiresAt: string | null
 }
 
@@ -130,11 +133,16 @@ function ActivateAdmin({ user, onActivated }: { user: User; onActivated: () => v
   </Centre>
 }
 
+function platformName(value: unknown) {
+  return value === 'android' ? 'Android app' : value === 'web' ? 'Web app' : 'Unknown'
+}
+
 function Dashboard({ user }: { user: User }) {
   const [section,setSection]=useState<'overview'|'accounts'|'analytics'|'subscriptions'|'promotions'|'deletions'|'activity'|'suppliers'|'campaigns'>('overview')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [requests, setRequests] = useState<DeletionRequest[]>([])
   const [audit, setAudit] = useState<AuditLog[]>([])
+  const [platformFilter, setPlatformFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [busyUid, setBusyUid] = useState('')
   const [message, setMessage] = useState('')
@@ -167,7 +175,7 @@ function Dashboard({ user }: { user: User }) {
     if (!value) return accounts
     return accounts.filter(account => [account.email, account.firstName, account.surname, account.bakeryName, account.uid]
       .some(field => field?.toLowerCase().includes(value)))
-  }, [accounts, search])
+  }, [accounts, search, platformFilter])
 
   async function toggleDisabled(account: Account) {
     setBusyUid(account.uid)
@@ -240,10 +248,14 @@ function Dashboard({ user }: { user: User }) {
       {section==='promotions'&&<section className="panel"><h2>Pro gifts</h2><p>Choose a customer below, select the gift duration and click Gift Pro. Seven-day gifts use the existing email flow when deployed.</p></section>}
       {(section==='accounts'||section==='promotions')&&<section className="panel">
         <div className="panel-title"><div><h2>Bakery accounts</h2><p>Authentication and workspace records from Firebase.</p></div><label className="search"><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search users or bakeries…" /></label></div>
-        <div className="table-wrap"><table><thead><tr><th>Account</th><th>Bakery</th><th>Last login</th><th>Subscription</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        <label>Registration source <select aria-label="Filter registration source" value={platformFilter} onChange={event => setPlatformFilter(event.target.value)}><option value="all">All sources</option><option value="android">Android app</option><option value="web">Web app</option><option value="unknown">Unknown / older account</option></select></label>
+        <p>Registered via records the signup route. Last sign-in platform records subsequent Android or web use. These are app-reported details, not verified Play Store downloads. Older registration sources remain Unknown. Future sign-ins fill the last-platform detail without rewriting signup history.</p>
+        <div className="table-wrap"><table><thead><tr><th>Account</th><th>Bakery</th><th>Registered via</th><th>Last sign-in platform</th><th>Last login</th><th>Subscription</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           {shown.map(account => <tr key={account.uid}>
             <td><strong>{account.firstName} {account.surname}</strong><small>{account.email}</small></td>
             <td><strong>{account.bakeryName || '—'}</strong><small>{account.bakeryId || 'No workspace'}</small></td>
+            <td>{platformName(account.registrationPlatform)}</td>
+            <td>{platformName(account.lastLoginPlatform)}{account.lastLoginPlatformAt && <small>{new Date(account.lastLoginPlatformAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })}</small>}</td>
             <td>{account.lastSignInAt ? new Date(account.lastSignInAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</td>
             <td><strong>{account.subscriptionPlan || 'free'}</strong><small className={`status ${account.subscriptionStatus === 'active' ? 'active' : 'pending'}`}>{account.subscriptionStatus || 'free'}</small>{account.subscriptionExpiresAt && <small>Until {new Date(account.subscriptionExpiresAt).toLocaleDateString('en-ZA')}</small>}</td>
             <td><span className={account.disabled ? 'status disabled' : 'status active'}>{account.disabled ? 'Disabled' : 'Active'}</span></td>

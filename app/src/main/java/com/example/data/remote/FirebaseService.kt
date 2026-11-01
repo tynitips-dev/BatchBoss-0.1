@@ -301,6 +301,17 @@ object FirebaseService {
             val currency = userDoc.getString("currency") ?: "ZAR (R)"
             val specialty = userDoc.getString("specialty") ?: "Cakes & Confections"
 
+            // Record actual Android sign-in separately from the immutable registration route.
+            // Metadata failure (for example before rules deploy) must not block sign-in.
+            try {
+                userDocRef.update(mapOf(
+                    "lastLoginPlatform" to "android",
+                    "lastLoginPlatformAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                )).awaitTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "Sign-in platform metadata could not be updated")
+            }
+
             // 11. Determine Pro access from subscriptionStatus and subscriptionPlan in users/{uid}
             val subscriptionStatus = userDoc.getString("subscriptionStatus") ?: ""
             val subscriptionPlan = userDoc.getString("subscriptionPlan") ?: ""

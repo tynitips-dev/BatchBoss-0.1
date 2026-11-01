@@ -35,6 +35,9 @@ service cloud.firestore {
         && request.resource.data.subscriptionPlan == 'free'
         && request.resource.data.subscriptionStatus == 'free'
         && request.resource.data.role == 'owner'
+        && (!('registrationPlatform' in request.resource.data) || request.resource.data.registrationPlatform in ['android','web'])
+        && (!('lastLoginPlatform' in request.resource.data) || request.resource.data.lastLoginPlatform in ['android','web'])
+        && (!('lastLoginPlatformAt' in request.resource.data) || request.resource.data.lastLoginPlatformAt == request.time)
         && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode'])
         && getAfter(/databases/$(database)/documents/bakeries/$(request.resource.data.bakeryId)).data.ownerUid == uid;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
@@ -42,7 +45,11 @@ service cloud.firestore {
         || (signedIn()
           && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['firstName','surname','bakeryName','email','updatedAt','phone','displayName','setupGuide'])
+            .hasOnly(['firstName','surname','bakeryName','email','updatedAt','phone','displayName','setupGuide','lastLoginPlatform','lastLoginPlatformAt'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastLoginPlatform'])
+            || request.resource.data.lastLoginPlatform in ['android','web'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastLoginPlatformAt'])
+            || request.resource.data.lastLoginPlatformAt == request.time)
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['setupGuide'])
             || (request.resource.data.setupGuide.keys().hasOnly(['step','status'])
               && request.resource.data.setupGuide.step is int
