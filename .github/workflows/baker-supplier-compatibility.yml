@@ -95,7 +95,7 @@ jobs:
           --config tests/pro-codes-emulator/firebase.json
           --only firestore
           "node --test tests/pro-codes-emulator.cjs"
-      - run: npm ci --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
         working-directory: admin-web
       - run: npx tsc -b
         working-directory: admin-web
