@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -370,6 +371,25 @@ private fun OnboardingFeatureCard(
 }
 
 @Composable
+fun authTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = Color.Black,
+    unfocusedTextColor = Color.Black,
+    cursorColor = Color.Black,
+    focusedBorderColor = BatchPink,
+    unfocusedBorderColor = BorderLight,
+    focusedLabelColor = BatchPink,
+    unfocusedLabelColor = MediumText,
+    focusedPlaceholderColor = LightText,
+    unfocusedPlaceholderColor = LightText,
+    focusedLeadingIconColor = LightText,
+    unfocusedLeadingIconColor = LightText,
+    focusedTrailingIconColor = LightText,
+    unfocusedTrailingIconColor = LightText,
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color.White
+)
+
+@Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToSignUp: () -> Unit,
@@ -523,10 +543,8 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .testTag("input_login_email"),
                 shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BatchPink,
-                    unfocusedBorderColor = BorderLight
-                ),
+                textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+                colors = authTextFieldColors(),
                 singleLine = true
             )
 
@@ -554,10 +572,8 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .testTag("input_login_password"),
                 shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BatchPink,
-                    unfocusedBorderColor = BorderLight
-                ),
+                textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+                colors = authTextFieldColors(),
                 singleLine = true
             )
         } else {
@@ -584,10 +600,8 @@ fun LoginScreen(
                     .fillMaxWidth()
                     .testTag("input_staff_pin"),
                 shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BatchPink,
-                    unfocusedBorderColor = BorderLight
-                ),
+                textStyle = TextStyle(color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                colors = authTextFieldColors(),
                 singleLine = true
             )
         }
@@ -886,6 +900,8 @@ fun CreateAccountScreen(
             leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_fullname"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -900,6 +916,8 @@ fun CreateAccountScreen(
             leadingIcon = { Icon(Icons.Outlined.Storefront, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_bakeryname"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -991,6 +1009,8 @@ fun CreateAccountScreen(
                 leadingIcon = { Icon(Icons.Outlined.Phone, contentDescription = null, tint = LightText) },
                 modifier = Modifier.weight(1.2f).testTag("input_signup_phone"),
                 shape = RoundedCornerShape(14.dp),
+                textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+                colors = authTextFieldColors(),
                 singleLine = true
             )
             OutlinedTextField(
@@ -1001,6 +1021,8 @@ fun CreateAccountScreen(
                 leadingIcon = { Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = LightText) },
                 modifier = Modifier.weight(1f).testTag("input_signup_city"),
                 shape = RoundedCornerShape(14.dp),
+                textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+                colors = authTextFieldColors(),
                 singleLine = true
             )
         }
@@ -1084,6 +1106,8 @@ fun CreateAccountScreen(
             leadingIcon = { Icon(Icons.Outlined.Badge, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_tax"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -1098,6 +1122,8 @@ fun CreateAccountScreen(
             leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth().testTag("input_signup_email"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -1121,6 +1147,8 @@ fun CreateAccountScreen(
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().testTag("input_signup_password"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -1180,6 +1208,8 @@ fun CreateAccountScreen(
             visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().testTag("input_signup_confirm_password"),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 
@@ -1378,6 +1408,8 @@ fun ForgotPasswordScreen(
             leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = LightText) },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 15.sp),
+            colors = authTextFieldColors(),
             singleLine = true
         )
 

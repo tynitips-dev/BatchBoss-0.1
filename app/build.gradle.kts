@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.batchboss.kqwxrv"
     minSdk = 24
     targetSdk = 36
-    versionCode = 22
-    versionName = "22.0"
+    versionCode = 25
+    versionName = "25.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
