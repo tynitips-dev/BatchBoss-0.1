@@ -31,3 +31,6 @@ Actual server transactions grant the existing admin_promotion entitlement, retai
 New callable functions: createProRedeemCode, listProRedeemCodes, disableProRedeemCode, redeemProCode. Deploy these plus the built baker/admin websites only after final validation and a reviewable release package. No codes or real Pro grants have been created in production. Source attribution for payable sales partners remains a separate production integration gate.
 
 CI on recipe/photo revision 3ab142f passed web checks, Android compilation and photo/migration/subscription/supplier tests, including actual supplier emulator transactions (run 41283946152). New code redemption and auth-flow checks must pass on the final revision; isolated Firestore tests exercise concurrent redemption, retries, expiry, private rules and paid-access protection.
+
+
+The web directory now defaults to the same approved public supplier endpoint as Android when the optional VITE_SUPPLIER_DIRECTORY_URL setting is absent. This prevents an otherwise valid website build from silently disabling supplier discovery. An explicitly configured endpoint is retained.
