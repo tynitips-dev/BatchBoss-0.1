@@ -509,6 +509,12 @@ object FirebaseService {
                     "photoUri" to "",
                     "updatedAt" to System.currentTimeMillis()
                 )
+                // An old phone without artwork must not erase a website photo during backup.
+                // Explicit removal uses saveRecipePhotoToCloud instead.
+                if (recipe.photoUri.isBlank()) {
+                    recipeData.remove("photoDataUrl")
+                    recipeData.remove("photoUri")
+                }
                 batch.set(recipeDoc, recipeData, SetOptions.merge())
 
                 // Attach related ingredients inside the recipe document sub-collection
@@ -1465,6 +1471,10 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
+            if (item.photoUri.isBlank()) {
+                data.remove("photoDataUrl")
+                data.remove("photoUri")
+            }
             docRef.set(data, SetOptions.merge()).awaitTask()
             Result.success(docId)
         } catch (e: Throwable) {

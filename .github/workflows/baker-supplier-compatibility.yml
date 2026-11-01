@@ -86,6 +86,8 @@ jobs:
       - run: npm run build
         working-directory: functions
       - run: node --test tests/auth-flow.cjs
+      - name: Stage the exact application rules inside the isolated test project
+        run: cp web/firestore.rules tests/pro-codes-emulator/firestore.rules
       - name: Test actual redemption transactions and private rules in isolated Firestore
         run: >-
           npx --yes firebase-tools@14.22.0 emulators:exec

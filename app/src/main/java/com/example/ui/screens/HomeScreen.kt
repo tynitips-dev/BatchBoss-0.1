@@ -723,7 +723,7 @@ private fun RecentRecipeCard(
             ) {
                 if (recipe.photoUri.isNotBlank()) {
                     AsyncImage(
-                        model = recipe.photoUri,
+                        model = com.example.data.remote.RecipePhoto.displayModel(recipe.photoUri),
                         contentDescription = recipe.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
