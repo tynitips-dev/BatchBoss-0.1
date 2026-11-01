@@ -797,7 +797,18 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updateRecipePhoto(id: Long, photoUri: String) {
         viewModelScope.launch {
-            repository.updateRecipePhoto(id, photoUri)
+            val recipe = repository.getRecipeByIdOnce(id) ?: return@launch
+            val bakeryId = userProfile.value?.bakeryId.orEmpty()
+            if (bakeryId.isBlank() || recipe.bakeryId != bakeryId) return@launch
+            try {
+                val portable = com.example.data.remote.RecipePhoto.portable(photoUri)
+                if (recipe.firestoreId.isNotBlank()) {
+                    FirebaseService.saveRecipePhotoToCloud(bakeryId, recipe.firestoreId, portable).getOrThrow()
+                }
+                repository.updateRecipePhoto(id, portable)
+            } catch (e: Exception) {
+                _syncMessage.value = e.message ?: "Could not prepare recipe photo. Please choose it again."
+            }
         }
     }
 
@@ -846,6 +857,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 generateBakeryId(uid, currentProfile.bakeryName)
             } ?: generateBakeryId(uid, "artisan")
 
+            val portablePhoto = try {
+                com.example.data.remote.RecipePhoto.portable(photoUri)
+            } catch (e: Exception) {
+                _syncMessage.value = e.message ?: "Could not prepare recipe photo. Please choose it again."
+                return@launch
+            }
             val newRecipe = RecipeEntity(
                 userId = uid,
                 bakeryId = bId,
@@ -864,7 +881,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 utilitiesCost = utilitiesCost,
                 profitMarginPercent = profitMargin,
                 instructions = instructions,
-                photoUri = photoUri
+                photoUri = portablePhoto
             )
             val recipeId = repository.insertRecipe(newRecipe)
             val updatedIngredients = ingredients.map { it.copy(recipeId = recipeId, userId = uid) }

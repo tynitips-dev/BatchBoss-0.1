@@ -28,7 +28,7 @@ jobs:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
         working-directory: web
-      - run: node --experimental-strip-types --test tests/supplier-records.test.mjs tests/subscription-access.test.mjs
+      - run: node --experimental-strip-types --test tests/supplier-records.test.mjs tests/subscription-access.test.mjs tests/recipe-photo.mjs tests/recipe-expenses.mjs tests/recipe-pricing.mjs
       - run: npm run build
         working-directory: web
   android-compatibility:
@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: '22'
       - name: Compile Android and run isolated supplier tests
-        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' --tests 'com.example.Version22MigrationTest' -x :app:processDebugGoogleServices --stacktrace
+        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' --tests 'com.example.Version22MigrationTest' --tests 'com.example.RecipePhotoCompatibilityTest' -x :app:processDebugGoogleServices --stacktrace
       - name: Verify actual Android supplier transactions against local Firestore
         run: >-
           npx --yes firebase-tools@14.22.0 emulators:exec
