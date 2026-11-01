@@ -58,11 +58,15 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authFlow, setAuthFlow] = useState({ started: false, busy: false })
 
   useEffect(() => {
     let stopProfile = () => {}
+    let activeUid: string | null = null
     const stopAuth = onAuthStateChanged(auth, current => {
       stopProfile()
+      activeUid = current?.uid || null
+      setProfile(null)
       setUser(current)
       if (!current) {
         setProfile(null)
@@ -71,19 +75,21 @@ function App() {
       }
       setLoading(true)
       stopProfile = onSnapshot(doc(db, 'users', current.uid), snapshot => {
+        if (activeUid !== current.uid) return
         setProfile(snapshot.exists() ? snapshot.data() as UserProfile : null)
         setLoading(false)
       }, () => {
+        if (activeUid !== current.uid) return
         setProfile(null)
         setLoading(false)
       })
     })
-    return () => { stopProfile(); stopAuth() }
+    return () => { activeUid = null; stopProfile(); stopAuth() }
   }, [])
 
   if (!firebaseConfigured) return <SetupNotice />
-  if (loading) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
-  if (!user || !profile) return <AuthScreen />
+  if (loading && !authFlow.started) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
+  if (!user || !profile || authFlow.busy) return <AuthScreen onBusyChange={busy => setAuthFlow({ started: true, busy })} />
   return <Dashboard key={user.uid} profile={profile} />
 }
 
@@ -95,14 +101,16 @@ function SetupNotice() {
   </main>
 }
 
-function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>(new URLSearchParams(location.search).has('signup') ? 'signup' : 'login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
+    onBusyChange(true)
     setError('')
     const data = new FormData(event.currentTarget)
     const email = String(data.get('email')).trim()
@@ -138,7 +146,7 @@ function AuthScreen() {
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
       setError(message.includes('invalid-credential') ? 'Email or password not recognised. Please try again.' : message.replace('Firebase: ', ''))
-    } finally { setBusy(false) }
+    } finally { setBusy(false); onBusyChange(false) }
   }
 
   return <div className="auth-page">
@@ -179,7 +187,7 @@ type WorkspaceItem = { id: string; name?: string; title?: string; description?: 
 
 function Dashboard({ profile }: { profile: UserProfile }) {
   const [supplierCategory,setSupplierCategory]=useState('')
-  const [active, setActive] = useState<ModuleKey>(new URLSearchParams(location.search).has('payment') ? 'subscription' : 'home')
+  const [active, setActive] = useState<ModuleKey>((new URLSearchParams(location.search).has('payment') || new URLSearchParams(location.search).has('redeem')) ? 'subscription' : 'home')
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
