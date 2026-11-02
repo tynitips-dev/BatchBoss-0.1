@@ -251,7 +251,7 @@ if (process.env.FUNCTIONS_EMULATOR === "true" && /^demo-[a-z0-9-]+$/.test(proces
   exports.ingestPartnerTestEvent = onCall(async request => {
     adminUser(request);
     const source = request.auth.token.batchbossPartnerBridgeSource;
-    if (source && (!["baker", "supplier"].includes(source) || source !== request.data?.source)) {
+    if (!["baker", "supplier"].includes(source) || source !== request.data?.source) {
       throw new HttpsError("permission-denied", "Test bridge source does not match.");
     }
     const { ingestTestEvent } = require("./referralTestIngest");
