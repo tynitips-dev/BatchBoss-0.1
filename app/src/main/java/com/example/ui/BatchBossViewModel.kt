@@ -1593,20 +1593,19 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            // Requirement 4: Use that exact bakeryId for all Firebase paths
-            com.example.data.remote.FirebaseService.currentBakeryId = targetBakeryId
-
+            // Check the local bakery before connecting cloud listeners or changing any local IDs.
             // Sync with local Room database for offline session without generating local bakeryId (Requirement 5)
             val cleanEmail = loginResult.email ?: email.trim().lowercase()
             val existingUser = repository.getUserByEmail(cleanEmail)
-            if (existingUser != null && existingUser.bakeryId.isNotBlank() &&
-                existingUser.bakeryId != targetBakeryId) {
+            if (existingUser != null && existingUser.bakeryId != targetBakeryId) {
                 // A v25 phone-only bakery can contain recipes, stock and customers under
                 // its old ID. Reassigning this row silently would hide or mis-sync them.
                 FirebaseService.signOut()
                 onResult(false, "This phone has saved bakery data under a different workspace. Nothing was moved or deleted. Contact info@batchboss.co.za for help safely linking it before signing in.")
                 return@launch
             }
+            // Only a verified, non-conflicting account may select a cloud workspace.
+            com.example.data.remote.FirebaseService.currentBakeryId = targetBakeryId
             val userId = if (existingUser != null) {
                 val updated = existingUser.copy(
                     bakeryId = targetBakeryId, // EXACT bakeryId from Firebase (Requirement 5)
