@@ -1597,7 +1597,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             // Sync with local Room database for offline session without generating local bakeryId (Requirement 5)
             val cleanEmail = loginResult.email ?: email.trim().lowercase()
             val existingUser = repository.getUserByEmail(cleanEmail)
-            if (legacyBakeryIdConflicts(existingUser?.bakeryId, targetBakeryId)) {
+            val savedProfileBakeryId = repository.userProfile.first()?.bakeryId.orEmpty()
+            val previouslyActiveUser = if (initialSavedUserId > 0) repository.getUserByIdOnce(initialSavedUserId) else null
+            val wouldReplaceAnotherLocalOwner = previouslyActiveUser != null && existingUser == null
+            if (legacyBakeryIdConflicts(existingUser?.bakeryId, targetBakeryId) ||
+                legacyBakeryIdConflicts(savedProfileBakeryId.takeIf { it.isNotBlank() }, targetBakeryId) ||
+                wouldReplaceAnotherLocalOwner) {
                 // A v25 phone-only bakery can contain recipes, stock and customers under
                 // its old ID. Reassigning this row silently would hide or mis-sync them.
                 FirebaseService.signOut()
