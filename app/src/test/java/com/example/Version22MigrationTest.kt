@@ -19,13 +19,15 @@ import java.util.UUID
 @Config(sdk = [35], application = android.app.Application::class)
 class Version22MigrationTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
-    private val sampleTables = listOf("suppliers", "customers", "recipes", "invoices", "packaging_items")
+    private val sampleTables = listOf("suppliers", "customers", "recipes", "invoices", "packaging_items", "user_accounts", "user_profiles", "inventory_items")
 
     @Test fun `installed version22 schema migrates without changing business records`() = migrate("canonical14")
     @Test fun `canonical schema13 retains packaging sync and business records`() = migrate("canonical13")
     @Test fun `alternate supplier schema13 retains queued and confirmed supplier fields`() = migrate("supplierDevelopment13")
     @Test fun `schema12 completes all intermediate migrations`() = migrate("canonical12")
     @Test fun `schema11 preserves invoices when packaging storage is introduced`() = migrate("canonical11")
+
+    @Test fun `schema10 preserves local records without inventing cloud ownership`() = migrate("canonical10")
 
     private fun fixture(name: String): JSONObject {
         val text = javaClass.classLoader!!.getResourceAsStream("v22-migration-fixtures.json")!!.bufferedReader().use { it.readText() }
@@ -90,6 +92,11 @@ class Version22MigrationTest {
                 for ((table, oldRow) in before) {
                     val current = row(migrated, table)
                     for ((column, value) in oldRow) assertEquals("Changed $table.$column for $kind", value, current[column])
+                }
+                if (kind == "canonical10") {
+                    for (table in listOf("user_accounts", "customers", "recipes", "user_profiles")) {
+                        assertEquals("Unlinked ownership must stay unknown for $table", "", row(migrated, table)["bakeryId"])
+                    }
                 }
                 val supplier = row(migrated, "suppliers")
                 assertTrue(supplier.keys.containsAll(listOf("bakeryId", "cloudDocumentId", "publicListingId", "city", "province", "cloudConfirmed", "pendingSync")))
