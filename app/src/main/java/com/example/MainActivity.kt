@@ -139,7 +139,8 @@ fun BatchBossApp(
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
             is Screen.AccountDataDeletion, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
             is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
-            is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
+            is Screen.Login -> viewModel.navigateTo(Screen.Splash)
+            is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Login)
             else -> viewModel.navigateTo(Screen.Home)
         }
     }
@@ -174,7 +175,7 @@ fun BatchBossApp(
                 is Screen.Onboarding -> {
                     OnboardingScreen(
                         onGetStarted = { viewModel.navigateTo(Screen.CreateAccount) },
-                        onSkip = { viewModel.navigateTo(Screen.Home) }
+                        onSkip = { viewModel.navigateTo(Screen.Login) }
                     )
                 }
 
@@ -186,23 +187,19 @@ fun BatchBossApp(
                         },
                         onNavigateToSignUp = { viewModel.navigateTo(Screen.CreateAccount) },
                         onNavigateToForgot = { viewModel.navigateTo(Screen.ForgotPassword) },
-                        onBack = { viewModel.navigateTo(Screen.Home) },
+                        onBack = { viewModel.navigateTo(Screen.Splash) },
                         onPerformLogin = { email, password, onResult ->
                             viewModel.loginWithFirebase(email, password) { success, errorMsg ->
                                 onResult(success, errorMsg)
                             }
                         },
-                        onLoginWithDetails = { emailOrPhone, branch ->
-                            viewModel.loginUser(emailOrPhone) { success, msg ->
-                                coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-                            }
-                        }
+                        onLoginWithDetails = null
                     )
                 }
 
                 is Screen.CreateAccount -> {
                     WebsiteRegistrationScreen(
-                        onBack = { viewModel.navigateTo(Screen.Home) },
+                        onBack = { viewModel.navigateTo(Screen.Login) },
                         onSignIn = { viewModel.navigateTo(Screen.Login) }
                     )
                 }
