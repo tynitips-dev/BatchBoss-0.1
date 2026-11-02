@@ -11,8 +11,9 @@ import {
   signOut, type User,
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
-import { auth, db, firebaseConfigured } from './firebase'
+import { auth, db, firebaseConfigured, referralPilot, bakerFunctions } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
+import { httpsCallable } from 'firebase/functions'
 import SubscriptionView from './SubscriptionView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -57,11 +58,15 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authFlow, setAuthFlow] = useState({ started: false, busy: false })
 
   useEffect(() => {
     let stopProfile = () => {}
+    let activeUid: string | null = null
     const stopAuth = onAuthStateChanged(auth, current => {
       stopProfile()
+      activeUid = current?.uid || null
+      setProfile(null)
       setUser(current)
       if (!current) {
         setProfile(null)
@@ -70,19 +75,21 @@ function App() {
       }
       setLoading(true)
       stopProfile = onSnapshot(doc(db, 'users', current.uid), snapshot => {
+        if (activeUid !== current.uid) return
         setProfile(snapshot.exists() ? snapshot.data() as UserProfile : null)
         setLoading(false)
       }, () => {
+        if (activeUid !== current.uid) return
         setProfile(null)
         setLoading(false)
       })
     })
-    return () => { stopProfile(); stopAuth() }
+    return () => { activeUid = null; stopProfile(); stopAuth() }
   }, [])
 
   if (!firebaseConfigured) return <SetupNotice />
-  if (loading) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
-  if (!user || !profile) return <AuthScreen />
+  if (loading && !authFlow.started) return <div className="centre-screen"><div className="loader" /><p>Opening your bakery…</p></div>
+  if (!user || !profile || authFlow.busy) return <AuthScreen onBusyChange={busy => setAuthFlow({ started: true, busy })} />
   return <Dashboard key={user.uid} profile={profile} />
 }
 
@@ -94,14 +101,16 @@ function SetupNotice() {
   </main>
 }
 
-function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>(() => new URLSearchParams(location.search).has('signup') || (referralPilot && new URLSearchParams(location.search).has('ref')) ? 'signup' : 'login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
+    onBusyChange(true)
     setError('')
     const data = new FormData(event.currentTarget)
     const email = String(data.get('email')).trim()
@@ -113,7 +122,15 @@ function AuthScreen() {
         const bakeryName = String(data.get('bakeryName')).trim()
         const firstName = String(data.get('firstName')).trim()
         const surname = String(data.get('surname')).trim()
-        const credential = await createUserWithEmailAndPassword(auth, email, password)
+        const referralCode = referralPilot ? String(data.get('referralCode') || '').trim().toUpperCase() : ''
+        if (referralCode && !/^BB-[A-F0-9]{12}$/.test(referralCode)) throw new Error('Please check the referral code.')
+        const credential = referralPilot && referralCode && auth.currentUser?.email?.toLowerCase() === email.toLowerCase()
+          ? { user: auth.currentUser }
+          : await createUserWithEmailAndPassword(auth, email, password)
+        if (referralCode) {
+          await httpsCallable(bakerFunctions, 'registerReferredBakerTest')({ firstName, surname, bakeryName, referralCode })
+          return
+        }
         const uid = credential.user.uid
         const bakeryRef = doc(collection(db, 'bakeries'))
         const batch = writeBatch(db)
@@ -137,7 +154,7 @@ function AuthScreen() {
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
       setError(message.includes('invalid-credential') ? 'Email or password not recognised. Please try again.' : message.replace('Firebase: ', ''))
-    } finally { setBusy(false) }
+    } finally { setBusy(false); onBusyChange(false) }
   }
 
   return <div className="auth-page">
@@ -160,6 +177,9 @@ function AuthScreen() {
           <label>Surname<input name="surname" required /></label>
         </div>}
         {mode === 'signup' && <label>Bakery name<input name="bakeryName" required /></label>}
+        {mode === 'signup' && referralPilot && <label>Sales partner referral (test)<input name="referralCode"
+          defaultValue={new URLSearchParams(location.search).get('ref') || ''}
+          pattern="BB-[A-Fa-f0-9]{12}" maxLength={15} /></label>}
         <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
         <label>Password<input name="password" type="password" minLength={8} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required /></label>
         {error && <div className="error-message">{error}</div>}

@@ -197,39 +197,9 @@ fun BatchBossApp(
                 }
 
                 is Screen.CreateAccount -> {
-                    CreateAccountScreen(
-                        onAccountCreated = {
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Account created! Welcome to BatchBoss.") }
-                            viewModel.navigateTo(Screen.Home)
-                        },
-                        onNavigateToLogin = { viewModel.navigateTo(Screen.Login) },
+                    WebsiteRegistrationScreen(
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email ->
-                            viewModel.createAccountWithDetails(
-                                firstName = fullName.substringBefore(" "),
-                                surname = fullName.substringAfter(" ", ""),
-                                email = email,
-                                password = "",
-                                bakeryName = bakeryName,
-                                phone = phone,
-                                city = city,
-                                operatingModel = operatingModel,
-                                currency = currency,
-                                specialty = specialty
-                            ) {
-                                coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
-                                viewModel.navigateTo(
-                                    Screen.WelcomeEmail(
-                                        fullName = fullName,
-                                        email = email,
-                                        bakeryName = bakeryName,
-                                        city = city,
-                                        operatingModel = operatingModel,
-                                        currency = currency
-                                    )
-                                )
-                            }
-                        }
+                        onSignIn = { viewModel.navigateTo(Screen.Login) }
                     )
                 }
 
