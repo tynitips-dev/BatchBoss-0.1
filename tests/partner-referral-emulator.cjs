@@ -151,7 +151,7 @@ test("actual baker handlers and isolated project delivery: signup -> checkout ->
  const retry=await run(env);assert.equal(retry.delivered,1);assert.equal(retry.pending,0);
  assert.equal((await partnerDb.collection("partnerTestFirstSales").get()).size,1);
  assert.equal((await partnerDb.collection("partnerCommissions").get()).size,0);
- const sourceToken=await idToken(partnerApp,"source-baker",{batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:"baker"});
+ const sourceToken=await idToken(partnerApp,"referral-bridge-baker",{batchbossPartnerBridgeSource:"baker"});
  const bakerEvent=(await bakerDb.collection("partnerTestOutbox").get()).docs[0].get("event");
  const spoofed=await nativeFetch(receiver,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+sourceToken},
  body:JSON.stringify({data:{...bakerEvent,source:"supplier"}})});
