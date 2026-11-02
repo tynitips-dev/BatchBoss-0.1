@@ -84,7 +84,8 @@ test("central test bridge is absent in production and requires a verified admin 
  await assert.rejects(handler({auth:{uid:"agent",token:{email_verified:true}},data:event("registration")}),{code:"permission-denied"});
  await assert.rejects(handler({auth:{uid:"admin",token:{email_verified:false,batchbossPartnerAdmin:true}},data:event("registration")}),{code:"unauthenticated"});
  await assert.rejects(handler({auth:{uid:"bridge",token:{email_verified:true,batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:"supplier"}},data:event("registration",88,"baker")}),{code:"permission-denied"});
- const result=await handler({auth:{uid:"admin",token:{email_verified:true,batchbossPartnerAdmin:true}},data:event("registration")});
+ await assert.rejects(handler({auth:{uid:"admin",token:{email_verified:true,batchbossPartnerAdmin:true}},data:event("registration")}), {code:"permission-denied"});
+ const result=await handler({auth:{uid:"bridge",token:{email_verified:true,batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:"supplier"}},data:event("registration")});
  assert.equal(result.payable,false);
 });
 
@@ -121,4 +122,15 @@ test("reversal mismatches and partial refunds never silently clear a credit", as
  await assert.rejects(ingestTestEvent(db, { ...event("reversal", 117), reason: "chargeback" }), /Conflicting reversal/);
  const first = db.entries().find(([key]) => key.startsWith("partnerTestFirstSales/"))[1];
  assert.equal(first.status, "test-reversed");
+});
+
+test("even an administrator cannot create payable commissions from a checkbox", async () => {
+ const db = setup();
+ const handler = loadFunctions(path.join(__dirname, "index.js"), db, {}).adminRecordVerifiedSale;
+ await assert.rejects(handler({
+   auth: { uid:"admin", token:{email_verified:true,batchbossPartnerAdmin:true} },
+   data: { merchantPaymentConfirmed:true, provider:"paystack",
+     reference:"fake-123456", planId:"supplierGrowth", amountCents:39900 }
+ }), {code:"failed-precondition"});
+ assert.equal(db.entries().some(([k]) => k.startsWith("partnerCommissions/")), false);
 });
