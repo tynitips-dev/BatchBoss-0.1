@@ -352,8 +352,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             Screen.Splash, Screen.Onboarding, Screen.Login, Screen.CreateAccount, Screen.ForgotPassword -> true
             else -> false
         }
-        if (!publicScreen && (!_isUserLoggedIn.value || _verifiedFirebaseUid.value == null ||
-                FirebaseService.currentUser?.uid != _verifiedFirebaseUid.value)) {
+        if (!publicScreen && !hasVerifiedFirebaseWorkspace(_isUserLoggedIn.value,
+                _verifiedFirebaseUid.value, FirebaseService.currentUser?.uid)) {
             _currentScreen.value = Screen.Login
             return
         }
@@ -1597,7 +1597,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             // Sync with local Room database for offline session without generating local bakeryId (Requirement 5)
             val cleanEmail = loginResult.email ?: email.trim().lowercase()
             val existingUser = repository.getUserByEmail(cleanEmail)
-            if (existingUser != null && existingUser.bakeryId != targetBakeryId) {
+            if (legacyBakeryIdConflicts(existingUser?.bakeryId, targetBakeryId)) {
                 // A v25 phone-only bakery can contain recipes, stock and customers under
                 // its old ID. Reassigning this row silently would hide or mis-sync them.
                 FirebaseService.signOut()
