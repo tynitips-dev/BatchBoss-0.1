@@ -1,0 +1,9 @@
+// Local synthetic-data transaction tests only; never deploy these test rules.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /bakeries/{bakeryId}/suppliers/{supplierId} {
+      allow read, write: if true;
+    }
+  }
+}
