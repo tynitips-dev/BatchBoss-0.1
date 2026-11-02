@@ -31,6 +31,8 @@ import com.example.data.local.InventoryItemEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.UserAccountEntity
+import com.example.ui.components.BatchBossAnnouncementBanner
+import com.example.ui.components.SupplierAdBanner
 import com.example.ui.components.BatchBossBrandLogo
 import com.example.ui.components.ProfitSparkline
 import com.example.ui.theme.*
@@ -188,6 +190,9 @@ fun HomeScreen(
                 }
             }
         }
+
+        item { BatchBossAnnouncementBanner() }
+        item { SupplierAdBanner() }
 
         // 2. Greeting
         item {
@@ -718,7 +723,7 @@ private fun RecentRecipeCard(
             ) {
                 if (recipe.photoUri.isNotBlank()) {
                     AsyncImage(
-                        model = recipe.photoUri,
+                        model = com.example.data.remote.RecipePhoto.displayModel(recipe.photoUri),
                         contentDescription = recipe.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

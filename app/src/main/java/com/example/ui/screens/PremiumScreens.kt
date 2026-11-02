@@ -34,9 +34,9 @@ fun PremiumSubscriptionScreen(
     onUpgrade: (plan: String) -> Unit,
     onCancelSubscription: () -> Unit,
     onOpenAiScanner: () -> Unit = {},
-    onOpenBarcodeScanner: () -> Unit = {}
+    onOpenBarcodeScanner: () -> Unit = {},
+    onRefreshAccess: () -> Unit = {}
 ) {
-    var selectedPlan by remember { mutableStateOf("annual") } // "monthly" or "annual"
 
     Scaffold(
         topBar = {
@@ -261,54 +261,10 @@ fun PremiumSubscriptionScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             if (!isPremium) {
-                // Plan Selector
-                Text(
-                    text = "CHOOSE YOUR PLAN",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = LightText,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Annual
-                    val isAnnual = selectedPlan == "annual"
-                    PlanCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Annual",
-                        badge = "SAVE 33%",
-                        price = "R1 199",
-                        period = "per year (~R99/mo)",
-                        isSelected = isAnnual,
-                        onClick = { selectedPlan = "annual" }
-                    )
-
-                    // Monthly
-                    val isMonthly = selectedPlan == "monthly"
-                    PlanCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Monthly",
-                        badge = "FLEXIBLE",
-                        price = "R149",
-                        period = "per month",
-                        isSelected = isMonthly,
-                        onClick = { selectedPlan = "monthly" }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
+                Text("Choose your plan on the BatchBoss website. Current prices and payment terms are confirmed there.", color = LightText)
+                Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = {
-                        val planName = if (selectedPlan == "annual") "Pro Annual" else "Pro Monthly"
-                        onUpgrade(planName)
-                    },
+                    onClick = { onUpgrade("website") },
                     colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
@@ -319,7 +275,7 @@ fun PremiumSubscriptionScreen(
                     Icon(Icons.Filled.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Unlock BatchBoss Premium",
+                        text = "Continue on website to subscribe",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -329,7 +285,7 @@ fun PremiumSubscriptionScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Includes 7-day free trial. Cancel anytime with no penalty.",
+                    text = "Your access updates after the server confirms your subscription.",
                     fontSize = 12.sp,
                     color = LightText,
                     textAlign = TextAlign.Center
@@ -343,10 +299,11 @@ fun PremiumSubscriptionScreen(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Cancel Subscription (Switch to Free)")
+                    Text("Manage or cancel on website")
                 }
             }
 
+            TextButton(onClick = onRefreshAccess) { Text("Refresh subscription access") }
             Spacer(modifier = Modifier.height(24.dp))
         }
     }

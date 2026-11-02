@@ -24,19 +24,12 @@ import com.example.ui.screens.*
 import com.example.ui.theme.BatchBossTheme
 import com.example.data.local.ProductServiceEntity
 import com.example.data.local.ProductPriceHistoryEntity
-import com.example.data.model.Recipe
-import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.FirebaseFirestore
-import android.util.Log
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Initialize Firestore and write a new recipe
-        initializeFirestoreAndWriteRecipe()
 
         setContent {
             BatchBossTheme {
@@ -45,37 +38,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeFirestoreAndWriteRecipe() {
-        try {
-            if (FirebaseApp.getApps(this).isNotEmpty()) {
-                val db = FirebaseFirestore.getInstance()
-                val newRecipe = Recipe(
-                    title = "Artisan Sourdough Loaf",
-                    prepTimeMinutes = 120,
-                    ingredients = listOf(
-                        "500g Bread Flour",
-                        "350g Water",
-                        "100g Sourdough Starter",
-                        "10g Sea Salt"
-                    ),
-                    instructions = "Mix, autolyse 30m, stretch and fold 4 times over 2h, cold retard 12h, bake at 230°C for 40m."
-                )
 
-                db.collection("recipes")
-                    .add(newRecipe)
-                    .addOnSuccessListener { documentReference ->
-                        Log.d("MainActivity", "Firestore recipe written successfully with ID: ${documentReference.id}")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("MainActivity", "Error adding recipe document to Firestore", e)
-                    }
-            } else {
-                Log.i("MainActivity", "FirebaseApp not configured yet; ready for google-services.json.")
-            }
-        } catch (e: Throwable) {
-            Log.w("MainActivity", "Firestore initialization notice: ${e.message}")
-        }
-    }
 }
 
 @Composable
@@ -110,7 +73,6 @@ fun BatchBossApp(
     val showPaywall by viewModel.showPaywall.collectAsStateWithLifecycle()
     val paywallFeature by viewModel.paywallFeatureName.collectAsStateWithLifecycle()
     val paywallDesc by viewModel.paywallDescription.collectAsStateWithLifecycle()
-    val bakingSupplyStores by viewModel.allBakingSupplyStores.collectAsStateWithLifecycle()
     val allRegisteredUsers by viewModel.allRegisteredUsers.collectAsStateWithLifecycle()
     val allLoginLogs by viewModel.allLoginLogs.collectAsStateWithLifecycle()
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
@@ -118,6 +80,20 @@ fun BatchBossApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val subscriptionUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val subscriptionLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(subscriptionLifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.refreshSubscriptionAccess()
+        }
+        subscriptionLifecycle.lifecycle.addObserver(observer)
+        onDispose { subscriptionLifecycle.lifecycle.removeObserver(observer) }
+    }
+    fun openSubscriptionWebsite() {
+        runCatching { subscriptionUriHandler.openUri(com.example.data.remote.BakerySubscriptionAccess.MANAGEMENT_URL) }
+            .onFailure { coroutineScope.launch { snackbarHostState.showSnackbar("Open the BatchBoss website to manage your subscription.") } }
+    }
+
 
     // Determine if bottom navigation bar should be visible
     val showBottomBar = when (currentScreen) {
@@ -225,39 +201,9 @@ fun BatchBossApp(
                 }
 
                 is Screen.CreateAccount -> {
-                    CreateAccountScreen(
-                        onAccountCreated = {
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Account created! Welcome to BatchBoss.") }
-                            viewModel.navigateTo(Screen.Home)
-                        },
-                        onNavigateToLogin = { viewModel.navigateTo(Screen.Login) },
+                    WebsiteRegistrationScreen(
                         onBack = { viewModel.navigateTo(Screen.Home) },
-                        onAccountCreatedWithData = { fullName, bakeryName, specialty, phone, city, operatingModel, currency, email ->
-                            viewModel.createAccountWithDetails(
-                                firstName = fullName.substringBefore(" "),
-                                surname = fullName.substringAfter(" ", ""),
-                                email = email,
-                                password = "",
-                                bakeryName = bakeryName,
-                                phone = phone,
-                                city = city,
-                                operatingModel = operatingModel,
-                                currency = currency,
-                                specialty = specialty
-                            ) {
-                                coroutineScope.launch { snackbarHostState.showSnackbar("Welcome to BatchBoss, $fullName!") }
-                                viewModel.navigateTo(
-                                    Screen.WelcomeEmail(
-                                        fullName = fullName,
-                                        email = email,
-                                        bakeryName = bakeryName,
-                                        city = city,
-                                        operatingModel = operatingModel,
-                                        currency = currency
-                                    )
-                                )
-                            }
-                        }
+                        onSignIn = { viewModel.navigateTo(Screen.Login) }
                     )
                 }
 
@@ -562,7 +508,11 @@ fun BatchBossApp(
                                 "Unlock verified supplier directory, wholesale contact lines, and exclusive supplier discounts."
                             )
                         },
-                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) }
+                        onOpenStoreLocator = { viewModel.navigateTo(Screen.BakingSupplyStoreLocator) },
+                        onSavePublicSupplier = { viewModel.savePublicSupplier(it) },
+                        onSyncSuppliers = { viewModel.syncSupplierRecords() },
+                        onInspectLegacy = { viewModel.inspectLegacySuppliers() },
+                        onRecoverLegacy = { viewModel.recoverLegacySuppliers(it) }
                     )
                 }
 
@@ -881,14 +831,9 @@ fun BatchBossApp(
                     PremiumSubscriptionScreen(
                         isPremium = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onUpgrade = { plan ->
-                            viewModel.upgradeToPremium(plan)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Upgraded to BatchBoss Pro! All features unlocked.") }
-                        },
-                        onCancelSubscription = {
-                            viewModel.cancelPremium()
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Subscription reverted to Free tier.") }
-                        },
+                        onUpgrade = { _ -> openSubscriptionWebsite() },
+                        onCancelSubscription = { openSubscriptionWebsite() },
+                        onRefreshAccess = { viewModel.refreshSubscriptionAccess() },
                         onOpenAiScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
                         onOpenBarcodeScanner = { viewModel.navigateTo(Screen.BarcodeScanner) }
                     )
@@ -954,27 +899,13 @@ fun BatchBossApp(
                 }
 
                 is Screen.BakingSupplyStoreLocator, is Screen.BakingSupplyStoreDetail -> {
-                    BakingSupplyStoreLocatorScreen(
-                        stores = bakingSupplyStores,
+                    SupplierDirectoryScreen(
+                        savedIds = suppliers.map { it.publicListingId }.filter { it.isNotBlank() }.toSet(),
+                        canSave = isPremiumUser,
                         onBack = { viewModel.navigateTo(Screen.SuppliersList) },
-                        onToggleFavorite = { id -> viewModel.toggleFavoriteBakingSupplyStore(id) },
-                        onAddCustomStore = { name, category, address, city, phone, website, specialties, highlights ->
-                            viewModel.addCustomBakingSupplyStore(
-                                name = name,
-                                category = category,
-                                address = address,
-                                city = city,
-                                phone = phone,
-                                website = website,
-                                specialties = specialties,
-                                inStockHighlights = highlights
-                            )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to store locator!") }
-                        },
-                        onDeleteStore = { id ->
-                            viewModel.deleteBakingSupplyStore(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Store removed") }
-                        }
+                        onUnlock = { viewModel.triggerPaywall("Suppliers", "Save suppliers to your bakery with Pro.") },
+                        onSave = { viewModel.savePublicSupplier(it) },
+                        onSync = { viewModel.syncSupplierRecords() }
                     )
                 }
 

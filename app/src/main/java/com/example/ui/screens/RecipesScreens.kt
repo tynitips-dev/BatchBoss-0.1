@@ -411,7 +411,7 @@ fun RecipeListItemCard(
             ) {
                 if (recipe.photoUri.isNotBlank()) {
                     AsyncImage(
-                        model = recipe.photoUri,
+                        model = com.example.data.remote.RecipePhoto.displayModel(recipe.photoUri),
                         contentDescription = recipe.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -631,7 +631,7 @@ fun RecipeDetailScreen(
                 ) {
                     if (recipe.photoUri.isNotBlank()) {
                         AsyncImage(
-                            model = recipe.photoUri,
+                            model = com.example.data.remote.RecipePhoto.displayModel(recipe.photoUri),
                             contentDescription = recipe.name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

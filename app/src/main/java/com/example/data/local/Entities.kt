@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -317,7 +318,14 @@ data class SupplierEntity(
     val website: String,
     val about: String,
     val isFavorite: Boolean = false,
-    val isMySupplier: Boolean = true
+    val isMySupplier: Boolean = true,
+    @ColumnInfo(defaultValue = "''") val bakeryId: String = "",
+    @ColumnInfo(defaultValue = "''") val cloudDocumentId: String = "",
+    @ColumnInfo(defaultValue = "''") val publicListingId: String = "",
+    @ColumnInfo(defaultValue = "''") val city: String = "",
+    @ColumnInfo(defaultValue = "''") val province: String = "",
+    @ColumnInfo(defaultValue = "0") val cloudConfirmed: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val pendingSync: Boolean = false
 )
 
 @Entity(tableName = "special_deals")

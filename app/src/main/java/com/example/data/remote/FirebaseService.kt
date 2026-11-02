@@ -22,6 +22,9 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -66,6 +69,21 @@ data class FirebaseLoginResult(
     val isPro: Boolean = false
 )
 
+
+data class CloudUserWorkspace(
+    val uid: String,
+    val bakeryId: String,
+    val bakeryName: String,
+    val firstName: String,
+    val surname: String,
+    val email: String,
+    val role: String,
+    val subscriptionPlan: String,
+    val subscriptionStatus: String,
+    val subscriptionExpiresAtMillis: Long? = null,
+    val subscriptionSource: String = ""
+)
+
 /**
  * Extension to safely await Google Play Services / Firebase Tasks with cancellation support.
  */
@@ -85,6 +103,14 @@ suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T =
 object FirebaseService {
     private const val TAG = "FirebaseService"
     const val APPLICATION_ID = "com.aistudio.batchboss.kqwxrv"
+
+    /**
+     * Web records historically used Firestore auto IDs while Android Room uses Long keys.
+     * Keep a stable local key for those documents so every refresh updates the same row
+     * instead of inserting duplicates.
+     */
+    private fun stableDocumentId(documentId: String): Long =
+        documentId.toLongOrNull() ?: ((documentId.hashCode().toLong() and 0x7fffffffL) + 1L)
 
     val isConfigured: Boolean
         get() = try {
@@ -275,20 +301,24 @@ object FirebaseService {
             val currency = userDoc.getString("currency") ?: "ZAR (R)"
             val specialty = userDoc.getString("specialty") ?: "Cakes & Confections"
 
+            // Record actual Android sign-in separately from the immutable registration route.
+            // Metadata failure (for example before rules deploy) must not block sign-in.
+            try {
+                userDocRef.update(mapOf(
+                    "lastLoginPlatform" to "android",
+                    "lastLoginPlatformAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                )).awaitTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "Sign-in platform metadata could not be updated")
+            }
+
             // 11. Determine Pro access from subscriptionStatus and subscriptionPlan in users/{uid}
             val subscriptionStatus = userDoc.getString("subscriptionStatus") ?: ""
             val subscriptionPlan = userDoc.getString("subscriptionPlan") ?: ""
-            val isPremiumDoc = userDoc.getBoolean("isPremium") == true || userDoc.getBoolean("isPro") == true
-
-            val isPro = isPremiumDoc ||
-                subscriptionStatus.equals("active", ignoreCase = true) ||
-                subscriptionStatus.equals("pro", ignoreCase = true) ||
-                subscriptionStatus.equals("trialing", ignoreCase = true) ||
-                subscriptionStatus.equals("premium", ignoreCase = true) ||
-                subscriptionPlan.contains("pro", ignoreCase = true) ||
-                subscriptionPlan.contains("premium", ignoreCase = true) ||
-                subscriptionPlan.contains("commercial", ignoreCase = true) ||
-                subscriptionPlan.contains("business", ignoreCase = true)
+            val isPro = BakerySubscriptionAccess.active(
+                subscriptionStatus, subscriptionPlan, userDoc.getString("subscriptionSource"),
+                userDoc.getTimestamp("subscriptionExpiresAt")?.toDate()?.time
+            )
 
             FirebaseLoginResult(
                 success = true,
@@ -352,6 +382,56 @@ object FirebaseService {
             Log.e(TAG, "Error signing in with email", e)
             Result.failure(e)
         }
+    }
+
+    /** Loads the same users/{uid} workspace record used by the web portal. */
+    suspend fun fetchUserWorkspace(uid: String): Result<CloudUserWorkspace> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firestore is unavailable."))
+        return try {
+            val snapshot = db.collection("users").document(uid).get().awaitTask()
+            if (!snapshot.exists()) throw IllegalStateException("Your BatchBoss workspace was not found. Please sign in on the website once or contact support.")
+            val bakeryId = snapshot.getString("bakeryId").orEmpty()
+            if (bakeryId.isBlank()) throw IllegalStateException("Your account is not linked to a bakery workspace.")
+            Result.success(
+                CloudUserWorkspace(
+                    uid = uid,
+                    bakeryId = bakeryId,
+                    bakeryName = snapshot.getString("bakeryName") ?: "My Bakery",
+                    firstName = snapshot.getString("firstName").orEmpty(),
+                    surname = snapshot.getString("surname").orEmpty(),
+                    email = snapshot.getString("email").orEmpty(),
+                    role = snapshot.getString("role") ?: "owner",
+                    subscriptionPlan = snapshot.getString("subscriptionPlan") ?: "free",
+                    subscriptionStatus = snapshot.getString("subscriptionStatus") ?: "free",
+                    subscriptionExpiresAtMillis = snapshot.getTimestamp("subscriptionExpiresAt")?.toDate()?.time,
+                    subscriptionSource = snapshot.getString("subscriptionSource").orEmpty()
+                )
+            )
+        } catch (e: Throwable) {
+            Log.e(TAG, "Unable to load Firebase workspace", e)
+            Result.failure(e)
+        }
+    }
+
+    /** Watches only the authenticated baker's main-project subscription record. */
+    fun observeUserWorkspace(uid: String): Flow<CloudUserWorkspace?> = callbackFlow {
+        val db = firestore
+        if (db == null || currentUser?.uid != uid) { trySend(null); close(); return@callbackFlow }
+        val listener = db.collection("users").document(uid).addSnapshotListener { snapshot, error ->
+            if (error != null || snapshot == null || !snapshot.exists() || currentUser?.uid != uid) {
+                trySend(null)
+            } else {
+                val workspace = runCatching {
+                    CloudUserWorkspace(uid, snapshot.getString("bakeryId").orEmpty(), snapshot.getString("bakeryName").orEmpty(),
+                        snapshot.getString("firstName").orEmpty(), snapshot.getString("surname").orEmpty(),
+                        snapshot.getString("email").orEmpty(), snapshot.getString("role") ?: "owner",
+                        snapshot.getString("subscriptionPlan") ?: "free", snapshot.getString("subscriptionStatus") ?: "free",
+                        snapshot.getTimestamp("subscriptionExpiresAt")?.toDate()?.time, snapshot.getString("subscriptionSource").orEmpty())
+                }.getOrNull()
+                trySend(workspace)
+            }
+        }
+        awaitClose { listener.remove() }
     }
 
     /**
@@ -436,9 +516,16 @@ object FirebaseService {
                     "laborHours" to recipe.laborHours,
                     "laborRatePerHour" to recipe.laborRatePerHour,
                     "instructions" to recipe.instructions,
-                    "photoUri" to recipe.photoUri,
+                    "photoDataUrl" to RecipePhoto.portable(recipe.photoUri),
+                    "photoUri" to "",
                     "updatedAt" to System.currentTimeMillis()
                 )
+                // An old phone without artwork must not erase a website photo during backup.
+                // Explicit removal uses saveRecipePhotoToCloud instead.
+                if (recipe.photoUri.isBlank()) {
+                    recipeData.remove("photoDataUrl")
+                    recipeData.remove("photoUri")
+                }
                 batch.set(recipeDoc, recipeData, SetOptions.merge())
 
                 // Attach related ingredients inside the recipe document sub-collection
@@ -576,7 +663,7 @@ object FirebaseService {
             val restoredPackaging = mutableListOf<PackagingItemEntity>()
 
             for (doc in packagingColl.documents) {
-                val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: ""
                 val category = doc.getString("category") ?: "Cake boxes"
                 val unit = doc.getString("unit") ?: "pcs"
@@ -620,7 +707,7 @@ object FirebaseService {
             }
 
             for (doc in customersColl.documents) {
-                val id = doc.getLong("id") ?: 0L
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: "Customer"
                 val phone = doc.getString("phone") ?: ""
                 val email = doc.getString("email") ?: ""
@@ -647,7 +734,7 @@ object FirebaseService {
             }
 
             for (doc in recipesColl.documents) {
-                val id = doc.getLong("id") ?: 0L
+                val id = doc.getLong("id") ?: stableDocumentId(doc.id)
                 val name = doc.getString("name") ?: "Unnamed Recipe"
                 val category = doc.getString("category") ?: "Cakes"
                 val description = doc.getString("description") ?: ""
@@ -667,7 +754,7 @@ object FirebaseService {
                 val laborHours = doc.getDouble("laborHours") ?: 1.5
                 val laborRatePerHour = doc.getDouble("laborRatePerHour") ?: 120.0
                 val instructions = doc.getString("instructions") ?: ""
-                val photoUri = doc.getString("photoUri") ?: ""
+                val photoUri = doc.getString("photoDataUrl") ?: doc.getString("photoUri") ?: ""
 
                 restoredRecipes.add(
                     RecipeEntity(
@@ -698,7 +785,7 @@ object FirebaseService {
                 // Fetch ingredients for this recipe
                 val ingDocs = doc.reference.collection("ingredients").get().awaitTask()
                 for (iDoc in ingDocs.documents) {
-                    val ingId = iDoc.getLong("id") ?: 0L
+                    val ingId = iDoc.getLong("id") ?: stableDocumentId(iDoc.id)
                     val ingRecipeId = iDoc.getLong("recipeId") ?: id
                     val ingName = iDoc.getString("name") ?: ""
                     val quantity = iDoc.getDouble("quantity") ?: 0.0
@@ -813,7 +900,7 @@ object FirebaseService {
     fun documentToPackagingItem(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): PackagingItemEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val category = doc.getString("category") ?: "Cake boxes"
         val unit = doc.getString("unit") ?: "pcs"
         val packagePrice = extractNumber(doc, "packagePrice", 0.0)
@@ -960,7 +1047,7 @@ object FirebaseService {
     fun documentToRecipe(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): RecipeEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else (doc.id.toLongOrNull() ?: 0L) }
+        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else stableDocumentId(doc.id) }
         val category = doc.getString("category") ?: "Cakes"
         val description = doc.getString("description") ?: ""
         val servings = (doc.get("servings").safeLong(1L)).toInt()
@@ -979,7 +1066,7 @@ object FirebaseService {
         val laborHours = extractNumber(doc, "laborHours", 1.5)
         val laborRatePerHour = extractNumber(doc, "laborRatePerHour", 120.0)
         val instructions = doc.getString("instructions") ?: ""
-        val photoUri = doc.getString("photoUri") ?: ""
+        val photoUri = doc.getString("photoDataUrl") ?: doc.getString("photoUri") ?: ""
         val createdAt = doc.get("createdAt").safeLong(System.currentTimeMillis())
         val updatedAt = extractUpdatedAt(doc)
 
@@ -1021,7 +1108,7 @@ object FirebaseService {
     ): RecipeIngredientEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else (doc.id.toLongOrNull() ?: 0L) }
+        val id = doc.get("id").safeLong(0L).let { if (it > 0) it else stableDocumentId(doc.id) }
         val recipeId = doc.get("recipeId").safeLong(0L)
         val quantity = extractNumber(doc, "quantity", 1.0)
         val unit = doc.getString("unit") ?: (doc.get("unit")?.toString()) ?: "g"
@@ -1049,7 +1136,7 @@ object FirebaseService {
     fun documentToCustomer(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): CustomerEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val phone = doc.getString("phone") ?: ""
         val email = doc.getString("email") ?: ""
         val address = doc.getString("address") ?: ""
@@ -1080,7 +1167,7 @@ object FirebaseService {
     fun documentToProduct(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): ProductServiceEntity? {
         val name = doc.getString("name") ?: (doc.get("name")?.toString()) ?: return null
         if (name.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val description = doc.getString("description") ?: ""
         val category = doc.getString("category") ?: "Cakes"
         val imageUrl = doc.getString("imageUrl") ?: ""
@@ -1119,7 +1206,7 @@ object FirebaseService {
     fun documentToInvoice(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): InvoiceEntity? {
         val invoiceNumber = doc.getString("invoiceNumber") ?: ("INV-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: (doc.get("clientName")?.toString()) ?: "Customer"
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val clientPhone = doc.getString("clientPhone") ?: ""
         val orderDescription = doc.getString("orderDescription") ?: ""
         val issueDate = doc.getString("issueDate") ?: "Today"
@@ -1192,7 +1279,7 @@ object FirebaseService {
     fun documentToQuote(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): QuoteEntity? {
         val quoteNumber = doc.getString("quoteNumber") ?: ("QUO-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: "Customer"
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val clientPhone = doc.getString("clientPhone") ?: ""
         val eventType = doc.getString("eventType") ?: "Celebration"
         val eventDate = doc.getString("eventDate") ?: ""
@@ -1253,7 +1340,7 @@ object FirebaseService {
     fun documentToOrder(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): OrderEntity? {
         val orderNumber = doc.getString("orderNumber") ?: ("ORD-" + doc.id.takeLast(4))
         val customerName = doc.getString("customerName") ?: "Customer"
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val customerPhone = doc.getString("customerPhone") ?: ""
         val description = doc.getString("description") ?: ""
         val dueDate = doc.getString("dueDate") ?: ""
@@ -1289,7 +1376,7 @@ object FirebaseService {
     fun documentToTask(doc: com.google.firebase.firestore.DocumentSnapshot, targetBakeryId: String): TaskEntity? {
         val title = doc.getString("title") ?: (doc.get("title")?.toString()) ?: return null
         if (title.isBlank()) return null
-        val id = doc.getLong("id") ?: (doc.id.toLongOrNull() ?: 0L)
+        val id = doc.getLong("id") ?: stableDocumentId(doc.id)
         val orderRef = doc.getString("orderRef") ?: ""
         val dueTime = doc.getString("dueTime") ?: "09:00"
         val priority = doc.getString("priority") ?: "Medium"
@@ -1390,16 +1477,33 @@ object FirebaseService {
                 "laborHours" to item.laborHours,
                 "laborRatePerHour" to item.laborRatePerHour,
                 "instructions" to item.instructions,
-                "photoUri" to item.photoUri,
+                "photoDataUrl" to RecipePhoto.portable(item.photoUri),
+                "photoUri" to "",
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
+            if (item.photoUri.isBlank()) {
+                data.remove("photoDataUrl")
+                data.remove("photoUri")
+            }
             docRef.set(data, SetOptions.merge()).awaitTask()
             Result.success(docId)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save recipe to cloud", e)
             Result.failure(e)
         }
+    }
+
+    // Update only artwork so a photo change cannot overwrite newer website recipe details.
+    suspend fun saveRecipePhotoToCloud(bakeryId: String, firestoreId: String, photo: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        return try {
+            require(bakeryId.isNotBlank() && firestoreId.isNotBlank())
+            db.collection("bakeries").document(bakeryId).collection("recipes").document(firestoreId)
+                .update(mapOf("photoDataUrl" to RecipePhoto.portable(photo), "photoUri" to "",
+                    "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp())).awaitTask()
+            Result.success(Unit)
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     suspend fun deleteRecipeFromCloud(bakeryId: String, firestoreId: String): Result<Unit> {
