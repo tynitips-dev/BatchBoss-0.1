@@ -43,7 +43,7 @@ jobs:
       - name: Check out the exact companion partner implementation
         uses: actions/checkout@v4
         with:
-          ref: ce1e27b679f11788b586c944857f8ce0810dac8b
+          ref: 85ccbf281aec56e6bd10b6f34c5a755a49c78cf1
           path: partner-pilot
       - uses: actions/setup-node@v4
         with:
