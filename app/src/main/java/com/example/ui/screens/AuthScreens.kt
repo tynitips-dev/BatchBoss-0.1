@@ -700,8 +700,8 @@ fun LoginScreen(
                             }
                         }
                     } else {
-                        onLoginWithDetails?.invoke(emailOrPhone.trim(), selectedBranch)
-                        onLoginSuccess()
+                        // No local-password fallback: never treat a button tap as Firebase success.
+                        errorMessage = "Cloud sign-in is unavailable. Please update BatchBoss or contact info@batchboss.co.za."
                     }
                 } else {
                     // Kitchen Staff PIN
