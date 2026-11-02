@@ -84,6 +84,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Schema 10 predates bakery IDs. Keep ownership unknown until the baker links an account.
+        val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("user_accounts", "customers", "recipes", "user_profiles")) {
+                    addColumnIfMissing(db, table, "bakeryId", "TEXT NOT NULL DEFAULT ''")
+                }
+            }
+        }
+
         val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `invoices` ADD COLUMN `packagingTotal` REAL NOT NULL DEFAULT 0.0")
@@ -200,7 +209,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         internal fun builder(context: Context, name: String): RoomDatabase.Builder<AppDatabase> =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
 
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
