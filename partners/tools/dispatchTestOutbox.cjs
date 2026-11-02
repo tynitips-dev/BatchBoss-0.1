@@ -55,7 +55,7 @@ async function run(env=process.env) {
   try { await auth.createUser({uid,email:uid+"@example.test",emailVerified:true}); }
   catch(error) { if(error.code!=="auth/uid-already-exists"&&error.code!=="auth/email-already-exists")throw error; }
   await auth.updateUser(uid,{emailVerified:true});
-  await auth.setCustomUserClaims(uid,{batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:config.source});
+  await auth.setCustomUserClaims(uid,{batchbossPartnerBridgeSource:config.source});
   const customToken=await auth.createCustomToken(uid);
   const signIn=await fetch("http://"+env.FIREBASE_AUTH_EMULATOR_HOST+"/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=emulator-only",{
    method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer owner"},body:JSON.stringify({token:customToken,returnSecureToken:true,targetProjectId:config.partnerProject}),redirect:"error"
