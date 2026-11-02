@@ -277,25 +277,16 @@ function renderAdmin() {
           '</div></td></tr>').join("") + '</tbody></table></div>' :
         '<div class="empty">No partner applications yet.</div>');
   } else if (page === "sales") {
-    inner = '<div class="heading"><div><div class="eyebrow">Manual verification</div><h1>Record verified first sales</h1>' +
-      '<p class="subtext">Use the merchant dashboard to confirm a payment before making an entry.</p></div></div>' +
-      notice("This form does not check Paystack or PayFast directly. The administrator must independently verify the real successful payment, currency and amount. Never enter test transactions.", "red") +
-      '<div class="grid-two"><div>' + card("Unpaid / pending leads",
-        '<div class="table-wrap"><table class="data-table"><thead><tr><th>Business</th><th>Type</th><th>Status</th></tr></thead><tbody>' +
+    inner = '<div class="heading"><div><div class="eyebrow">Trusted payment reconciliation</div><h1>Verified sales</h1>' +
+      '<p class="subtext">This view will show provider-verified first payments when the production payment bridge is approved.</p></div></div>' +
+      notice("Manual commission creation is disabled. An admin checkbox or a checkout redirect does not prove payment. Paystack and PayFast transactions must be independently authenticated by the server.", "blue") +
+      card("Registered referral leads", '<div class="table-wrap"><table class="data-table"><thead><tr><th>Business</th><th>Type</th><th>Payment state</th></tr></thead><tbody>' +
         admin.leads.map(v => '<tr><td><strong>' + esc(v.businessName) + '</strong><small>' +
-          esc(v.businessEmail) + '</small></td><td>' + esc(v.leadType) + '</td><td>' + statusPill(v.saleStatus) +
-          '</td></tr>').join("") + '</tbody></table></div>') + '</div><div>' +
-        card("Record a payment", '<form class="fields" data-form="verified-sale">' +
-          '<div class="field wide"><label>Business lead</label><select name="leadId" required><option value="">Select lead</option>' +
-          admin.leads.filter(v => v.saleStatus !== "payment-verified").map(v => '<option value="' + esc(v.id) + '">' +
-            esc(v.businessName) + " (" + esc(v.leadType) + ")" + '</option>').join("") + '</select></div>' +
-          '<div class="field wide"><label>Package</label><select name="planId" required>' + planOptions() + '</select></div>' +
-          '<div class="field"><label>Provider</label><select name="provider"><option value="paystack">Paystack</option><option value="payfast">PayFast</option></select></div>' +
-          '<div class="field"><label>Paid amount (R)</label><input type="number" name="amount" min="0.01" max="1000000" step="0.01" required></div>' +
-          '<div class="field wide"><label>Provider payment reference</label><input name="reference" minlength="6" maxlength="150" required></div>' +
-          '<label class="check field wide"><input type="checkbox" name="merchantPaymentConfirmed" required>I personally checked this successful real payment in the merchant system, including its amount and currency.</label>' +
-          '<div class="field wide"><button class="btn pink" type="submit">Record verified sale</button></div></form>',
-          "Creates a pending commission, not a payout") + '</div></div>';
+          esc(v.businessEmail) + '</small></td><td>' + esc(v.leadType) +
+          '</td><td>' + statusPill(v.saleStatus) + '</td></tr>').join("") + '</tbody></table></div>') +
+      card("Next release gate",
+        '<div class="resource"><h3>Secure verified-payment bridge</h3><p>Reconcile merchant-confirmed payments to immutable referral ownership, then post exactly one eligible commission. Refund and chargeback events must reverse or hold the credit, and all entries require an audit trail.</p></div>' +
+        '<p class="subtext">Test payments never create payable commissions. This system has not been connected to production billing.</p>');
   } else {
     inner = '<div class="heading"><div><div class="eyebrow">Finance controls</div><h1>Commission approvals</h1>' +
       '<p class="subtext">Approve verified commissions and record manual payouts with an audit note.</p></div></div>' +
@@ -397,16 +388,6 @@ root.addEventListener("submit", async event => {
     await perform(async () => {
       await call("updatePartnerLead", { leadId: data.leadId, agentStage: data.agentStage, note: data.note });
       await refresh(); toast("Follow-up saved.");
-    });
-  } else if (kind === "verified-sale") {
-    const cents = Math.round(Number(data.amount) * 100);
-    if (!Number.isSafeInteger(cents) || cents <= 0) { showError("Enter a valid positive amount."); return; }
-    if (!confirm("Have you independently confirmed this REAL payment in the merchant dashboard?")) return;
-    await perform(async () => {
-      await call("adminRecordVerifiedSale", { leadId: data.leadId, planId: data.planId,
-        provider: data.provider, reference: data.reference, amountCents: cents,
-        merchantPaymentConfirmed: data.merchantPaymentConfirmed === "on" });
-      await loadAdmin(); toast("Pending commission created.");
     });
   } else if (kind === "commission-change") {
     if (!confirm("Confirm change to " + data.nextStatus + "? Paid means the money was already transferred manually.")) return;

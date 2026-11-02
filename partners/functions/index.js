@@ -195,53 +195,15 @@ exports.adminListLeads = onCall(async request => {
   })), truncated: snapshot.size === LIMIT };
 });
 
-exports.adminRecordVerifiedSale = onCall(async (request) => {
-  const adminUid = adminUser(request);
-  const leadId = safe(request.data?.leadId, 160);
-  const planId = request.data?.planId;
-  const provider = request.data?.provider;
-  const reference = safe(request.data?.reference, 150);
-  const amountCents = request.data?.amountCents;
-  if (!/^[a-zA-Z0-9_-]{10,160}$/.test(leadId) || !Object.hasOwn(PLANS, planId) ||
-      !PAYMENT_PROVIDERS.includes(provider) || !/^[A-Za-z0-9_./:-]{6,150}$/.test(reference) ||
-      request.data?.merchantPaymentConfirmed !== true) {
-    throw new HttpsError("invalid-argument", "Provide verified payment evidence and a valid product.");
-  }
-  let commissionCents;
-  try { commissionCents = calculateCommission(amountCents, planId); }
-  catch { throw new HttpsError("invalid-argument", "Invalid paid amount."); }
-  const paymentClaim = collection("partnerPaymentClaims").doc(hash(provider + ":" + reference));
-  const firstSaleClaim = collection("partnerFirstSales").doc(leadId);
-  const leadRef = collection("partnerLeads").doc(leadId);
-  const commissionRef = collection("partnerCommissions").doc();
-  await db().runTransaction(async t => {
-    const [lead, payment, first] = await Promise.all([
-      t.get(leadRef), t.get(paymentClaim), t.get(firstSaleClaim)
-    ]);
-    if (!lead.exists) throw new HttpsError("not-found", "Lead does not exist.");
-    if (payment.exists || first.exists) {
-      throw new HttpsError("already-exists", "This payment or first-sale commission was already recorded.");
-    }
-    if (PLANS[planId].category !== lead.get("leadType")) {
-      throw new HttpsError("invalid-argument", "Plan type does not match the lead.");
-    }
-    const partnerUid = lead.get("partnerUid");
-    const partner = await t.get(collection("partnerProfiles").doc(partnerUid));
-    if (partner.get("status") !== "approved") {
-      throw new HttpsError("failed-precondition", "Partner must be approved.");
-    }
-    t.create(paymentClaim, { provider, leadId, commissionId: commissionRef.id, recordedAt: now() });
-    t.create(firstSaleClaim, { leadId, commissionId: commissionRef.id, recordedAt: now() });
-    t.create(commissionRef, {
-      partnerUid, leadId, businessName: lead.get("businessName"),
-      planId, provider, reference, amountCents, commissionCents,
-      rateBps: PLANS[planId].rateBps, status: "pending",
-      verificationMethod: "manual-merchant-dashboard", verifiedBy: adminUid,
-      createdAt: now(), updatedAt: now()
-    });
-    t.update(leadRef, { saleStatus: "payment-verified", updatedAt: now() });
-  });
-  return { commissionId: commissionRef.id, commissionCents, status: "pending" };
+// Deliberately refuses client-supplied payment claims, including admin checkboxes.
+// Only trusted, source-side provider verification may eventually write payable
+// commissions. The offline referral bridge writes separate NONPAYABLE test records.
+exports.adminRecordVerifiedSale = onCall(async request => {
+  adminUser(request);
+  throw new HttpsError(
+    "failed-precondition",
+    "Manual payment entry cannot create commissions. Use independently verified provider settlement and reconciliation."
+  );
 });
 
 exports.adminListCommissions = onCall(async request => {
@@ -287,10 +249,15 @@ exports.adminChangeCommissionStatus = onCall(async request => {
 // Test bridge is deliberately absent from every deployed Functions export.
 if (process.env.FUNCTIONS_EMULATOR === "true" && /^demo-[a-z0-9-]+$/.test(process.env.GCLOUD_PROJECT || "") && process.env.BATCHBOSS_PARTNER_TEST_ENABLED === "true") {
   exports.ingestPartnerTestEvent = onCall(async request => {
-    adminUser(request);
+    // An integration identity must NEVER be a portal administrator. Scope both
+    // its Firebase UID and its signed custom claim to exactly one source.
+    const uid = authUser(request);
     const source = request.auth.token.batchbossPartnerBridgeSource;
-    if (source && (!["baker", "supplier"].includes(source) || source !== request.data?.source)) {
-      throw new HttpsError("permission-denied", "Test bridge source does not match.");
+    if (!["baker", "supplier"].includes(source) ||
+        uid !== "referral-bridge-" + source ||
+        request.auth.token.batchbossPartnerAdmin === true ||
+        source !== request.data?.source) {
+      throw new HttpsError("permission-denied", "Dedicated test bridge identity required.");
     }
     const { ingestTestEvent } = require("./referralTestIngest");
     return ingestTestEvent(db(), request.data);

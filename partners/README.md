@@ -5,7 +5,7 @@ A separate, BatchBoss-branded **partners.batchboss.co.za** workspace for:
 - Personal agent dashboards showing leads and verified commissions.
 - Permission-confirmed baker and supplier lead registration, ownership checks, and duplicate prevention by business email per segment.
 - Sales follow-ups that agents can update without editing paid-sale status.
-- Manual first-payment verification, first-sale-only commissions, commission approvals and payout audit notes.
+- Test-only source-verified first-payment ingestion with nonpayable credits, first-sale ownership checks, and full refund/chargeback reconciliation. Production commissions require a trusted payment bridge.
 - Independent partner admin console.
 
 ## Current status
@@ -14,7 +14,7 @@ A separate, BatchBoss-branded **partners.batchboss.co.za** workspace for:
 
 The recommended *pilot policy* is 25% of a newly referred baker's first successful paid subscription, or 20% of a newly referred supplier's first successful paid subscription. These are **provisional**, controlled in functions/commissionPolicy.js; not a binding programme offer. No renewal commissions are implemented.
 
-**IMPORTANT:** The sharing link on the dashboard uses https://batchboss.co.za/?ref=CODE but the main baker checkout and separate supplier checkout do NOT currently capture or automatically attribute this parameter. Sales may only be credited by manual, independent admin verification using a registered lead. Do not advertise automatic referral attribution yet.
+**IMPORTANT:** Companion baker and supplier development branches have emulator-only referral capture and verified TEST settlement, but production customer attribution is **not connected**. The partner preview does not generate a live merchant-ready referral link. Do not advertise automatic tracking or payable commissions.
 
 The supplier repository currently has an isolated test-only Paystack payment path; do **not** assume supplier live checkout is ready or credit test transactions.
 
@@ -52,11 +52,12 @@ to a verified admin Firebase Authentication user via a trusted one-off Firebase 
 1. Candidate creates account, verifies email, completes programme application.
 2. Admin opens the partner portal, approves applicant; a random referral code is reserved.
 3. Partner enters a baker/supplier lead only where permitted to provide the business email.
-4. Admin checks a successful REAL ZAR first payment in merchant records, then records provider, payment reference and actual amount.
-5. Backend enforces unique first-sale claim per lead and unique payment reference, applies plan-specific provisional basis points, and creates a *pending* commission.
-6. Admin approves commission. After transferring funds outside the portal, admin marks Paid with an audit note.
+4. In the test-only emulator, the baker/supplier backend verifies a TEST Paystack charge and delivers an authenticated private event with an opaque referral subject.
+5. The test receiver checks the partner code, immutable subject ownership and first successful payment reference, creating one **NONPAYABLE** credit. A verified full refund/chargeback test event reverses it with effective commission zero; duplicate deliveries cannot pay twice.
+6. The admin browser **cannot** create a payable commission by ticking a verification checkbox. A trusted production provider integration and signed cross-project delivery must be reviewed and deployed before genuine commissions can be created.
+7. After production sign-off, finance may approve and record a payout manually; this code does not transfer funds.
 
-**Manual "paid" is a record, not a payment transfer.** Refunds, chargebacks, and paid reversals require reconciliation outside the portal. Add real verified payment webhooks and reconciliation before automatic crediting or payouts.
+**Manual "paid" is a record, not a payment transfer.** New manual payment-credit creation is explicitly blocked. The isolated partner test receiver supports idempotent full reversals; baker and supplier source systems do not yet emit refund events. Partial refunds must be held for policy review. All real refunds, chargebacks and payout adjustments require a production reconciliation service.
 
 ## Production gates (not yet complete)
 

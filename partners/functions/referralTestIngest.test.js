@@ -8,7 +8,7 @@ const { validateEvent } = require("./referralContract");
 const code="BB-ABCDEF123456", subject="sub-"+"a".repeat(32);
 const event=(kind,n=1,source="supplier")=>({
  version:1,eventId:"evt-"+n.toString(16).padStart(32,"0"),source,kind,subject,referralCode:code,mode:"test",
- ...(kind==="payment"?{reference:"payment-123456",planId:source==="supplier"?"supplierGrowth":"bakerMonthly",amountCents:39900,currency:"ZAR"}:{})
+ ...(["payment","reversal"].includes(kind)?{reference:"payment-123456",planId:source==="supplier"?"supplierGrowth":"bakerMonthly",amountCents:39900,currency:"ZAR",...(kind==="reversal"?{reason:"refund"}:{})}:{})
 });
 function setup(){const db=memoryDb();db.seed("partnerCodes/"+code,{partnerUid:"agent"});db.seed("partnerProfiles/agent",{status:"approved"});return db;}
 test("both segments bind registration to first test payment; never payable",async()=>{
@@ -76,14 +76,67 @@ test("supplier actual signup and verified checkout flow reaches test attribution
  assert.equal(providerCalls,2);
 });
 
-test("central test bridge is absent in production and requires a verified admin in emulator",async()=>{
+test("test bridge is absent in production and has source-only, non-admin identity",async()=>{
  const db=setup(),file=path.join(__dirname,"index.js");
  assert.equal(loadFunctions(file,db,{}).ingestPartnerTestEvent,undefined);
- const handler=loadFunctions(file,db,{FUNCTIONS_EMULATOR:"true",GCLOUD_PROJECT:"demo-batchboss-partners",BATCHBOSS_PARTNER_TEST_ENABLED:"true"}).ingestPartnerTestEvent;
+ const fns=loadFunctions(file,db,{FUNCTIONS_EMULATOR:"true",GCLOUD_PROJECT:"demo-batchboss-partners",BATCHBOSS_PARTNER_TEST_ENABLED:"true"});
+ const handler=fns.ingestPartnerTestEvent;
+ const supplier={uid:"referral-bridge-supplier",token:{email_verified:true,batchbossPartnerBridgeSource:"supplier"}};
  await assert.rejects(handler({data:event("registration")}),{code:"unauthenticated"});
  await assert.rejects(handler({auth:{uid:"agent",token:{email_verified:true}},data:event("registration")}),{code:"permission-denied"});
- await assert.rejects(handler({auth:{uid:"admin",token:{email_verified:false,batchbossPartnerAdmin:true}},data:event("registration")}),{code:"unauthenticated"});
- await assert.rejects(handler({auth:{uid:"bridge",token:{email_verified:true,batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:"supplier"}},data:event("registration",88,"baker")}),{code:"permission-denied"});
- const result=await handler({auth:{uid:"admin",token:{email_verified:true,batchbossPartnerAdmin:true}},data:event("registration")});
+ await assert.rejects(handler({auth:{uid:"admin",token:{email_verified:true,batchbossPartnerAdmin:true}},data:event("registration")}),{code:"permission-denied"});
+ await assert.rejects(handler({auth:{uid:supplier.uid,token:{email_verified:false,batchbossPartnerBridgeSource:"supplier"}},data:event("registration")}),{code:"unauthenticated"});
+ await assert.rejects(handler({auth:{uid:"wrong-bridge-id",token:{email_verified:true,batchbossPartnerBridgeSource:"supplier"}},data:event("registration")}),{code:"permission-denied"});
+ await assert.rejects(handler({auth:{uid:supplier.uid,token:{email_verified:true,batchbossPartnerBridgeSource:"supplier",batchbossPartnerAdmin:true}},data:event("registration")}),{code:"permission-denied"});
+ await assert.rejects(handler({auth:supplier,data:event("registration",88,"baker")}),{code:"permission-denied"});
+ const result=await handler({auth:supplier,data:event("registration")});
  assert.equal(result.payable,false);
+ // A bridge must not have access to normal administrative endpoints.
+ await assert.rejects(fns.adminListPartners({auth:supplier}),{code:"permission-denied"});
+});
+
+test("verified full refund cancels the test credit for baker and supplier without payout", async () => {
+ for (const source of ["supplier", "baker"]) {
+  const db = setup();
+  await ingestTestEvent(db, event("registration", 100, source));
+  await assert.rejects(ingestTestEvent(db, event("reversal", 101, source)), /original verified payment/);
+  await ingestTestEvent(db, event("payment", 102, source));
+  db.seed("partnerProfiles/agent", { status: "suspended" });
+  const reversed = await ingestTestEvent(db, event("reversal", 103, source));
+  assert.equal(reversed.payable, false);
+  assert.equal((await ingestTestEvent(db, event("reversal", 103, source))).duplicate, true);
+  // Distinct provider deliveries referring to the same full refund are idempotent.
+  await ingestTestEvent(db, event("reversal", 104, source));
+  const first = db.entries().find(([key]) => key.startsWith("partnerTestFirstSales/"))[1];
+  assert.equal(first.status, "test-reversed");
+  assert.equal(first.effectiveCommissionCents, 0);
+  assert.equal(first.reversedAmountCents, 39900);
+  assert.equal(first.payable, false);
+  assert.equal(db.entries().filter(([k]) => k.startsWith("partnerTestReversalClaims/")).length, 1);
+  assert.equal(db.entries().some(([k]) => k.startsWith("partnerCommissions/")), false);
+ }
+});
+test("reversal mismatches and partial refunds never silently clear a credit", async () => {
+ const db = setup();
+ await ingestTestEvent(db, event("registration", 110));
+ await ingestTestEvent(db, event("payment", 111));
+ await assert.rejects(ingestTestEvent(db, { ...event("reversal", 112), amountCents: 19950 }), /Full reversal/);
+ await assert.rejects(ingestTestEvent(db, { ...event("reversal", 113), reference: "other-123456" }), /original verified payment/);
+ assert.throws(() => validateEvent({ ...event("reversal", 114), reason: "manual" }));
+ assert.throws(() => validateEvent({ ...event("payment", 115), reason: "refund" }));
+ await ingestTestEvent(db, event("reversal", 116));
+ await assert.rejects(ingestTestEvent(db, { ...event("reversal", 117), reason: "chargeback" }), /Conflicting reversal/);
+ const first = db.entries().find(([key]) => key.startsWith("partnerTestFirstSales/"))[1];
+ assert.equal(first.status, "test-reversed");
+});
+
+test("even an administrator cannot create payable commissions from a checkbox", async () => {
+ const db = setup();
+ const handler = loadFunctions(path.join(__dirname, "index.js"), db, {}).adminRecordVerifiedSale;
+ await assert.rejects(handler({
+   auth: { uid:"admin", token:{email_verified:true,batchbossPartnerAdmin:true} },
+   data: { merchantPaymentConfirmed:true, provider:"paystack",
+     reference:"fake-123456", planId:"supplierGrowth", amountCents:39900 }
+ }), {code:"failed-precondition"});
+ assert.equal(db.entries().some(([k]) => k.startsWith("partnerCommissions/")), false);
 });

@@ -24,7 +24,7 @@ async function drainTestOutbox(db, source, send) {
  if(!/^127\.0\.0\.1:[0-9]{2,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST||"")||!["baker","supplier"].includes(source)||!/^demo-/.test(db.projectId))throw new Error("Invalid test source");
  const result={delivered:0,pending:0};
  // Registrations go first; payment-before-registration remains pending for a later pass.
- for(const kind of ["registration","payment"]) {
+ for(const kind of ["registration","payment","reversal"]) {
   const page=await db.collection("partnerTestOutbox").where("status","==","pending").where("event.kind","==",kind).limit(100).get();
   for(const item of page.docs) {
    try {
@@ -55,7 +55,7 @@ async function run(env=process.env) {
   try { await auth.createUser({uid,email:uid+"@example.test",emailVerified:true}); }
   catch(error) { if(error.code!=="auth/uid-already-exists"&&error.code!=="auth/email-already-exists")throw error; }
   await auth.updateUser(uid,{emailVerified:true});
-  await auth.setCustomUserClaims(uid,{batchbossPartnerAdmin:true,batchbossPartnerBridgeSource:config.source});
+  await auth.setCustomUserClaims(uid,{batchbossPartnerBridgeSource:config.source});
   const customToken=await auth.createCustomToken(uid);
   const signIn=await fetch("http://"+env.FIREBASE_AUTH_EMULATOR_HOST+"/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=emulator-only",{
    method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer owner"},body:JSON.stringify({token:customToken,returnSecureToken:true,targetProjectId:config.partnerProject}),redirect:"error"
