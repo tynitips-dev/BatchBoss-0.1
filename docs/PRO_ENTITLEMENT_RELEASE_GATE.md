@@ -1,0 +1,44 @@
+# BatchBoss Pro entitlement release gate
+
+**Status: DRAFT / NOT APPROVED FOR PRODUCTION**
+
+This document covers the separate safety branch and draft PR #25. Passing unit tests and demo-emulator tests alone do not authorize production changes.
+
+## Current automated coverage
+- Functions TypeScript compile/lint; pure entitlement and Paystack signature/payment matching tests.
+- Demo Firestore emulator: read-only customer checks, verified-grant compatibility mirroring without migration marker, and revoked gift protection.
+- Android debug unit tests in CI, including customer/recipe sync with isolated mock HTTP server.
+
+## Remaining mandatory gates
+- [ ] Reconcile all 5 user local source archives with GitHub (functions, app, web, admin-web, tests), inspect changes and exclude secrets.
+- [ ] End-to-end **Paystack and PayFast webhook** tests covering signature/ITN validation, valid payment, duplicate delivery, retries after recomputation failure, concurrent payments, invalid amount/plan/currency and refunds/cancellations.
+- [ ] Demo-emulator migration-enabled dry-run, with known and mixed legacy profiles; test batch size, write counts, rollback and no-expiry PayFast.
+- [ ] Verify web portal, admin promotion, promo redemption, and Android clients against the same backend shape and Firestore security rules.
+- [ ] Read-only, privacy-preserving production inventory of status/source/expiry cohorts; reconcile with independent payment processor records without printing customer data.
+- [ ] Produce backups, staged canary population, alerting thresholds, backout procedure and explicit written deploy/merge authorization.
+- [ ] Review branch/base merge conflicts and obtain final human review of this cross-product feature.
+
+## Source-only integration security findings (23 October 2026)
+- **Legacy Node backend on repository default branch:** `server.js` serves `/api/bakery/:bakeryId/all` and mutable bakery routes without authentication, accepts wildcard CORS, persists bakery/customer data at `public/data/bakery_store.json`, and statically serves the `public` directory. If this server is reachable outside a disposable fixture environment, customer data may be exposed or modified. Its presence in GitHub does **not** prove it is deployed. Verify the actual xneelo runtime/configuration with the owner before any production integration; never probe customer endpoints with live identifiers.
+- **Branch divergence:** this Pro safety PR targets `codex/web-backend-foundation` and does not contain that legacy `server.js`. Passing PR CI therefore does not audit or fix the separate default-branch Node service. Do not assume a merge resolves the discrepancy.
+- **Android sync:** `WebSyncService` currently chooses loopback addresses (`10.0.2.2`, `127.0.0.1`, `localhost`), so passing isolated mock-server tests does not demonstrate authenticated production Android-to-web synchronization. A reviewed, authenticated staging endpoint and source reconciliation are required.
+- **PayFast is legacy, not the active payment provider:** `index.ts` still exports `createPayfastCheckout` and `payfastNotify`. Confirm that new PayFast checkout is disabled in the actual deployed runtime; preserve legacy callback/data paths until existing subscription obligations have been audited. No new PayFast charge is authorized by this PR.
+- **Development-branch hardening (24 October 2026):** `createPayfastCheckout` now checks `PAYFAST_CHECKOUT_ENABLED`, default `false`, and fails before writing a new payment intent unless explicitly enabled. `payfastNotify` remains available for historical ITN settlement. This is source-level protection only; it does not verify the currently deployed runtime or its parameter configuration.
+
+## Hard safety constraints
+- `PRO_ENTITLEMENT_MIGRATION_ENABLED` is **false by default**. Do not enable for any customer environment without the separate migration approval.
+- Do not run `firebase deploy`, merge the draft PR, write production Firestore accounts, or edit real Paystack/PayFast payment records without explicit approval.
+- All tests and samples use demo projects or synthetic accounts.
+- A successful CI job must never be described as payment-provider or production certification.
+
+## Gate ownership
+Developer may continue non-production development and automated tests. Owner approval is required at the production-change boundary.
+
+## Local source archive reconciliation (26 October 2026, read-only)
+- Inspected the five owner-uploaded 21 October source archives from the private file library: `functions.zip`, `app.zip`, `tests.zip`, `web.zip`, and `admin-web.zip`. This was a **source inventory and selected-file comparison**, not a wholesale import, runtime test, or approval to replace GitHub files.
+- Compared 17 representative integration paths with this PR branch, normalizing CRLF/LF before comparison. **Four match**: `web/src/SubscriptionView.tsx`, `web/src/firebase.ts`, `admin-web/src/firebase.ts`, and `tests/payment-core.cjs`.
+- **Eleven differ**: `functions/src/{index,paystack,paystack-core,proEntitlements}.ts`, `web/src/App.tsx`, `web/firestore.rules`, `admin-web/src/App.tsx`, `app/src/main/java/com/example/data/remote/{WebSyncService,FirebaseService}.kt`, `app/src/main/java/com/example/ui/BatchBossViewModel.kt`, and `tests/paystack-flow.cjs`.
+- **Two archive files are absent from this PR branch**: `app/src/main/java/com/example/data/remote/ProEntitlement.kt` and `tests/pro-entitlements.cjs`. Absence may reflect moved/replaced code; check references and dependencies before importing.
+- The local `functions/src/paystack-core.ts` uses permissive date parsing, whereas the draft branch rejects impossible Paystack dates. Preserve the branch's tested validation; **do not overwrite it with the older archive**. Other differences need targeted review, not blind replacement.
+- Archives contain local configuration and generated dependencies, including environment files. **Never commit local `.env` files, credentials, build directories, or `node_modules` during reconciliation.** No secrets were copied to GitHub in this check.
+- Remaining source gate: review each differing implementation against its consumers, selectively port only needed behavior to the draft branch with isolated tests, and separately verify hosted/runtime parity. None of these archive snapshots establishes the currently deployed version.
