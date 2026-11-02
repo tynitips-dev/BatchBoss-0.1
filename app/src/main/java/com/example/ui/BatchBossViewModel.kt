@@ -84,19 +84,14 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     // Auth Session Management
     private val authPrefs = application.getSharedPreferences("batchboss_auth_prefs", android.content.Context.MODE_PRIVATE)
     private val initialSavedUserId: Long = authPrefs.getLong("active_user_id", -1L)
-    private val initialSavedBakeryId: String = authPrefs.getString("active_bakery_id", "") ?: ""
-
     init {
+        // Never treat an old phone-only login preference as a verified cloud session.
+        // Preserve the Room records and saved preferences for assisted migration.
         com.example.data.remote.FirebaseService.activeRepository = repository
-        if (initialSavedBakeryId.isNotBlank()) {
-            com.example.data.remote.FirebaseService.currentBakeryId = initialSavedBakeryId
-            if (initialSavedUserId > 0) {
-                com.example.data.remote.FirebaseService.startPackagingListener(initialSavedBakeryId, repository)
-            }
-        }
     }
 
-    private val _isUserLoggedIn = MutableStateFlow(initialSavedUserId > 0)
+    private val _isUserLoggedIn = MutableStateFlow(false)
+    private val _verifiedFirebaseUid = MutableStateFlow<String?>(null)
     val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
 
     // Navigation stack / current screen
@@ -263,7 +258,17 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     private val subscriptionRefresh = MutableStateFlow(0)
     private val firebaseUid = MutableStateFlow(FirebaseService.currentUser?.uid)
     private val firebaseAuth = FirebaseService.auth
-    private val subscriptionAuthListener = FirebaseAuth.AuthStateListener { auth -> firebaseUid.value = auth.currentUser?.uid }
+    private val subscriptionAuthListener = FirebaseAuth.AuthStateListener { auth ->
+        val signedInUid = auth.currentUser?.uid
+        firebaseUid.value = signedInUid
+        if (_verifiedFirebaseUid.value != null && signedInUid != _verifiedFirebaseUid.value) {
+            // A different or signed-out Firebase identity may never reuse a local session.
+            _verifiedFirebaseUid.value = null
+            _isUserLoggedIn.value = false
+            _isPremiumUser.value = false
+            _currentScreen.value = Screen.Login
+        }
+    }
 
     fun refreshSubscriptionAccess() { subscriptionRefresh.value += 1 }
 
@@ -343,6 +348,15 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Navigation functions
     fun navigateTo(screen: Screen) {
+        val publicScreen = when (screen) {
+            Screen.Splash, Screen.Onboarding, Screen.Login, Screen.CreateAccount, Screen.ForgotPassword -> true
+            else -> false
+        }
+        if (!publicScreen && (!_isUserLoggedIn.value || _verifiedFirebaseUid.value == null ||
+                FirebaseService.currentUser?.uid != _verifiedFirebaseUid.value)) {
+            _currentScreen.value = Screen.Login
+            return
+        }
         _currentScreen.value = screen
         when (screen) {
             is Screen.Home -> _selectedTab.value = 0
@@ -392,11 +406,11 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     fun selectTab(index: Int) {
         _selectedTab.value = index
         when (index) {
-            0 -> _currentScreen.value = Screen.Home
-            1 -> _currentScreen.value = Screen.RecipesList
-            2 -> _currentScreen.value = Screen.InventoryList
-            3 -> _currentScreen.value = Screen.SuppliersList
-            4 -> _currentScreen.value = Screen.QuickActions
+            0 -> navigateTo(Screen.Home)
+            1 -> navigateTo(Screen.RecipesList)
+            2 -> navigateTo(Screen.InventoryList)
+            3 -> navigateTo(Screen.SuppliersList)
+            4 -> navigateTo(Screen.QuickActions)
         }
     }
 
@@ -1585,6 +1599,14 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             // Sync with local Room database for offline session without generating local bakeryId (Requirement 5)
             val cleanEmail = loginResult.email ?: email.trim().lowercase()
             val existingUser = repository.getUserByEmail(cleanEmail)
+            if (existingUser != null && existingUser.bakeryId.isNotBlank() &&
+                existingUser.bakeryId != targetBakeryId) {
+                // A v25 phone-only bakery can contain recipes, stock and customers under
+                // its old ID. Reassigning this row silently would hide or mis-sync them.
+                FirebaseService.signOut()
+                onResult(false, "This phone has saved bakery data under a different workspace. Nothing was moved or deleted. Contact info@batchboss.co.za for help safely linking it before signing in.")
+                return@launch
+            }
             val userId = if (existingUser != null) {
                 val updated = existingUser.copy(
                     bakeryId = targetBakeryId, // EXACT bakeryId from Firebase (Requirement 5)
@@ -1619,7 +1641,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             _currentUserId.value = userId
-            _isUserLoggedIn.value = true
+            _verifiedFirebaseUid.value = loginResult.firebaseUser?.uid
+            _isUserLoggedIn.value = _verifiedFirebaseUid.value != null
             _isPremiumUser.value = false
             refreshSubscriptionAccess()
 
@@ -1669,6 +1692,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun logoutUser() {
         val uid = _currentUserId.value
+        _verifiedFirebaseUid.value = null
+        _isUserLoggedIn.value = false
         com.example.data.remote.FirebaseService.stopAllRealtimeListeners()
         com.example.data.remote.FirebaseService.signOut()
         com.example.data.remote.FirebaseService.currentBakeryId = ""
@@ -1707,80 +1732,8 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         com.example.data.remote.FirebaseService.startAllRealtimeListeners(cleanBakeryId, repository)
     }
 
-    fun createAccountWithDetails(
-        firstName: String,
-        surname: String,
-        email: String,
-        password: String,
-        bakeryName: String,
-        phone: String,
-        city: String,
-        operatingModel: String,
-        currency: String,
-        specialty: String,
-        onComplete: (Long) -> Unit
-    ) {
-        viewModelScope.launch {
-            val cleanEmail = email.trim().lowercase()
-            val bName = bakeryName.trim().ifBlank { "$firstName's Bakery" }
-            val initialBakeryId = generateBakeryId(0, bName)
-            val user = UserAccountEntity(
-                bakeryId = initialBakeryId,
-                firstName = firstName.trim(),
-                surname = surname.trim(),
-                email = cleanEmail,
-                passwordHash = password,
-                bakeryName = bName,
-                phone = phone.trim(),
-                city = city.trim(),
-                operatingModel = operatingModel,
-                currency = currency,
-                specialty = specialty
-            )
-            val newUserId = repository.insertUserAccount(user)
-            val finalBakeryId = generateBakeryId(newUserId, bName)
-            repository.updateUserAccount(user.copy(id = newUserId, bakeryId = finalBakeryId))
-
-            _currentUserId.value = newUserId
-            _isUserLoggedIn.value = true
-            authPrefs.edit().putLong("active_user_id", newUserId).apply()
-
-            updateUserProfile(
-                fullName = "$firstName $surname".trim(),
-                bakeryName = bName,
-                specialty = specialty,
-                phone = phone.trim(),
-                city = city.trim(),
-                operatingModel = operatingModel,
-                currency = currency,
-                email = cleanEmail,
-                bakeryId = finalBakeryId
-            )
-
-            repository.recordLoginLog(
-                userId = newUserId,
-                email = cleanEmail,
-                bakeryName = bakeryName.trim(),
-                action = "REGISTER",
-                notes = "New bakery account created"
-            )
-
-            // Insert official Welcome Email notification from BatchBoss
-            repository.insertNotification(
-                NotificationEntity(
-                    userId = newUserId,
-                    title = "Welcome Email from BatchBoss 🧁",
-                    message = "Hi $firstName! Welcome to BatchBoss. We have dispatched your official welcome letter & starter guide to $cleanEmail. Tap to open and read.",
-                    type = "System",
-                    timeLabel = "Just now",
-                    isUnread = true,
-                    dateGroup = "Today"
-                )
-            )
-
-            onComplete(newUserId)
-        }
-    }
+    // Account creation is handled by the verified website Firebase signup.
+    // The former local-only registration method was removed to prevent false success.
 
     // Google Play Account & Data Deletion
     fun submitDataDeletionRequest(reason: String, onComplete: () -> Unit) {
