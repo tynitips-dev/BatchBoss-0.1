@@ -249,10 +249,15 @@ exports.adminChangeCommissionStatus = onCall(async request => {
 // Test bridge is deliberately absent from every deployed Functions export.
 if (process.env.FUNCTIONS_EMULATOR === "true" && /^demo-[a-z0-9-]+$/.test(process.env.GCLOUD_PROJECT || "") && process.env.BATCHBOSS_PARTNER_TEST_ENABLED === "true") {
   exports.ingestPartnerTestEvent = onCall(async request => {
-    adminUser(request);
+    // An integration identity must NEVER be a portal administrator. Scope both
+    // its Firebase UID and its signed custom claim to exactly one source.
+    const uid = authUser(request);
     const source = request.auth.token.batchbossPartnerBridgeSource;
-    if (!["baker", "supplier"].includes(source) || source !== request.data?.source) {
-      throw new HttpsError("permission-denied", "Test bridge source does not match.");
+    if (!["baker", "supplier"].includes(source) ||
+        uid !== "referral-bridge-" + source ||
+        request.auth.token.batchbossPartnerAdmin === true ||
+        source !== request.data?.source) {
+      throw new HttpsError("permission-denied", "Dedicated test bridge identity required.");
     }
     const { ingestTestEvent } = require("./referralTestIngest");
     return ingestTestEvent(db(), request.data);
