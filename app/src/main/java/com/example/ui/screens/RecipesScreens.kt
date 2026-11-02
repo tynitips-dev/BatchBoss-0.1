@@ -967,7 +967,7 @@ fun RecipeIngredientsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1025,7 +1025,7 @@ fun RecipeIngredientsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .padding(bottom = 10.dp)
+                            .padding(bottom = 4.dp)
                     ) {
                         Row(
                             modifier = Modifier
@@ -1072,7 +1072,7 @@ fun RecipeIngredientsScreen(
                     shadowElevation = 8.dp,
                     modifier = Modifier.navigationBarsPadding()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1092,7 +1092,7 @@ fun RecipeIngredientsScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         Button(
                             onClick = onNavigateToCosting,
@@ -1100,7 +1100,7 @@ fun RecipeIngredientsScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
+                                .height(44.dp)
                                 .testTag("btn_proceed_to_costing")
                         ) {
                             Text("View Recipe Costing", color = Color.White, fontWeight = FontWeight.Bold)
@@ -1116,9 +1116,9 @@ fun RecipeIngredientsScreen(
                     .fillMaxSize()
                     .background(BackgroundLight)
                     .padding(innerPadding)
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(top = 6.dp, bottom = 8.dp)
             ) {
                 // Batch Selector (1, 2, 3, 4)
                 item {
@@ -1131,7 +1131,7 @@ fun RecipeIngredientsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1194,12 +1194,12 @@ fun RecipeIngredientsScreen(
                         border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
+                            .defaultMinSize(minHeight = 40.dp)
                             .clickable { editingIngredient = ing }
                             .testTag("card_ingredient_${ing.id}")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {

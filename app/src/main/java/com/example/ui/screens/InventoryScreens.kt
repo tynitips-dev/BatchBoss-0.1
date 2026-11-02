@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.InventoryItemEntity
@@ -79,7 +80,7 @@ fun InventoryListScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -133,8 +134,8 @@ fun InventoryListScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         OutlinedButton(
                             onClick = { showPurchaseDialog = true },
@@ -142,7 +143,7 @@ fun InventoryListScreen(
                             border = androidx.compose.foundation.BorderStroke(1.5.dp, BatchPink),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
+                                .height(44.dp)
                                 .testTag("btn_view_purchase_list")
                         ) {
                             Icon(Icons.Outlined.ShoppingCart, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
@@ -156,7 +157,7 @@ fun InventoryListScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
+                                .height(44.dp)
                                 .testTag("btn_new_ingredient")
                         ) {
                             Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
@@ -173,9 +174,9 @@ fun InventoryListScreen(
                 .fillMaxSize()
                 .background(BackgroundLight)
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 12.dp)
         ) {
             // Valuation and Metrics Cards
             item {
@@ -184,16 +185,16 @@ fun InventoryListScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = BatchPinkContainer,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(text = "Total Stock Value", fontSize = 12.sp, color = MediumText)
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "R${String.format("%.2f", totalStockValuation)}",
-                                fontSize = 18.sp,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BatchPink
                             )
@@ -201,17 +202,17 @@ fun InventoryListScreen(
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = CardBackground,
                         border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(text = "Items Low", fontSize = 12.sp, color = MediumText)
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${lowStockItems.size} alert${if (lowStockItems.size == 1) "" else "s"}",
-                                fontSize = 18.sp,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (lowStockItems.isNotEmpty()) WarmAmber else DarkText
                             )
@@ -380,7 +381,11 @@ fun InventoryListScreen(
                         .fillMaxWidth()
                         .testTag("input_stock_search"),
                     shape = RoundedCornerShape(14.dp),
+                    textStyle = TextStyle(color = Color.Black, fontSize = 14.sp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        cursorColor = Color.Black,
                         focusedContainerColor = CardBackground,
                         unfocusedContainerColor = CardBackground,
                         focusedBorderColor = BatchPink,
@@ -622,7 +627,7 @@ fun StockItemCard(
             .fillMaxWidth()
             .testTag("card_stock_item_${item.id}")
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

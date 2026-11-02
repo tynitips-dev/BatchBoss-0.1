@@ -75,7 +75,7 @@ fun SuppliersListScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -150,9 +150,9 @@ fun SuppliersListScreen(
                 .fillMaxSize()
                 .background(BackgroundLight)
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp)
         ) {
             // Store Locator Banner
             item {
@@ -318,20 +318,20 @@ private fun SupplierCard(
             .testTag("card_supplier_${supplier.id}")
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(BatchPinkContainer),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Storefront, contentDescription = null, tint = BatchPink, modifier = Modifier.size(28.dp))
+                Icon(Icons.Filled.Storefront, contentDescription = null, tint = BatchPink, modifier = Modifier.size(24.dp))
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -397,14 +397,14 @@ fun SupplierDetailScreen(
                 shadowElevation = 8.dp,
                 modifier = Modifier.navigationBarsPadding()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Button(
                         onClick = onViewSpecials,
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .height(46.dp)
                             .testTag("btn_view_specials")
                     ) {
                         Text("View Specials (12)", color = Color.White, fontWeight = FontWeight.Bold)
@@ -425,7 +425,7 @@ fun SupplierDetailScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
+                        .height(140.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.img_bakery_recipes),
@@ -438,14 +438,14 @@ fun SupplierDetailScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .padding(16.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
                             onClick = onBack,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.85f))
                         ) {
@@ -455,7 +455,7 @@ fun SupplierDetailScreen(
                         IconButton(
                             onClick = onToggleFavorite,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(38.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.85f))
                         ) {
@@ -471,7 +471,7 @@ fun SupplierDetailScreen(
 
             // Info Section
             item {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(
                         text = supplier.name,
                         fontSize = 22.sp,
@@ -479,7 +479,7 @@ fun SupplierDetailScreen(
                         color = DarkText
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
                         text = supplier.categories,
@@ -487,7 +487,7 @@ fun SupplierDetailScreen(
                         color = LightText
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Star, contentDescription = null, tint = WarmAmber, modifier = Modifier.size(16.dp))
@@ -507,7 +507,7 @@ fun SupplierDetailScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // 4 Quick Contact Action Icons
                     Row(
@@ -520,31 +520,31 @@ fun SupplierDetailScreen(
                         SupplierActionButton(icon = Icons.Outlined.Directions, label = "Directions")
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // About
-                    Text(text = "About", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(text = "About", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = supplier.about,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = MediumText,
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Contact Details
-                    Text(text = "Contact Details", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(text = "Contact Details", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = CardBackground,
                         border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             ContactItemRow(icon = Icons.Outlined.Phone, text = supplier.phone)
                             Divider(color = DividerColor)
                             ContactItemRow(icon = Icons.Outlined.Email, text = supplier.email)
@@ -568,15 +568,15 @@ private fun SupplierActionButton(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(38.dp)
                 .clip(CircleShape)
                 .background(BatchPinkLight),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = label, tint = BatchPink, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = label, tint = BatchPink, modifier = Modifier.size(18.dp))
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(text = label, fontSize = 12.sp, color = MediumText)
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(text = label, fontSize = 11.sp, color = MediumText)
     }
 }
 
