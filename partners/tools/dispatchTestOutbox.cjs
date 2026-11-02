@@ -24,7 +24,7 @@ async function drainTestOutbox(db, source, send) {
  if(!/^127\.0\.0\.1:[0-9]{2,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST||"")||!["baker","supplier"].includes(source)||!/^demo-/.test(db.projectId))throw new Error("Invalid test source");
  const result={delivered:0,pending:0};
  // Registrations go first; payment-before-registration remains pending for a later pass.
- for(const kind of ["registration","payment"]) {
+ for(const kind of ["registration","payment","reversal"]) {
   const page=await db.collection("partnerTestOutbox").where("status","==","pending").where("event.kind","==",kind).limit(100).get();
   for(const item of page.docs) {
    try {
