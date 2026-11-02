@@ -274,17 +274,8 @@ object FirebaseService {
                 )
             }
 
-            // Set exact bakeryId
-            currentBakeryId = bakeryId
-
-            // Requirement 3: Start real-time Firestore snapshot listener after loginWithFirebase loads exact bakeryId
-            if (activeRepository != null) {
-                try {
-                    startPackagingListener(bakeryId, activeRepository)
-                } catch (e: Throwable) {
-                    Log.w(TAG, "Error starting packaging listener in loginWithFirebase: ${e.message}")
-                }
-            }
+            // The ViewModel checks for legacy local bakery data before enabling
+            // cloud listeners or assigning the authenticated bakery ID.
 
             val docEmail = userDoc.getString("email") ?: user.email ?: cleanEmail
             val fullName = userDoc.getString("fullName")
