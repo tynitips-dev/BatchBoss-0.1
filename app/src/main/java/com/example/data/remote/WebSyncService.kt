@@ -1,6 +1,7 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.BuildConfig
 import com.example.data.local.CustomerEntity
 import com.example.data.local.RecipeEntity
 import com.example.data.local.RecipeIngredientEntity
@@ -46,7 +47,11 @@ object WebSyncService {
         activeBaseUrl = null
     }
 
-    private suspend fun getWorkingBaseUrl(): String = withContext(Dispatchers.IO) {
+    private suspend fun getWorkingBaseUrl(): String? = withContext(Dispatchers.IO) {
+        // Local, unauthenticated HTTP is for debug and isolated tests only.
+        // Release builds must never send customer, recipe or banking data to
+        // a loopback process that could be controlled by another app.
+        if (!BuildConfig.DEBUG) return@withContext null
         testingBaseUrl?.let { return@withContext it }
         activeBaseUrl?.let { return@withContext it }
         for (url in candidateBaseUrls) {
@@ -72,7 +77,7 @@ object WebSyncService {
 
     suspend fun syncCustomer(bakeryId: String, customer: CustomerEntity): Boolean = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext false
         val json = JSONObject().apply {
             put("id", customer.id)
             put("bakeryId", targetBakeryId)
@@ -115,7 +120,7 @@ object WebSyncService {
         ingredients: List<RecipeIngredientEntity> = emptyList()
     ): Boolean = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext false
         val ingredientsJson = JSONArray()
         for (ing in ingredients) {
             val ingObj = JSONObject().apply {
@@ -173,7 +178,7 @@ object WebSyncService {
 
     suspend fun syncProfile(bakeryId: String, profile: UserProfileEntity): Boolean = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { profile.bakeryId.ifBlank { "bakery_1" } }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext false
         val json = JSONObject().apply {
             put("bakeryId", targetBakeryId)
             put("bakeryName", profile.bakeryName)
@@ -210,7 +215,7 @@ object WebSyncService {
 
     suspend fun fetchBakeryCustomers(bakeryId: String): List<CustomerEntity> = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext emptyList()
         val result = mutableListOf<CustomerEntity>()
         try {
             val request = Request.Builder()
@@ -250,7 +255,7 @@ object WebSyncService {
 
     suspend fun fetchBakeryRecipes(bakeryId: String): List<RecipeEntity> = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext emptyList()
         val result = mutableListOf<RecipeEntity>()
         try {
             val request = Request.Builder()
@@ -298,7 +303,7 @@ object WebSyncService {
 
     suspend fun syncPackaging(bakeryId: String, packaging: com.example.data.local.PackagingItemEntity): Boolean = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext false
         val json = JSONObject().apply {
             put("id", packaging.id)
             put("bakeryId", targetBakeryId)
@@ -338,7 +343,7 @@ object WebSyncService {
 
     suspend fun fetchBakeryPackaging(bakeryId: String): List<com.example.data.local.PackagingItemEntity> = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext emptyList()
         val result = mutableListOf<com.example.data.local.PackagingItemEntity>()
         try {
             val request = Request.Builder()
@@ -393,7 +398,7 @@ object WebSyncService {
 
     suspend fun deletePackaging(bakeryId: String, id: Long): Boolean = withContext(Dispatchers.IO) {
         val targetBakeryId = bakeryId.ifBlank { "bakery_1" }
-        val baseUrl = getWorkingBaseUrl()
+        val baseUrl = getWorkingBaseUrl() ?: return@withContext false
         val json = JSONObject().apply {
             put("id", id)
         }
