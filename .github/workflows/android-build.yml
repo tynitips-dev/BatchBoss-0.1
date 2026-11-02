@@ -42,6 +42,13 @@ jobs:
           fi
           printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
 
+      - name: Create disposable CI debug signing key
+        run: >-
+          keytool -genkeypair -noprompt -keystore debug.keystore
+          -storepass android -keypass android -alias androiddebugkey
+          -keyalg RSA -keysize 2048 -validity 30
+          -dname "CN=Android Debug,O=Android,C=US"
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
