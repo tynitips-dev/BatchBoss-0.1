@@ -754,12 +754,14 @@ fun BatchBossApp(
                             )
                         },
                         onUpdateStatus = { id, status ->
-                            viewModel.updateInvoiceStatus(id, status)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice status updated to $status") }
+                            viewModel.updateInvoiceStatus(id, status) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onDeleteInvoice = { id ->
-                            viewModel.deleteInvoice(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice deleted") }
+                            viewModel.deleteInvoice(id) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onUpdateBranding = { logoUri, bakeryName, phone, email, address, bankName, accountNumber, branchCode, vatNumber, defaultHourlyRate ->
                             viewModel.updateBusinessBranding(
