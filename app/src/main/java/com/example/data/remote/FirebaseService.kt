@@ -1211,8 +1211,12 @@ object FirebaseService {
         val orderDescription = doc.getString("orderDescription") ?: ""
         val issueDate = doc.getString("issueDate") ?: "Today"
         val dueDate = doc.getString("dueDate") ?: ""
-        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", 0.0))
-        val status = doc.getString("status") ?: "Pending"
+        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", extractNumber(doc, "total", 0.0)))
+        val status = when (doc.getString("status")?.lowercase(java.util.Locale.US)) {
+            "paid" -> "Paid"
+            "overdue" -> "Overdue"
+            else -> "Pending"
+        }
         val subtotal = extractNumber(doc, "subtotal", 0.0)
         val discountAmount = extractNumber(doc, "discount", extractNumber(doc, "discountAmount", 0.0))
         val taxRatePercent = extractNumber(doc, "taxRate", extractNumber(doc, "taxRatePercent", 15.0))
@@ -1654,12 +1658,15 @@ object FirebaseService {
     suspend fun saveInvoiceToCloud(bakeryId: String, item: InvoiceEntity): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
-        val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
+        // Local numeric IDs can repeat across devices. Preserve a stable invoice-derived cloud ID.
+        val docId = if (item.firestoreId.isNotBlank()) item.firestoreId
+            else "android-" + item.invoiceNumber.ifBlank { item.id.toString() }
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("invoices").document(docId)
             val data = hashMapOf<String, Any?>(
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "invoiceNumber" to item.invoiceNumber,
+                "name" to item.invoiceNumber,
                 "bakeryId" to targetBakeryId,
                 "clientName" to item.clientName,
                 "clientPhone" to item.clientPhone,
@@ -1668,7 +1675,21 @@ object FirebaseService {
                 "dueDate" to item.dueDate,
                 "amount" to item.amount,
                 "totalDue" to item.amount,
-                "status" to item.status,
+                "total" to item.amount,
+                "summary" to item.orderDescription,
+                "items" to item.items.map { line ->
+                    mapOf(
+                        "productId" to (line.productId?.toString() ?: ""),
+                        "name" to line.itemName,
+                        "quantity" to line.quantity,
+                        "unit" to line.unit,
+                        "unitPrice" to line.unitPrice,
+                        "costPrice" to line.costPrice,
+                        "lineTotal" to line.lineTotal,
+                        "kind" to "product"
+                    )
+                },
+                "status" to item.status.lowercase(java.util.Locale.US),
                 "subtotal" to item.subtotal,
                 "discount" to item.discountAmount,
                 "taxRate" to item.taxRatePercent,
@@ -2364,6 +2385,15 @@ object FirebaseService {
 
             val pendingRecipes = repository.getRecipesByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
             for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r)
+
+            val pendingInvoices = repository.getInvoicesByBakeryOnce(targetBakeryId)
+                .filter { it.firestoreId.isBlank() }
+            for (invoice in pendingInvoices) {
+                // Safe retry: upload only after the local bakery identity is confirmed.
+                saveInvoiceToCloud(targetBakeryId, invoice).getOrThrow()
+                val cloudId = "android-" + invoice.invoiceNumber.ifBlank { invoice.id.toString() }
+                repository.updateInvoice(invoice.copy(firestoreId = cloudId))
+            }
 
             // Recalculate affected recipes and inventory totals
             repository.recalculateRecipeIngredientCosts(targetBakeryId)
