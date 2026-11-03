@@ -1289,28 +1289,37 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         items: List<LineItem> = emptyList(),
         totalCost: Double = 0.0,
         packagingTotal: Double = 0.0,
-        packagingItems: List<InvoicePackagingItem> = emptyList()
+        packagingItems: List<InvoicePackagingItem> = emptyList(),
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
     ) {
         viewModelScope.launch {
-            val count = (allInvoices.value.size + 1008)
-            val invNumber = "INV-2024-$count"
-            val lineItemsJson = LineItemJsonUtil.toJson(items)
-            val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
-            val finalDescription = if (orderDescription.isNotBlank()) {
-                orderDescription
-            } else if (items.isNotEmpty()) {
-                items.joinToString(", ") { "${it.quantity.let { q -> if (q % 1.0 == 0.0) q.toInt().toString() else q.toString() }}x ${it.itemName}" }
-            } else {
-                "Bakery Order"
-            }
-            val invId = repository.insertInvoice(
-                InvoiceEntity(
-                    userId = _currentUserId.value,
+            var savedId: Long? = null
+            try {
+                val bakeryId = userProfile.value?.bakeryId?.takeIf { it.isNotBlank() }
+                    ?: FirebaseService.currentBakeryId
+                val uid = _currentUserId.value
+                val invNumber = "INV-" + java.text.SimpleDateFormat(
+                    "yyyyMMdd-HHmmssSSS", java.util.Locale.US
+                ).format(java.util.Date())
+                val lineItemsJson = LineItemJsonUtil.toJson(items)
+                val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
+                val finalDescription = if (orderDescription.isNotBlank()) {
+                    orderDescription
+                } else if (items.isNotEmpty()) {
+                    items.joinToString(", ") { it.quantity.toString() + "x " + it.itemName }
+                } else {
+                    "Bakery Order"
+                }
+                val invoice = InvoiceEntity(
+                    userId = uid,
+                    bakeryId = bakeryId,
                     invoiceNumber = invNumber,
                     clientName = clientName,
                     clientPhone = clientPhone,
                     orderDescription = finalDescription,
-                    issueDate = "Today",
+                    issueDate = java.text.SimpleDateFormat(
+                        "yyyy-MM-dd", java.util.Locale.US
+                    ).format(java.util.Date()),
                     dueDate = dueDate,
                     amount = amount,
                     status = status,
@@ -1323,25 +1332,52 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     packagingTotal = packagingTotal,
                     packagingItemsJson = packagingItemsJson
                 )
-            )
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
+                val invId = repository.insertInvoice(invoice)
+                savedId = invId
+                if (items.isNotEmpty()) {
+                    val dbEntities = items.map {
+                        DocumentLineItemEntity(
+                            documentType = "INVOICE",
+                            documentId = invId,
+                            userId = uid,
+                            productId = it.productId,
+                            itemName = it.itemName,
+                            description = it.description,
+                            quantity = it.quantity,
+                            unit = it.unit,
+                            unitPrice = it.unitPrice,
+                            discount = it.discount,
+                            costPrice = it.costPrice,
+                            lineTotal = it.lineTotal
+                        )
+                    }
+                    repository.insertLineItems(dbEntities)
                 }
-                repository.insertLineItems(dbEntities)
+                // A local save is not a confirmed cloud save. Report both separately.
+                onResult(true, "Invoice saved on this device.")
+                if (bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                    FirebaseService.currentBakeryId != bakeryId
+                ) {
+                    _syncMessage.value =
+                        "Invoice saved on this device. Sign in to the matching Firebase bakery to sync it."
+                    return@launch
+                }
+                val result = FirebaseService.saveInvoiceToCloud(bakeryId, invoice.copy(id = invId))
+                if (result.isSuccess) {
+                    repository.updateInvoice(invoice.copy(id = invId, firestoreId = invId.toString()))
+                    _syncMessage.value = "Invoice synced to Firebase."
+                } else {
+                    // Keep the local record pending. Never reassign it to another bakery.
+                    _syncMessage.value =
+                        "Invoice saved on this device, but cloud sync failed: " +
+                            (result.exceptionOrNull()?.message ?: "Check connection and Pro access.")
+                }
+            } catch (e: Exception) {
+                if (savedId != null) {
+                    onResult(true, "Invoice saved on this device. Some details or cloud sync still need checking.")
+                } else {
+                    onResult(false, "Invoice not saved: " + (e.message ?: "Please try again."))
+                }
             }
         }
     }
