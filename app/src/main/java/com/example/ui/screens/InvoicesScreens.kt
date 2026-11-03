@@ -511,6 +511,16 @@ private fun InvoiceItemCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            if (invoice.firestoreId.isBlank()) {
+                Text(
+                    text = "Saved on this device · Cloud sync pending",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = WarmAmber
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
             Text(
                 text = invoice.orderDescription,
                 fontSize = 13.sp,
