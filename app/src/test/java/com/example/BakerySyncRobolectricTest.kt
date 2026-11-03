@@ -641,6 +641,30 @@ class BakerySyncRobolectricTest {
     }
 
     @Test
+    fun `remote invoices from another phone never replace unrelated local invoice IDs`() = runBlocking {
+        val repository = AppRepository(database)
+        val original = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L,
+            invoiceNumber = "INV-LOCAL-001", clientName = "Local Client",
+            clientPhone = "", orderDescription = "Local order",
+            issueDate = "2026-11-03", dueDate = "2026-11-10", amount = 500.0
+        )
+        val localId = repository.insertInvoice(original)
+        val remote = original.copy(
+            id = localId, firestoreId = "android-remote-different-device",
+            invoiceNumber = "INV-REMOTE-002", clientName = "Remote Client",
+            amount = 780.0, updatedAt = original.updatedAt + 5000
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(remote))
+        val localAfter = repository.getInvoiceByIdOnce(localId)
+        assertEquals("INV-LOCAL-001", localAfter?.invoiceNumber)
+        val remoteAfter = repository.getInvoiceByFirestoreId(remote.firestoreId)
+        assertNotNull(remoteAfter)
+        assertEquals("INV-REMOTE-002", remoteAfter!!.invoiceNumber)
+        assertEquals(2, repository.getInvoicesByBakeryOnce(testBakeryId).size)
+    }
+
+    @Test
     fun `quotes synchronise both ways`() = runBlocking {
         val repository = AppRepository(database)
         val remoteQuote = QuoteEntity(
