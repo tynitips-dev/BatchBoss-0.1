@@ -1207,8 +1207,8 @@ object FirebaseService {
         val invoiceNumber = doc.getString("invoiceNumber") ?: ("INV-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: (doc.get("clientName")?.toString()) ?: "Customer"
         val id = doc.getLong("id") ?: stableDocumentId(doc.id)
-        val clientPhone = doc.getString("clientPhone") ?: ""
-        val orderDescription = doc.getString("orderDescription") ?: ""
+        val clientPhone = doc.getString("clientPhone") ?: doc.getString("phone") ?: ""
+        val orderDescription = doc.getString("orderDescription") ?: doc.getString("summary") ?: ""
         val issueDate = doc.getString("issueDate") ?: "Today"
         val dueDate = doc.getString("dueDate") ?: ""
         val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", extractNumber(doc, "total", 0.0)))
@@ -1676,6 +1676,7 @@ object FirebaseService {
                 "bakeryId" to targetBakeryId,
                 "clientName" to item.clientName,
                 "clientPhone" to item.clientPhone,
+                "phone" to item.clientPhone,
                 "orderDescription" to item.orderDescription,
                 "issueDate" to item.issueDate,
                 "dueDate" to item.dueDate,
