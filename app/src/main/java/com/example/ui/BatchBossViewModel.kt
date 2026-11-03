@@ -1529,50 +1529,29 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun convertQuoteToInvoice(quote: QuoteEntity) {
-        viewModelScope.launch {
-            repository.updateQuoteStatus(quote.id, "Accepted")
-            val invCount = (allInvoices.value.size + 1008)
-            val invId = repository.insertInvoice(
-                InvoiceEntity(
-                    userId = _currentUserId.value,
-                    invoiceNumber = "INV-2024-$invCount",
-                    clientName = quote.clientName,
-                    clientPhone = quote.clientPhone,
-                    orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
-                    issueDate = "Today",
-                    dueDate = quote.eventDate,
-                    amount = quote.quotedPrice,
-                    status = "Pending",
-                    subtotal = quote.subtotal,
-                    discountAmount = quote.discountAmount,
-                    taxRatePercent = quote.taxRatePercent,
-                    taxAmount = quote.taxAmount,
-                    lineItemsJson = quote.lineItemsJson,
-                    totalCost = quote.totalCost
-                )
-            )
-            val items = quote.items
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
+    fun convertQuoteToInvoice(quote: QuoteEntity, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        // Use the same bakery-scoped, cloud-aware path as a newly created invoice.
+        // This avoids a local-only conversion that disappears from the web portal.
+        createInvoice(
+            clientName = quote.clientName,
+            clientPhone = quote.clientPhone,
+            orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
+            amount = quote.quotedPrice,
+            dueDate = quote.eventDate,
+            status = "Pending",
+            subtotal = quote.subtotal,
+            discountAmount = quote.discountAmount,
+            taxRatePercent = quote.taxRatePercent,
+            taxAmount = quote.taxAmount,
+            items = quote.items,
+            totalCost = quote.totalCost,
+            onResult = { saved, message ->
+                if (saved) {
+                    viewModelScope.launch { repository.updateQuoteStatus(quote.id, "Accepted") }
                 }
-                repository.insertLineItems(dbEntities)
+                onResult(saved, message)
             }
-        }
+        )
     }
 
     fun deleteQuote(id: Long) {
