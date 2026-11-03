@@ -689,6 +689,32 @@ class BakerySyncRobolectricTest {
     }
 
     @Test
+    fun `older cloud invoice acknowledgement preserves newer device edits and links ID`() = runBlocking {
+        val repository = AppRepository(database)
+        val newerLocal = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L, invoiceNumber = "INV-PHONE-NEWER",
+            clientName = "Updated Customer", clientPhone = "0820000000",
+            orderDescription = "Updated cake order", issueDate = "2026-11-03",
+            dueDate = "2026-11-09", amount = 790.0, status = "Paid", updatedAt = 7000L
+        )
+        val localId = repository.insertInvoice(newerLocal)
+        val earlierCloud = newerLocal.copy(
+            id = 0L, userId = 0L,
+            firestoreId = "android-INV-PHONE-NEWER",
+            clientName = "Old Customer", status = "Pending",
+            amount = 650.0, updatedAt = 6000L
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(earlierCloud))
+        val actual = repository.getInvoiceByIdOnce(localId)
+        assertNotNull(actual)
+        assertEquals("android-INV-PHONE-NEWER", actual!!.firestoreId)
+        assertEquals("Updated Customer", actual.clientName)
+        assertEquals("Paid", actual.status)
+        assertEquals(790.0, actual.amount, 0.001)
+        assertEquals(1, repository.getInvoicesByBakeryOnce(testBakeryId).size)
+    }
+
+    @Test
     fun `quotes synchronise both ways`() = runBlocking {
         val repository = AppRepository(database)
         val remoteQuote = QuoteEntity(
