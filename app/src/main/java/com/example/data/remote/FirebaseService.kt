@@ -1993,12 +1993,13 @@ object FirebaseService {
             )
         }
 
+        // Avoid destructive reconciliation from offline/cache-only snapshots.
         val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
         // 1. Inventory listener
         try {
             val reg = bakeryDoc.collection("inventory").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items: List<InventoryItemEntity> = snapshot.documents.map { doc: com.google.firebase.firestore.DocumentSnapshot ->
                     try {
                         documentToInventoryItem(doc, targetBakeryId).normalized()
@@ -2033,7 +2034,7 @@ object FirebaseService {
         // 2. Recipes listener (+ subcollection listener for ingredients)
         try {
             val reg = bakeryDoc.collection("recipes").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToRecipe(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2046,7 +2047,7 @@ object FirebaseService {
                             if (!subcollectionRegistrations.containsKey(recipeFirestoreId)) {
                                 val subReg = doc.reference.collection("ingredients")
                                     .addSnapshotListener { ingSnapshot, ingErr ->
-                                        if (ingErr != null || ingSnapshot == null) return@addSnapshotListener
+                                        if (ingErr != null || ingSnapshot == null || ingSnapshot.metadata.isFromCache) return@addSnapshotListener
                                         val ingItems = ingSnapshot.documents.mapNotNull {
                                             documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId)
                                         }
@@ -2081,7 +2082,7 @@ object FirebaseService {
         // 3. Customers listener
         try {
             val reg = bakeryDoc.collection("customers").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToCustomer(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2099,7 +2100,7 @@ object FirebaseService {
         // 4. Products listener
         try {
             val reg = bakeryDoc.collection("products").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToProduct(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2117,7 +2118,7 @@ object FirebaseService {
         // 5. Invoices listener
         try {
             val reg = bakeryDoc.collection("invoices").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToInvoice(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2135,7 +2136,7 @@ object FirebaseService {
         // 6. Quotes listener
         try {
             val reg = bakeryDoc.collection("quotes").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToQuote(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2153,7 +2154,7 @@ object FirebaseService {
         // 7. Orders listener
         try {
             val reg = bakeryDoc.collection("orders").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToOrder(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2171,7 +2172,7 @@ object FirebaseService {
         // 8. Tasks listener
         try {
             val reg = bakeryDoc.collection("tasks").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToTask(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2189,7 +2190,7 @@ object FirebaseService {
         // 9. Packaging listener
         try {
             val reg = bakeryDoc.collection("packaging").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToPackagingItem(it, targetBakeryId) }
                 syncScope.launch {
                     try {
