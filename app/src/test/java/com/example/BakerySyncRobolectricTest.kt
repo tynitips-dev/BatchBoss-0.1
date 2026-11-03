@@ -665,6 +665,30 @@ class BakerySyncRobolectricTest {
     }
 
     @Test
+    fun `offline invoice acknowledgement attaches cloud ID without duplicating the local record`() = runBlocking {
+        val repository = AppRepository(database)
+        val pending = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L,
+            invoiceNumber = "INV-OFFLINE-001", clientName = "Offline Customer",
+            clientPhone = "", orderDescription = "Birthday cake",
+            issueDate = "2026-11-03", dueDate = "2026-11-10",
+            amount = 900.0, status = "Pending"
+        )
+        val localId = repository.insertInvoice(pending)
+        val server = pending.copy(
+            id = 0L, userId = 0L,
+            firestoreId = "android-" + pending.invoiceNumber,
+            updatedAt = pending.updatedAt + 5000L
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(server))
+        val originalRow = repository.getInvoiceByIdOnce(localId)
+        assertNotNull(originalRow)
+        assertEquals(server.firestoreId, originalRow!!.firestoreId)
+        assertEquals("Offline Customer", originalRow.clientName)
+        assertEquals(1, repository.getInvoicesByBakeryOnce(testBakeryId).size)
+    }
+
+    @Test
     fun `quotes synchronise both ways`() = runBlocking {
         val repository = AppRepository(database)
         val remoteQuote = QuoteEntity(
