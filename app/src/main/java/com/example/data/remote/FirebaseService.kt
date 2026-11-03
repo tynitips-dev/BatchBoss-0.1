@@ -2424,13 +2424,13 @@ object FirebaseService {
 
             // Upload legitimate pending local changes (items with no firestoreId)
             val pendingPkg = repository.getPackagingByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p)
+            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p).getOrThrow()
 
             val pendingInv = repository.getInventoryByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i)
+            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i).getOrThrow()
 
             val pendingRecipes = repository.getRecipesByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r)
+            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r).getOrThrow()
 
             val pendingInvoices = repository.getInvoicesByBakeryOnce(targetBakeryId)
                 .filter { it.firestoreId.isBlank() }
