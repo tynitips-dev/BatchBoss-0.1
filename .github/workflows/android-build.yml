@@ -49,6 +49,9 @@ jobs:
           -keyalg RSA -keysize 2048 -validity 30
           -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Run Android unit and invoice synchronization regression tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: gradle assembleDebug bundleRelease --stacktrace
 
