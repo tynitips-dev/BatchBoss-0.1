@@ -722,7 +722,7 @@ fun CreateInvoiceDialog(
     var clientName by remember { mutableStateOf("") }
     var clientPhone by remember { mutableStateOf("") }
     var orderDesc by remember { mutableStateOf("") }
-    var dueDate by remember { mutableStateOf("25 Sep 2026") }
+    var dueDate by remember { mutableStateOf(java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(java.util.Date())) }
     var status by remember { mutableStateOf("Pending") }
 
     // Line items list
