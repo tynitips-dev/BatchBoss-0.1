@@ -1400,7 +1400,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                         onResult(false, "Sign into this invoice's Firebase bakery before changing its status.")
                         return@launch
                     }
-                    val cloud = FirebaseService.saveInvoiceToCloud(bakeryId, updated)
+                    val cloud = FirebaseService.updateInvoiceStatusInCloud(bakeryId, original.firestoreId, status)
                     if (cloud.isFailure) {
                         onResult(false, "Cloud status update failed: " +
                             (cloud.exceptionOrNull()?.message ?: "Check connection and Pro access."))
