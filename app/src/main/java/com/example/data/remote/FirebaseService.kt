@@ -1715,6 +1715,31 @@ object FirebaseService {
         }
     }
 
+    suspend fun updateInvoiceStatusInCloud(
+        bakeryId: String,
+        firestoreId: String,
+        status: String
+    ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        if (bakeryId.isBlank() || firestoreId.isBlank() || currentUser == null || currentBakeryId != bakeryId) {
+            return Result.failure(IllegalStateException("Firebase bakery identity is not verified for this invoice."))
+        }
+        return try {
+            db.collection("bakeries").document(bakeryId)
+                .collection("invoices").document(firestoreId)
+                .update(
+                    mapOf(
+                        "status" to status.lowercase(java.util.Locale.US),
+                        "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    )
+                ).awaitTask()
+            Result.success(Unit)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed invoice status update", e)
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteInvoiceFromCloud(bakeryId: String, firestoreId: String): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
