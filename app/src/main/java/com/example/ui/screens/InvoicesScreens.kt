@@ -68,7 +68,8 @@ fun InvoicesListScreen(
         items: List<LineItem>,
         totalCost: Double,
         packagingTotal: Double,
-        packagingItems: List<InvoicePackagingItem>
+        packagingItems: List<InvoicePackagingItem>,
+        onResult: (Boolean, String) -> Unit
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null,
@@ -385,9 +386,11 @@ fun InvoicesListScreen(
             products = products,
             packaging = packaging,
             onDismiss = { showCreateDialog = false },
-            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems ->
-                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems)
-                showCreateDialog = false
+            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems, onResult ->
+                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems) { success, message ->
+                    onResult(success, message)
+                    if (success) showCreateDialog = false
+                }
             },
             onSaveProductService = onSaveProductService,
             onNavigateToProducts = onNavigateToProducts
@@ -507,6 +510,16 @@ private fun InvoiceItemCard(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+
+            if (invoice.firestoreId.isBlank()) {
+                Text(
+                    text = "Saved on this device · Cloud sync pending",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = WarmAmber
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             Text(
                 text = invoice.orderDescription,
@@ -710,7 +723,8 @@ fun CreateInvoiceDialog(
         items: List<LineItem>,
         totalCost: Double,
         packagingTotal: Double,
-        packagingItems: List<InvoicePackagingItem>
+        packagingItems: List<InvoicePackagingItem>,
+        onResult: (Boolean, String) -> Unit
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null
@@ -718,7 +732,7 @@ fun CreateInvoiceDialog(
     var clientName by remember { mutableStateOf("") }
     var clientPhone by remember { mutableStateOf("") }
     var orderDesc by remember { mutableStateOf("") }
-    var dueDate by remember { mutableStateOf("25 Sep 2026") }
+    var dueDate by remember { mutableStateOf(java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(java.util.Date())) }
     var status by remember { mutableStateOf("Pending") }
 
     // Line items list
@@ -731,6 +745,8 @@ fun CreateInvoiceDialog(
     var showSelectorDialog by remember { mutableStateOf(false) }
     var showPackagingSelectorDialog by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
+    var savingInvoice by remember { mutableStateOf(false) }
+    var invoiceSaveError by remember { mutableStateOf("") }
 
     // Automatic calculation logic
     val packagingTotal = remember(packagingItems) {
@@ -1533,6 +1549,9 @@ fun CreateInvoiceDialog(
                             )
                         }
                     }
+                    if (invoiceSaveError.isNotBlank()) {
+                        item { Text(invoiceSaveError, color = BatchPink, fontSize = 12.sp) }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1553,34 +1572,42 @@ fun CreateInvoiceDialog(
 
                     Button(
                         onClick = {
-                            if (clientName.isBlank() || grandTotal <= 0.0) {
-                                hasError = true
-                            } else {
-                                onConfirm(
-                                    clientName.trim(),
-                                    clientPhone.trim(),
-                                    effectiveDescription.ifBlank { "Bakery Order" },
-                                    grandTotal,
-                                    dueDate,
-                                    status,
-                                    subtotal,
-                                    discountAmount,
-                                    taxRatePercent,
-                                    taxAmount,
-                                    lineItems,
-                                    totalCost,
-                                    packagingTotal,
-                                    packagingItems
-                                )
+                            if (!savingInvoice) {
+                                if (clientName.isBlank() || grandTotal <= 0.0) {
+                                    hasError = true
+                                } else {
+                                    savingInvoice = true
+                                    invoiceSaveError = ""
+                                    onConfirm(
+                                        clientName.trim(),
+                                        clientPhone.trim(),
+                                        effectiveDescription.ifBlank { "Bakery Order" },
+                                        grandTotal,
+                                        dueDate,
+                                        status,
+                                        subtotal,
+                                        discountAmount,
+                                        taxRatePercent,
+                                        taxAmount,
+                                        lineItems,
+                                        totalCost,
+                                        packagingTotal,
+                                        packagingItems
+                                    ) { success, message ->
+                                        savingInvoice = false
+                                        if (!success) invoiceSaveError = message
+                                    }
+                                }
                             }
                         },
+                        enabled = !savingInvoice,
                         colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("btn_confirm_generate_invoice")
                     ) {
                         Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Generate Invoice", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(if (savingInvoice) "Saving invoice…" else "Generate Invoice", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }

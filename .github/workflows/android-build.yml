@@ -42,12 +42,28 @@ jobs:
           fi
           printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
 
+      - name: Verify Firebase project and Play Store app identity
+        run: |
+          node - <<'NODE'
+          const config = require('./app/google-services.json');
+          const project = config.project_info?.project_id;
+          const correctPackage = config.client?.some(c =>
+            c.client_info?.android_client_info?.package_name === 'com.aistudio.batchboss.kqwxrv');
+          if (project !== 'batch-boss-android' || !correctPackage) {
+            throw new Error('Firebase project/package does not match the BatchBoss web and Android application.');
+          }
+          console.log('Verified shared BatchBoss Firebase project and Android package.');
+          NODE
+
       - name: Create disposable CI debug signing key
         run: >-
           keytool -genkeypair -noprompt -keystore debug.keystore
           -storepass android -keypass android -alias androiddebugkey
           -keyalg RSA -keysize 2048 -validity 30
           -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Run Android unit and invoice synchronization regression tests
+        run: gradle :app:testDebugUnitTest --stacktrace
 
       - name: Build debug APK
         run: gradle assembleDebug bundleRelease --stacktrace

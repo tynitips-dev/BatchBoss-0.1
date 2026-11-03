@@ -1289,28 +1289,38 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         items: List<LineItem> = emptyList(),
         totalCost: Double = 0.0,
         packagingTotal: Double = 0.0,
-        packagingItems: List<InvoicePackagingItem> = emptyList()
+        packagingItems: List<InvoicePackagingItem> = emptyList(),
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
     ) {
         viewModelScope.launch {
-            val count = (allInvoices.value.size + 1008)
-            val invNumber = "INV-2024-$count"
-            val lineItemsJson = LineItemJsonUtil.toJson(items)
-            val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
-            val finalDescription = if (orderDescription.isNotBlank()) {
-                orderDescription
-            } else if (items.isNotEmpty()) {
-                items.joinToString(", ") { "${it.quantity.let { q -> if (q % 1.0 == 0.0) q.toInt().toString() else q.toString() }}x ${it.itemName}" }
-            } else {
-                "Bakery Order"
-            }
-            val invId = repository.insertInvoice(
-                InvoiceEntity(
-                    userId = _currentUserId.value,
+            var savedId: Long? = null
+            var localSaveReported = false
+            try {
+                val bakeryId = userProfile.value?.bakeryId?.takeIf { it.isNotBlank() }
+                    ?: FirebaseService.currentBakeryId
+                val uid = _currentUserId.value
+                val invNumber = "INV-" + java.text.SimpleDateFormat(
+                    "yyyyMMdd-HHmmssSSS", java.util.Locale.US
+                ).format(java.util.Date())
+                val lineItemsJson = LineItemJsonUtil.toJson(items)
+                val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
+                val finalDescription = if (orderDescription.isNotBlank()) {
+                    orderDescription
+                } else if (items.isNotEmpty()) {
+                    items.joinToString(", ") { it.quantity.toString() + "x " + it.itemName }
+                } else {
+                    "Bakery Order"
+                }
+                val invoice = InvoiceEntity(
+                    userId = uid,
+                    bakeryId = bakeryId,
                     invoiceNumber = invNumber,
                     clientName = clientName,
                     clientPhone = clientPhone,
                     orderDescription = finalDescription,
-                    issueDate = "Today",
+                    issueDate = java.text.SimpleDateFormat(
+                        "yyyy-MM-dd", java.util.Locale.US
+                    ).format(java.util.Date()),
                     dueDate = dueDate,
                     amount = amount,
                     status = status,
@@ -1323,39 +1333,123 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     packagingTotal = packagingTotal,
                     packagingItemsJson = packagingItemsJson
                 )
-            )
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
+                val invId = repository.insertInvoice(invoice)
+                savedId = invId
+                if (items.isNotEmpty()) {
+                    val dbEntities = items.map {
+                        DocumentLineItemEntity(
+                            documentType = "INVOICE",
+                            documentId = invId,
+                            userId = uid,
+                            productId = it.productId,
+                            itemName = it.itemName,
+                            description = it.description,
+                            quantity = it.quantity,
+                            unit = it.unit,
+                            unitPrice = it.unitPrice,
+                            discount = it.discount,
+                            costPrice = it.costPrice,
+                            lineTotal = it.lineTotal
+                        )
+                    }
+                    repository.insertLineItems(dbEntities)
                 }
-                repository.insertLineItems(dbEntities)
+                // Return local persistence promptly, including while the phone is offline.
+                // Subsequent cloud results are surfaced separately by syncMessage.
+                localSaveReported = true
+                onResult(true, "Invoice saved on this device. Cloud sync pending.")
+                if (bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                    FirebaseService.currentBakeryId != bakeryId
+                ) {
+                    _syncMessage.value =
+                        "Invoice saved on this device. Sign in to the matching Firebase bakery to sync it."
+                    return@launch
+                }
+                val result = FirebaseService.saveInvoiceToCloud(bakeryId, invoice.copy(id = invId))
+                if (result.isSuccess) {
+                    repository.updateInvoice(invoice.copy(id = invId, firestoreId = "android-" + invoice.invoiceNumber))
+                    _syncMessage.value = "Invoice synced to Firebase."
+                } else {
+                    // Keep the local record pending. Never reassign it to another bakery.
+                    _syncMessage.value =
+                        "Invoice saved on this device, but cloud sync failed: " +
+                            (result.exceptionOrNull()?.message ?: "Check connection and Pro access.")
+                }
+            } catch (e: Exception) {
+                if (savedId != null) {
+                    _syncMessage.value = "Invoice saved on this device. Cloud sync needs checking: " +
+                        (e.message ?: "Please try syncing again.")
+                    if (!localSaveReported) onResult(true, _syncMessage.value ?: "Invoice saved on this device.")
+                } else {
+                    if (!localSaveReported) onResult(false, "Invoice not saved: " + (e.message ?: "Please try again."))
+                }
             }
         }
     }
 
-    fun updateInvoiceStatus(id: Long, status: String) {
+    fun updateInvoiceStatus(
+        id: Long,
+        status: String,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            repository.updateInvoiceStatus(id, status)
+            try {
+                val original = repository.getInvoiceByIdOnce(id)
+                    ?: return@launch onResult(false, "Invoice not found on this device.")
+                val bakeryId = original.bakeryId
+                val updated = original.copy(status = status, updatedAt = System.currentTimeMillis())
+                if (original.firestoreId.isNotBlank()) {
+                    if (bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                        FirebaseService.currentBakeryId != bakeryId
+                    ) {
+                        onResult(false, "Sign into this invoice's Firebase bakery before changing its status.")
+                        return@launch
+                    }
+                    val cloud = FirebaseService.updateInvoiceStatusInCloud(bakeryId, original.firestoreId, status)
+                    if (cloud.isFailure) {
+                        onResult(false, "Cloud status update failed: " +
+                            (cloud.exceptionOrNull()?.message ?: "Check connection and Pro access."))
+                        return@launch
+                    }
+                }
+                // An invoice pending its first upload remains pending and will be retried.
+                repository.updateInvoice(updated)
+                onResult(true, "Invoice status saved" +
+                    (if (original.firestoreId.isNotBlank()) " to Firebase." else " on this device; sync pending."))
+            } catch (e: Exception) {
+                onResult(false, "Invoice status could not be saved: " + (e.message ?: "Unknown error."))
+            }
         }
     }
 
-    fun deleteInvoice(id: Long) {
+    fun deleteInvoice(
+        id: Long,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            repository.deleteInvoice(id)
-            repository.deleteLineItems("INVOICE", id)
+            try {
+                val invoice = repository.getInvoiceByIdOnce(id)
+                    ?: return@launch onResult(false, "Invoice not found on this device.")
+                if (invoice.firestoreId.isNotBlank()) {
+                    if (invoice.bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                        FirebaseService.currentBakeryId != invoice.bakeryId
+                    ) {
+                        onResult(false, "Sign into the matching Firebase bakery before deleting an invoice.")
+                        return@launch
+                    }
+                    val cloud = FirebaseService.deleteInvoiceFromCloud(invoice.bakeryId, invoice.firestoreId)
+                    if (cloud.isFailure) {
+                        onResult(false, "Invoice not deleted: " +
+                            (cloud.exceptionOrNull()?.message ?: "Cloud connection failed."))
+                        return@launch
+                    }
+                }
+                repository.deleteInvoice(id)
+                repository.deleteLineItems("INVOICE", id)
+                onResult(true, "Invoice deleted.")
+            } catch (e: Exception) {
+                onResult(false, "Invoice not deleted: " + (e.message ?: "Unknown error."))
+            }
         }
     }
 
@@ -1440,50 +1534,29 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun convertQuoteToInvoice(quote: QuoteEntity) {
-        viewModelScope.launch {
-            repository.updateQuoteStatus(quote.id, "Accepted")
-            val invCount = (allInvoices.value.size + 1008)
-            val invId = repository.insertInvoice(
-                InvoiceEntity(
-                    userId = _currentUserId.value,
-                    invoiceNumber = "INV-2024-$invCount",
-                    clientName = quote.clientName,
-                    clientPhone = quote.clientPhone,
-                    orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
-                    issueDate = "Today",
-                    dueDate = quote.eventDate,
-                    amount = quote.quotedPrice,
-                    status = "Pending",
-                    subtotal = quote.subtotal,
-                    discountAmount = quote.discountAmount,
-                    taxRatePercent = quote.taxRatePercent,
-                    taxAmount = quote.taxAmount,
-                    lineItemsJson = quote.lineItemsJson,
-                    totalCost = quote.totalCost
-                )
-            )
-            val items = quote.items
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
+    fun convertQuoteToInvoice(quote: QuoteEntity, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        // Use the same bakery-scoped, cloud-aware path as a newly created invoice.
+        // This avoids a local-only conversion that disappears from the web portal.
+        createInvoice(
+            clientName = quote.clientName,
+            clientPhone = quote.clientPhone,
+            orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
+            amount = quote.quotedPrice,
+            dueDate = quote.eventDate,
+            status = "Pending",
+            subtotal = quote.subtotal,
+            discountAmount = quote.discountAmount,
+            taxRatePercent = quote.taxRatePercent,
+            taxAmount = quote.taxAmount,
+            items = quote.items,
+            totalCost = quote.totalCost,
+            onResult = { saved, message ->
+                if (saved) {
+                    viewModelScope.launch { repository.updateQuoteStatus(quote.id, "Accepted") }
                 }
-                repository.insertLineItems(dbEntities)
+                onResult(saved, message)
             }
-        }
+        )
     }
 
     fun deleteQuote(id: Long) {

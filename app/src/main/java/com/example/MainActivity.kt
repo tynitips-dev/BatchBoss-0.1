@@ -77,9 +77,17 @@ fun BatchBossApp(
     val allLoginLogs by viewModel.allLoginLogs.collectAsStateWithLifecycle()
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val syncMessage by viewModel.syncMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(syncMessage) {
+        val message = syncMessage
+        if (!message.isNullOrBlank()) {
+            viewModel.dismissSyncMessage()
+            snackbarHostState.showSnackbar(message)
+        }
+    }
     val subscriptionUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val subscriptionLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(subscriptionLifecycle) {
@@ -731,7 +739,7 @@ fun BatchBossApp(
                                 unit = unit
                             )
                         },
-                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems ->
+                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems, onResult ->
                             viewModel.createInvoice(
                                 clientName = clientName,
                                 clientPhone = phone,
@@ -746,17 +754,22 @@ fun BatchBossApp(
                                 items = items,
                                 totalCost = totalCost,
                                 packagingTotal = packagingTotal,
-                                packagingItems = packagingItems
+                                packagingItems = packagingItems,
+                                onResult = { saved, message ->
+                                    onResult(saved, message)
+                                    coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                                }
                             )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice created!") }
                         },
                         onUpdateStatus = { id, status ->
-                            viewModel.updateInvoiceStatus(id, status)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice status updated to $status") }
+                            viewModel.updateInvoiceStatus(id, status) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onDeleteInvoice = { id ->
-                            viewModel.deleteInvoice(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice deleted") }
+                            viewModel.deleteInvoice(id) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onUpdateBranding = { logoUri, bakeryName, phone, email, address, bankName, accountNumber, branchCode, vatNumber, defaultHourlyRate ->
                             viewModel.updateBusinessBranding(
@@ -802,8 +815,9 @@ fun BatchBossApp(
                             coroutineScope.launch { snackbarHostState.showSnackbar("Status updated to $status") }
                         },
                         onConvertToInvoice = { quote ->
-                            viewModel.convertQuoteToInvoice(quote)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("${quote.docType} converted to Invoice!") }
+                            viewModel.convertQuoteToInvoice(quote) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onDeleteQuote = { id ->
                             viewModel.deleteQuote(id)

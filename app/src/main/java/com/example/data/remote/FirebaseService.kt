@@ -1207,12 +1207,16 @@ object FirebaseService {
         val invoiceNumber = doc.getString("invoiceNumber") ?: ("INV-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: (doc.get("clientName")?.toString()) ?: "Customer"
         val id = doc.getLong("id") ?: stableDocumentId(doc.id)
-        val clientPhone = doc.getString("clientPhone") ?: ""
-        val orderDescription = doc.getString("orderDescription") ?: ""
+        val clientPhone = doc.getString("clientPhone") ?: doc.getString("phone") ?: ""
+        val orderDescription = doc.getString("orderDescription") ?: doc.getString("summary") ?: ""
         val issueDate = doc.getString("issueDate") ?: "Today"
         val dueDate = doc.getString("dueDate") ?: ""
-        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", 0.0))
-        val status = doc.getString("status") ?: "Pending"
+        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", extractNumber(doc, "total", 0.0)))
+        val status = when (doc.getString("status")?.lowercase(java.util.Locale.US)) {
+            "paid" -> "Paid"
+            "overdue" -> "Overdue"
+            else -> "Pending"
+        }
         val subtotal = extractNumber(doc, "subtotal", 0.0)
         val discountAmount = extractNumber(doc, "discount", extractNumber(doc, "discountAmount", 0.0))
         val taxRatePercent = extractNumber(doc, "taxRate", extractNumber(doc, "taxRatePercent", 15.0))
@@ -1220,13 +1224,19 @@ object FirebaseService {
         val totalCost = extractNumber(doc, "totalCost", 0.0)
         val packagingTotal = extractNumber(doc, "packagingTotal", 0.0)
 
-        val lineItemsRaw = doc.get("lineItems")
+        val lineItemsRaw = doc.get("lineItems") ?: doc.get("items")
         val lineItemsJson = when (lineItemsRaw) {
             is String -> lineItemsRaw
             is List<*> -> {
                 val array = org.json.JSONArray()
                 for (item in lineItemsRaw) {
-                    if (item is Map<*, *>) array.put(org.json.JSONObject(item))
+                    if (item is Map<*, *>) {
+                        val normalized = org.json.JSONObject(item)
+                        if (!normalized.has("itemName")) {
+                            normalized.put("itemName", normalized.optString("name", ""))
+                        }
+                        array.put(normalized)
+                    }
                 }
                 array.toString()
             }
@@ -1654,21 +1664,39 @@ object FirebaseService {
     suspend fun saveInvoiceToCloud(bakeryId: String, item: InvoiceEntity): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
-        val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
+        // Local numeric IDs can repeat across devices. Preserve a stable invoice-derived cloud ID.
+        val docId = if (item.firestoreId.isNotBlank()) item.firestoreId
+            else "android-" + item.invoiceNumber.ifBlank { item.id.toString() }
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("invoices").document(docId)
             val data = hashMapOf<String, Any?>(
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "invoiceNumber" to item.invoiceNumber,
+                "name" to item.invoiceNumber,
                 "bakeryId" to targetBakeryId,
                 "clientName" to item.clientName,
                 "clientPhone" to item.clientPhone,
+                "phone" to item.clientPhone,
                 "orderDescription" to item.orderDescription,
                 "issueDate" to item.issueDate,
                 "dueDate" to item.dueDate,
                 "amount" to item.amount,
                 "totalDue" to item.amount,
-                "status" to item.status,
+                "total" to item.amount,
+                "summary" to item.orderDescription,
+                "items" to item.items.map { line ->
+                    mapOf(
+                        "productId" to (line.productId?.toString() ?: ""),
+                        "name" to line.itemName,
+                        "quantity" to line.quantity,
+                        "unit" to line.unit,
+                        "unitPrice" to line.unitPrice,
+                        "costPrice" to line.costPrice,
+                        "lineTotal" to line.lineTotal,
+                        "kind" to "product"
+                    )
+                },
+                "status" to item.status.lowercase(java.util.Locale.US),
                 "subtotal" to item.subtotal,
                 "discount" to item.discountAmount,
                 "taxRate" to item.taxRatePercent,
@@ -1684,6 +1712,31 @@ object FirebaseService {
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save invoice to cloud", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateInvoiceStatusInCloud(
+        bakeryId: String,
+        firestoreId: String,
+        status: String
+    ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
+        if (bakeryId.isBlank() || firestoreId.isBlank() || currentUser == null || currentBakeryId != bakeryId) {
+            return Result.failure(IllegalStateException("Firebase bakery identity is not verified for this invoice."))
+        }
+        return try {
+            db.collection("bakeries").document(bakeryId)
+                .collection("invoices").document(firestoreId)
+                .update(
+                    mapOf(
+                        "status" to status.lowercase(java.util.Locale.US),
+                        "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    )
+                ).awaitTask()
+            Result.success(Unit)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed invoice status update", e)
             Result.failure(e)
         }
     }
@@ -1940,12 +1993,13 @@ object FirebaseService {
             )
         }
 
+        // Avoid destructive reconciliation from offline/cache-only snapshots.
         val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
         // 1. Inventory listener
         try {
             val reg = bakeryDoc.collection("inventory").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items: List<InventoryItemEntity> = snapshot.documents.map { doc: com.google.firebase.firestore.DocumentSnapshot ->
                     try {
                         documentToInventoryItem(doc, targetBakeryId).normalized()
@@ -1980,7 +2034,7 @@ object FirebaseService {
         // 2. Recipes listener (+ subcollection listener for ingredients)
         try {
             val reg = bakeryDoc.collection("recipes").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToRecipe(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -1993,7 +2047,7 @@ object FirebaseService {
                             if (!subcollectionRegistrations.containsKey(recipeFirestoreId)) {
                                 val subReg = doc.reference.collection("ingredients")
                                     .addSnapshotListener { ingSnapshot, ingErr ->
-                                        if (ingErr != null || ingSnapshot == null) return@addSnapshotListener
+                                        if (ingErr != null || ingSnapshot == null || ingSnapshot.metadata.isFromCache) return@addSnapshotListener
                                         val ingItems = ingSnapshot.documents.mapNotNull {
                                             documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId)
                                         }
@@ -2028,7 +2082,7 @@ object FirebaseService {
         // 3. Customers listener
         try {
             val reg = bakeryDoc.collection("customers").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToCustomer(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2046,7 +2100,7 @@ object FirebaseService {
         // 4. Products listener
         try {
             val reg = bakeryDoc.collection("products").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToProduct(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2064,7 +2118,7 @@ object FirebaseService {
         // 5. Invoices listener
         try {
             val reg = bakeryDoc.collection("invoices").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToInvoice(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2082,7 +2136,7 @@ object FirebaseService {
         // 6. Quotes listener
         try {
             val reg = bakeryDoc.collection("quotes").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToQuote(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2100,7 +2154,7 @@ object FirebaseService {
         // 7. Orders listener
         try {
             val reg = bakeryDoc.collection("orders").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToOrder(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2118,7 +2172,7 @@ object FirebaseService {
         // 8. Tasks listener
         try {
             val reg = bakeryDoc.collection("tasks").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToTask(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2136,7 +2190,7 @@ object FirebaseService {
         // 9. Packaging listener
         try {
             val reg = bakeryDoc.collection("packaging").addSnapshotListener { snapshot, error ->
-                if (error != null || snapshot == null) return@addSnapshotListener
+                if (error != null || snapshot == null || snapshot.metadata.isFromCache) return@addSnapshotListener
                 val items = snapshot.documents.mapNotNull { documentToPackagingItem(it, targetBakeryId) }
                 syncScope.launch {
                     try {
@@ -2208,7 +2262,7 @@ object FirebaseService {
         var targetBakeryId = bakeryId.ifBlank { currentBakeryId }
         if (targetBakeryId.isBlank()) {
             try {
-                val userDoc = db.collection("users").document(user.uid).get().awaitTask()
+                val userDoc = db.collection("users").document(user.uid).get(com.google.firebase.firestore.Source.SERVER).awaitTask()
                 targetBakeryId = userDoc.getString("bakeryId")?.trim() ?: ""
             } catch (e: Throwable) {
                 return Result.failure(IllegalStateException("Could not load bakeryId from users/${user.uid}: ${e.message}"))
@@ -2217,13 +2271,26 @@ object FirebaseService {
         if (targetBakeryId.isBlank()) {
             return Result.failure(IllegalStateException("No bakeryId configured for current user."))
         }
+        // No silent local-to-cloud bakery reassignment: require the Firebase user
+        // profile to agree with the workspace selected on this device.
+        val verifiedBakeryId = try {
+            db.collection("users").document(user.uid).get(com.google.firebase.firestore.Source.SERVER).awaitTask()
+                .getString("bakeryId")?.trim().orEmpty()
+        } catch (e: Throwable) {
+            return Result.failure(IllegalStateException("Could not verify Firebase bakery: " + (e.message ?: "Access denied.")))
+        }
+        if (verifiedBakeryId.isBlank() || verifiedBakeryId != targetBakeryId) {
+            return Result.failure(IllegalStateException(
+                "This device's bakery differs from the Firebase account. No records were moved or uploaded. Contact BatchBoss support for safe recovery."
+            ))
+        }
         currentBakeryId = targetBakeryId
 
         return try {
             val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
             // 1. Download & Repair Inventory
-            val invSnapshot = bakeryDoc.collection("inventory").get().awaitTask()
+            val invSnapshot = bakeryDoc.collection("inventory").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val invItems = mutableListOf<InventoryItemEntity>()
             val offendingDocIds = mutableListOf<String>()
             val repairs = mutableListOf<Pair<String, Map<String, Any>>>()
@@ -2307,13 +2374,13 @@ object FirebaseService {
             repository.syncInventoryWithFirestore(targetBakeryId, invItems)
 
             // 2. Download Recipes + subcollections
-            val recipesSnapshot = bakeryDoc.collection("recipes").get().awaitTask()
+            val recipesSnapshot = bakeryDoc.collection("recipes").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val recipeItems = recipesSnapshot.documents.mapNotNull { documentToRecipe(it, targetBakeryId) }
             repository.syncRecipesWithFirestore(targetBakeryId, recipeItems)
 
             for (recipeDoc in recipesSnapshot.documents) {
                 val recipeFirestoreId = recipeDoc.id
-                val ingSnapshot = recipeDoc.reference.collection("ingredients").get().awaitTask()
+                val ingSnapshot = recipeDoc.reference.collection("ingredients").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
                 val ingItems = ingSnapshot.documents.mapNotNull { documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId) }
                 val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId)
                 val localRecipeId = localRecipe?.id ?: 0L
@@ -2321,49 +2388,58 @@ object FirebaseService {
             }
 
             // 3. Download Customers
-            val custSnapshot = bakeryDoc.collection("customers").get().awaitTask()
+            val custSnapshot = bakeryDoc.collection("customers").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val custItems = custSnapshot.documents.mapNotNull { documentToCustomer(it, targetBakeryId) }
             repository.syncCustomersWithFirestore(targetBakeryId, custItems)
 
             // 4. Download Products
-            val prodSnapshot = bakeryDoc.collection("products").get().awaitTask()
+            val prodSnapshot = bakeryDoc.collection("products").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val prodItems = prodSnapshot.documents.mapNotNull { documentToProduct(it, targetBakeryId) }
             repository.syncProductsWithFirestore(targetBakeryId, prodItems)
 
             // 5. Download Invoices
-            val invsSnapshot = bakeryDoc.collection("invoices").get().awaitTask()
+            val invsSnapshot = bakeryDoc.collection("invoices").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val invoiceItems = invsSnapshot.documents.mapNotNull { documentToInvoice(it, targetBakeryId) }
             repository.syncInvoicesWithFirestore(targetBakeryId, invoiceItems)
 
             // 6. Download Quotes
-            val quotesSnapshot = bakeryDoc.collection("quotes").get().awaitTask()
+            val quotesSnapshot = bakeryDoc.collection("quotes").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val quoteItems = quotesSnapshot.documents.mapNotNull { documentToQuote(it, targetBakeryId) }
             repository.syncQuotesWithFirestore(targetBakeryId, quoteItems)
 
             // 7. Download Orders
-            val ordersSnapshot = bakeryDoc.collection("orders").get().awaitTask()
+            val ordersSnapshot = bakeryDoc.collection("orders").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val orderItems = ordersSnapshot.documents.mapNotNull { documentToOrder(it, targetBakeryId) }
             repository.syncOrdersWithFirestore(targetBakeryId, orderItems)
 
             // 8. Download Tasks
-            val tasksSnapshot = bakeryDoc.collection("tasks").get().awaitTask()
+            val tasksSnapshot = bakeryDoc.collection("tasks").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val taskItems = tasksSnapshot.documents.mapNotNull { documentToTask(it, targetBakeryId) }
             repository.syncTasksWithFirestore(targetBakeryId, taskItems)
 
             // 9. Download Packaging
-            val pkgSnapshot = bakeryDoc.collection("packaging").get().awaitTask()
+            val pkgSnapshot = bakeryDoc.collection("packaging").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val pkgItems = pkgSnapshot.documents.mapNotNull { documentToPackagingItem(it, targetBakeryId) }
             repository.syncPackagingWithFirestore(targetBakeryId, pkgItems)
 
             // Upload legitimate pending local changes (items with no firestoreId)
             val pendingPkg = repository.getPackagingByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p)
+            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p).getOrThrow()
 
             val pendingInv = repository.getInventoryByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i)
+            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i).getOrThrow()
 
             val pendingRecipes = repository.getRecipesByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r)
+            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r).getOrThrow()
+
+            val pendingInvoices = repository.getInvoicesByBakeryOnce(targetBakeryId)
+                .filter { it.firestoreId.isBlank() }
+            for (invoice in pendingInvoices) {
+                // Safe retry: upload only after the local bakery identity is confirmed.
+                saveInvoiceToCloud(targetBakeryId, invoice).getOrThrow()
+                val cloudId = "android-" + invoice.invoiceNumber.ifBlank { invoice.id.toString() }
+                repository.updateInvoice(invoice.copy(firestoreId = cloudId))
+            }
 
             // Recalculate affected recipes and inventory totals
             repository.recalculateRecipeIngredientCosts(targetBakeryId)

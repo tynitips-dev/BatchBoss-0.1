@@ -34,7 +34,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [35])
 class BakerySyncRobolectricTest {
 
     private lateinit var database: AppDatabase
@@ -638,6 +638,80 @@ class BakerySyncRobolectricTest {
         assertNotNull(inDb)
         assertEquals("INV-2026-001", inDb!!.invoiceNumber)
         assertEquals(1250.0, inDb.amount, 0.001)
+    }
+
+    @Test
+    fun `remote invoices from another phone never replace unrelated local invoice IDs`() = runBlocking {
+        val repository = AppRepository(database)
+        val original = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L,
+            invoiceNumber = "INV-LOCAL-001", clientName = "Local Client",
+            clientPhone = "", orderDescription = "Local order",
+            issueDate = "2026-11-03", dueDate = "2026-11-10", amount = 500.0
+        )
+        val localId = repository.insertInvoice(original)
+        val remote = original.copy(
+            id = localId, firestoreId = "android-remote-different-device",
+            invoiceNumber = "INV-REMOTE-002", clientName = "Remote Client",
+            amount = 780.0, updatedAt = original.updatedAt + 5000
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(remote))
+        val localAfter = repository.getInvoiceByIdOnce(localId)
+        assertEquals("INV-LOCAL-001", localAfter?.invoiceNumber)
+        val remoteAfter = repository.getInvoiceByFirestoreId(remote.firestoreId)
+        assertNotNull(remoteAfter)
+        assertEquals("INV-REMOTE-002", remoteAfter!!.invoiceNumber)
+        assertEquals(2, repository.getInvoicesByBakeryOnce(testBakeryId).size)
+    }
+
+    @Test
+    fun `offline invoice acknowledgement attaches cloud ID without duplicating the local record`() = runBlocking {
+        val repository = AppRepository(database)
+        val pending = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L,
+            invoiceNumber = "INV-OFFLINE-001", clientName = "Offline Customer",
+            clientPhone = "", orderDescription = "Birthday cake",
+            issueDate = "2026-11-03", dueDate = "2026-11-10",
+            amount = 900.0, status = "Pending"
+        )
+        val localId = repository.insertInvoice(pending)
+        val server = pending.copy(
+            id = 0L, userId = 0L,
+            firestoreId = "android-" + pending.invoiceNumber,
+            updatedAt = pending.updatedAt + 5000L
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(server))
+        val originalRow = repository.getInvoiceByIdOnce(localId)
+        assertNotNull(originalRow)
+        assertEquals(server.firestoreId, originalRow!!.firestoreId)
+        assertEquals("Offline Customer", originalRow.clientName)
+        assertEquals(1, repository.getInvoicesByBakeryOnce(testBakeryId).size)
+    }
+
+    @Test
+    fun `older cloud invoice acknowledgement preserves newer device edits and links ID`() = runBlocking {
+        val repository = AppRepository(database)
+        val newerLocal = InvoiceEntity(
+            bakeryId = testBakeryId, userId = 11L, invoiceNumber = "INV-PHONE-NEWER",
+            clientName = "Updated Customer", clientPhone = "0820000000",
+            orderDescription = "Updated cake order", issueDate = "2026-11-03",
+            dueDate = "2026-11-09", amount = 790.0, status = "Paid", updatedAt = 7000L
+        )
+        val localId = repository.insertInvoice(newerLocal)
+        val earlierCloud = newerLocal.copy(
+            id = 0L, userId = 0L,
+            firestoreId = "android-INV-PHONE-NEWER",
+            clientName = "Old Customer", status = "Pending",
+            amount = 650.0, updatedAt = 6000L
+        )
+        repository.syncInvoicesWithFirestore(testBakeryId, listOf(earlierCloud))
+        val actual = repository.getInvoiceByIdOnce(localId)
+        assertNotNull(actual)
+        assertEquals("android-INV-PHONE-NEWER", actual!!.firestoreId)
+        assertEquals("Updated Customer", actual.clientName)
+        assertEquals("Paid", actual.status)
+        assertEquals(790.0, actual.amount, 0.001)
+        assertEquals(1, repository.getInvoicesByBakeryOnce(testBakeryId).size)
     }
 
     @Test
