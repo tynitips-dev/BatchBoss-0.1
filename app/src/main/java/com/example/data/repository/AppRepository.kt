@@ -564,9 +564,13 @@ class AppRepository(private val database: AppDatabase) {
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
+            // Room primary keys are only unique on a device. Never merge another
+            // device's invoice just because its numeric local ID happens to match.
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
                 ?: (if (remote.invoiceNumber.isNotBlank()) localByNumber[remote.invoiceNumber.trim()] else null)
+                ?: (if (remote.id > 0) localById[remote.id]?.takeIf {
+                    it.invoiceNumber.trim() == remote.invoiceNumber.trim()
+                } else null)
 
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
