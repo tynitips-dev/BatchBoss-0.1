@@ -2269,6 +2269,19 @@ object FirebaseService {
         if (targetBakeryId.isBlank()) {
             return Result.failure(IllegalStateException("No bakeryId configured for current user."))
         }
+        // No silent local-to-cloud bakery reassignment: require the Firebase user
+        // profile to agree with the workspace selected on this device.
+        val verifiedBakeryId = try {
+            db.collection("users").document(user.uid).get().awaitTask()
+                .getString("bakeryId")?.trim().orEmpty()
+        } catch (e: Throwable) {
+            return Result.failure(IllegalStateException("Could not verify Firebase bakery: " + (e.message ?: "Access denied.")))
+        }
+        if (verifiedBakeryId.isBlank() || verifiedBakeryId != targetBakeryId) {
+            return Result.failure(IllegalStateException(
+                "This device's bakery differs from the Firebase account. No records were moved or uploaded. Contact BatchBoss support for safe recovery."
+            ))
+        }
         currentBakeryId = targetBakeryId
 
         return try {
