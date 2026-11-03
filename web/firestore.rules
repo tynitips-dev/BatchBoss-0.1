@@ -59,7 +59,7 @@ service cloud.firestore {
               && (!('completed' in request.resource.data.setupGuide)
                 || (request.resource.data.setupGuide.completed is list
                   && request.resource.data.setupGuide.completed.size() <= 6
-                  && request.resource.data.setupGuide.completed.hasOnly([0,1,2,3,4,5])))));
+                  && request.resource.data.setupGuide.completed.hasOnly([0,1,2,3,4,5]))))));
       allow delete: if false;
     }
 
