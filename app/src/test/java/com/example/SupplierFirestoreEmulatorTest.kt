@@ -12,6 +12,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.Source
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,7 +30,7 @@ class SupplierFirestoreEmulatorTest {
 
     @Test fun `stale phone writes preserve intervening website edits and deletions`() {
         val host = System.getenv("FIRESTORE_EMULATOR_HOST")
-        require(host == "127.0.0.1:8080") { "This test requires the isolated local Firestore emulator." }
+        assumeTrue("Requires the isolated local Firestore emulator.", host == "127.0.0.1:8080")
         val executor = Executors.newSingleThreadExecutor()
         try {
             executor.submit(Callable {
