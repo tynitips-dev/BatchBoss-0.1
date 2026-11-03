@@ -51,11 +51,15 @@ service cloud.firestore {
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastLoginPlatformAt'])
             || request.resource.data.lastLoginPlatformAt == request.time)
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['setupGuide'])
-            || (request.resource.data.setupGuide.keys().hasOnly(['step','status'])
+            || (request.resource.data.setupGuide.keys().hasOnly(['step','status','completed'])
               && request.resource.data.setupGuide.step is int
               && request.resource.data.setupGuide.step >= 0
-              && request.resource.data.setupGuide.step <= 5
-              && request.resource.data.setupGuide.status in ['active','skipped','complete'])));
+              && request.resource.data.setupGuide.step <= 6
+              && request.resource.data.setupGuide.status in ['active','skipped','complete']
+              && (!('completed' in request.resource.data.setupGuide)
+                || (request.resource.data.setupGuide.completed is list
+                  && request.resource.data.setupGuide.completed.size() <= 6
+                  && request.resource.data.setupGuide.completed.hasOnly([0,1,2,3,4,5])))));
       allow delete: if false;
     }
 
