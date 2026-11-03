@@ -1224,13 +1224,19 @@ object FirebaseService {
         val totalCost = extractNumber(doc, "totalCost", 0.0)
         val packagingTotal = extractNumber(doc, "packagingTotal", 0.0)
 
-        val lineItemsRaw = doc.get("lineItems")
+        val lineItemsRaw = doc.get("lineItems") ?: doc.get("items")
         val lineItemsJson = when (lineItemsRaw) {
             is String -> lineItemsRaw
             is List<*> -> {
                 val array = org.json.JSONArray()
                 for (item in lineItemsRaw) {
-                    if (item is Map<*, *>) array.put(org.json.JSONObject(item))
+                    if (item is Map<*, *>) {
+                        val normalized = org.json.JSONObject(item)
+                        if (!normalized.has("itemName")) {
+                            normalized.put("itemName", normalized.optString("name", ""))
+                        }
+                        array.put(normalized)
+                    }
                 }
                 array.toString()
             }
