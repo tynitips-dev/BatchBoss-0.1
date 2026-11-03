@@ -731,7 +731,7 @@ fun BatchBossApp(
                                 unit = unit
                             )
                         },
-                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems ->
+                        onCreateInvoice = { clientName, phone, desc, amount, dueDate, status, subtotal, discount, taxRate, taxAmount, items, totalCost, packagingTotal, packagingItems, onResult ->
                             viewModel.createInvoice(
                                 clientName = clientName,
                                 clientPhone = phone,
@@ -746,9 +746,12 @@ fun BatchBossApp(
                                 items = items,
                                 totalCost = totalCost,
                                 packagingTotal = packagingTotal,
-                                packagingItems = packagingItems
+                                packagingItems = packagingItems,
+                                onResult = { saved, message ->
+                                    onResult(saved, message)
+                                    coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                                }
                             )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice created!") }
                         },
                         onUpdateStatus = { id, status ->
                             viewModel.updateInvoiceStatus(id, status)
