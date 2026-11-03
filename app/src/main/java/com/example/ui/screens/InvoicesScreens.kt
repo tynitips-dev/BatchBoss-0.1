@@ -68,7 +68,8 @@ fun InvoicesListScreen(
         items: List<LineItem>,
         totalCost: Double,
         packagingTotal: Double,
-        packagingItems: List<InvoicePackagingItem>
+        packagingItems: List<InvoicePackagingItem>,
+        onResult: (Boolean, String) -> Unit
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null,
@@ -385,9 +386,11 @@ fun InvoicesListScreen(
             products = products,
             packaging = packaging,
             onDismiss = { showCreateDialog = false },
-            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems ->
-                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems)
-                showCreateDialog = false
+            onConfirm = { client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems, onResult ->
+                onCreateInvoice(client, phone, desc, amt, due, st, sub, disc, taxRate, taxAmt, lineItems, cost, pkgTotal, pkgItems) { success, message ->
+                    onResult(success, message)
+                    if (success) showCreateDialog = false
+                }
             },
             onSaveProductService = onSaveProductService,
             onNavigateToProducts = onNavigateToProducts
@@ -710,7 +713,8 @@ fun CreateInvoiceDialog(
         items: List<LineItem>,
         totalCost: Double,
         packagingTotal: Double,
-        packagingItems: List<InvoicePackagingItem>
+        packagingItems: List<InvoicePackagingItem>,
+        onResult: (Boolean, String) -> Unit
     ) -> Unit,
     onSaveProductService: ((name: String, description: String, category: String, costPrice: Double, sellingPrice: Double, unit: String) -> Unit)? = null,
     onNavigateToProducts: (() -> Unit)? = null
@@ -731,6 +735,8 @@ fun CreateInvoiceDialog(
     var showSelectorDialog by remember { mutableStateOf(false) }
     var showPackagingSelectorDialog by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
+    var savingInvoice by remember { mutableStateOf(false) }
+    var invoiceSaveError by remember { mutableStateOf("") }
 
     // Automatic calculation logic
     val packagingTotal = remember(packagingItems) {
@@ -1533,6 +1539,9 @@ fun CreateInvoiceDialog(
                             )
                         }
                     }
+                    if (invoiceSaveError.isNotBlank()) {
+                        item { Text(invoiceSaveError, color = BatchPink, fontSize = 12.sp) }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1553,34 +1562,42 @@ fun CreateInvoiceDialog(
 
                     Button(
                         onClick = {
-                            if (clientName.isBlank() || grandTotal <= 0.0) {
-                                hasError = true
-                            } else {
-                                onConfirm(
-                                    clientName.trim(),
-                                    clientPhone.trim(),
-                                    effectiveDescription.ifBlank { "Bakery Order" },
-                                    grandTotal,
-                                    dueDate,
-                                    status,
-                                    subtotal,
-                                    discountAmount,
-                                    taxRatePercent,
-                                    taxAmount,
-                                    lineItems,
-                                    totalCost,
-                                    packagingTotal,
-                                    packagingItems
-                                )
+                            if (!savingInvoice) {
+                                if (clientName.isBlank() || grandTotal <= 0.0) {
+                                    hasError = true
+                                } else {
+                                    savingInvoice = true
+                                    invoiceSaveError = ""
+                                    onConfirm(
+                                        clientName.trim(),
+                                        clientPhone.trim(),
+                                        effectiveDescription.ifBlank { "Bakery Order" },
+                                        grandTotal,
+                                        dueDate,
+                                        status,
+                                        subtotal,
+                                        discountAmount,
+                                        taxRatePercent,
+                                        taxAmount,
+                                        lineItems,
+                                        totalCost,
+                                        packagingTotal,
+                                        packagingItems
+                                    ) { success, message ->
+                                        savingInvoice = false
+                                        if (!success) invoiceSaveError = message
+                                    }
+                                }
                             }
                         },
+                        enabled = !savingInvoice,
                         colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("btn_confirm_generate_invoice")
                     ) {
                         Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Generate Invoice", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(if (savingInvoice) "Saving invoice…" else "Generate Invoice", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
