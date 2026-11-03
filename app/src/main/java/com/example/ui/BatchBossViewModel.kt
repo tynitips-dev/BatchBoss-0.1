@@ -1364,7 +1364,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val result = FirebaseService.saveInvoiceToCloud(bakeryId, invoice.copy(id = invId))
                 if (result.isSuccess) {
-                    repository.updateInvoice(invoice.copy(id = invId, firestoreId = invId.toString()))
+                    repository.updateInvoice(invoice.copy(id = invId, firestoreId = "android-" + invoice.invoiceNumber))
                     _syncMessage.value = "Invoice synced to Firebase."
                 } else {
                     // Keep the local record pending. Never reassign it to another bakery.
