@@ -2262,7 +2262,7 @@ object FirebaseService {
         var targetBakeryId = bakeryId.ifBlank { currentBakeryId }
         if (targetBakeryId.isBlank()) {
             try {
-                val userDoc = db.collection("users").document(user.uid).get().awaitTask()
+                val userDoc = db.collection("users").document(user.uid).get(com.google.firebase.firestore.Source.SERVER).awaitTask()
                 targetBakeryId = userDoc.getString("bakeryId")?.trim() ?: ""
             } catch (e: Throwable) {
                 return Result.failure(IllegalStateException("Could not load bakeryId from users/${user.uid}: ${e.message}"))
@@ -2274,7 +2274,7 @@ object FirebaseService {
         // No silent local-to-cloud bakery reassignment: require the Firebase user
         // profile to agree with the workspace selected on this device.
         val verifiedBakeryId = try {
-            db.collection("users").document(user.uid).get().awaitTask()
+            db.collection("users").document(user.uid).get(com.google.firebase.firestore.Source.SERVER).awaitTask()
                 .getString("bakeryId")?.trim().orEmpty()
         } catch (e: Throwable) {
             return Result.failure(IllegalStateException("Could not verify Firebase bakery: " + (e.message ?: "Access denied.")))
@@ -2290,7 +2290,7 @@ object FirebaseService {
             val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
             // 1. Download & Repair Inventory
-            val invSnapshot = bakeryDoc.collection("inventory").get().awaitTask()
+            val invSnapshot = bakeryDoc.collection("inventory").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val invItems = mutableListOf<InventoryItemEntity>()
             val offendingDocIds = mutableListOf<String>()
             val repairs = mutableListOf<Pair<String, Map<String, Any>>>()
@@ -2374,13 +2374,13 @@ object FirebaseService {
             repository.syncInventoryWithFirestore(targetBakeryId, invItems)
 
             // 2. Download Recipes + subcollections
-            val recipesSnapshot = bakeryDoc.collection("recipes").get().awaitTask()
+            val recipesSnapshot = bakeryDoc.collection("recipes").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val recipeItems = recipesSnapshot.documents.mapNotNull { documentToRecipe(it, targetBakeryId) }
             repository.syncRecipesWithFirestore(targetBakeryId, recipeItems)
 
             for (recipeDoc in recipesSnapshot.documents) {
                 val recipeFirestoreId = recipeDoc.id
-                val ingSnapshot = recipeDoc.reference.collection("ingredients").get().awaitTask()
+                val ingSnapshot = recipeDoc.reference.collection("ingredients").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
                 val ingItems = ingSnapshot.documents.mapNotNull { documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId) }
                 val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId)
                 val localRecipeId = localRecipe?.id ?: 0L
@@ -2388,37 +2388,37 @@ object FirebaseService {
             }
 
             // 3. Download Customers
-            val custSnapshot = bakeryDoc.collection("customers").get().awaitTask()
+            val custSnapshot = bakeryDoc.collection("customers").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val custItems = custSnapshot.documents.mapNotNull { documentToCustomer(it, targetBakeryId) }
             repository.syncCustomersWithFirestore(targetBakeryId, custItems)
 
             // 4. Download Products
-            val prodSnapshot = bakeryDoc.collection("products").get().awaitTask()
+            val prodSnapshot = bakeryDoc.collection("products").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val prodItems = prodSnapshot.documents.mapNotNull { documentToProduct(it, targetBakeryId) }
             repository.syncProductsWithFirestore(targetBakeryId, prodItems)
 
             // 5. Download Invoices
-            val invsSnapshot = bakeryDoc.collection("invoices").get().awaitTask()
+            val invsSnapshot = bakeryDoc.collection("invoices").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val invoiceItems = invsSnapshot.documents.mapNotNull { documentToInvoice(it, targetBakeryId) }
             repository.syncInvoicesWithFirestore(targetBakeryId, invoiceItems)
 
             // 6. Download Quotes
-            val quotesSnapshot = bakeryDoc.collection("quotes").get().awaitTask()
+            val quotesSnapshot = bakeryDoc.collection("quotes").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val quoteItems = quotesSnapshot.documents.mapNotNull { documentToQuote(it, targetBakeryId) }
             repository.syncQuotesWithFirestore(targetBakeryId, quoteItems)
 
             // 7. Download Orders
-            val ordersSnapshot = bakeryDoc.collection("orders").get().awaitTask()
+            val ordersSnapshot = bakeryDoc.collection("orders").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val orderItems = ordersSnapshot.documents.mapNotNull { documentToOrder(it, targetBakeryId) }
             repository.syncOrdersWithFirestore(targetBakeryId, orderItems)
 
             // 8. Download Tasks
-            val tasksSnapshot = bakeryDoc.collection("tasks").get().awaitTask()
+            val tasksSnapshot = bakeryDoc.collection("tasks").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val taskItems = tasksSnapshot.documents.mapNotNull { documentToTask(it, targetBakeryId) }
             repository.syncTasksWithFirestore(targetBakeryId, taskItems)
 
             // 9. Download Packaging
-            val pkgSnapshot = bakeryDoc.collection("packaging").get().awaitTask()
+            val pkgSnapshot = bakeryDoc.collection("packaging").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
             val pkgItems = pkgSnapshot.documents.mapNotNull { documentToPackagingItem(it, targetBakeryId) }
             repository.syncPackagingWithFirestore(targetBakeryId, pkgItems)
 
