@@ -1382,16 +1382,69 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateInvoiceStatus(id: Long, status: String) {
+    fun updateInvoiceStatus(
+        id: Long,
+        status: String,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            repository.updateInvoiceStatus(id, status)
+            try {
+                val original = repository.getInvoiceByIdOnce(id)
+                    ?: return@launch onResult(false, "Invoice not found on this device.")
+                val bakeryId = original.bakeryId
+                val updated = original.copy(status = status, updatedAt = System.currentTimeMillis())
+                if (original.firestoreId.isNotBlank()) {
+                    if (bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                        FirebaseService.currentBakeryId != bakeryId
+                    ) {
+                        onResult(false, "Sign into this invoice's Firebase bakery before changing its status.")
+                        return@launch
+                    }
+                    val cloud = FirebaseService.saveInvoiceToCloud(bakeryId, updated)
+                    if (cloud.isFailure) {
+                        onResult(false, "Cloud status update failed: " +
+                            (cloud.exceptionOrNull()?.message ?: "Check connection and Pro access."))
+                        return@launch
+                    }
+                }
+                // An invoice pending its first upload remains pending and will be retried.
+                repository.updateInvoice(updated)
+                onResult(true, "Invoice status saved" +
+                    (if (original.firestoreId.isNotBlank()) " to Firebase." else " on this device; sync pending."))
+            } catch (e: Exception) {
+                onResult(false, "Invoice status could not be saved: " + (e.message ?: "Unknown error."))
+            }
         }
     }
 
-    fun deleteInvoice(id: Long) {
+    fun deleteInvoice(
+        id: Long,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            repository.deleteInvoice(id)
-            repository.deleteLineItems("INVOICE", id)
+            try {
+                val invoice = repository.getInvoiceByIdOnce(id)
+                    ?: return@launch onResult(false, "Invoice not found on this device.")
+                if (invoice.firestoreId.isNotBlank()) {
+                    if (invoice.bakeryId.isBlank() || FirebaseService.currentUser == null ||
+                        FirebaseService.currentBakeryId != invoice.bakeryId
+                    ) {
+                        onResult(false, "Sign into the matching Firebase bakery before deleting an invoice.")
+                        return@launch
+                    }
+                    val cloud = FirebaseService.deleteInvoiceFromCloud(invoice.bakeryId, invoice.firestoreId)
+                    if (cloud.isFailure) {
+                        onResult(false, "Invoice not deleted: " +
+                            (cloud.exceptionOrNull()?.message ?: "Cloud connection failed."))
+                        return@launch
+                    }
+                }
+                repository.deleteInvoice(id)
+                repository.deleteLineItems("INVOICE", id)
+                onResult(true, "Invoice deleted.")
+            } catch (e: Exception) {
+                onResult(false, "Invoice not deleted: " + (e.message ?: "Unknown error."))
+            }
         }
     }
 
