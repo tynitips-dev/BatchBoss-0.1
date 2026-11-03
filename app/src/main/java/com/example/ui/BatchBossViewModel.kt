@@ -1294,6 +1294,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         viewModelScope.launch {
             var savedId: Long? = null
+            var localSaveReported = false
             try {
                 val bakeryId = userProfile.value?.bakeryId?.takeIf { it.isNotBlank() }
                     ?: FirebaseService.currentBakeryId
@@ -1353,33 +1354,34 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     repository.insertLineItems(dbEntities)
                 }
-                // A local save is not a confirmed cloud save. Report both separately.
-                onResult(true, "Invoice saved on this device.")
+                // Return local persistence promptly, including while the phone is offline.
+                // Subsequent cloud results are surfaced separately by syncMessage.
+                localSaveReported = true
+                onResult(true, "Invoice saved on this device. Cloud sync pending.")
                 if (bakeryId.isBlank() || FirebaseService.currentUser == null ||
                     FirebaseService.currentBakeryId != bakeryId
                 ) {
                     _syncMessage.value =
                         "Invoice saved on this device. Sign in to the matching Firebase bakery to sync it."
-                    onResult(true, _syncMessage.value ?: "Invoice saved locally; cloud sync pending.")
                     return@launch
                 }
                 val result = FirebaseService.saveInvoiceToCloud(bakeryId, invoice.copy(id = invId))
                 if (result.isSuccess) {
                     repository.updateInvoice(invoice.copy(id = invId, firestoreId = "android-" + invoice.invoiceNumber))
                     _syncMessage.value = "Invoice synced to Firebase."
-                    onResult(true, "Invoice synced to Firebase.")
                 } else {
                     // Keep the local record pending. Never reassign it to another bakery.
                     _syncMessage.value =
                         "Invoice saved on this device, but cloud sync failed: " +
                             (result.exceptionOrNull()?.message ?: "Check connection and Pro access.")
-                    onResult(true, _syncMessage.value ?: "Invoice saved locally; cloud sync pending.")
                 }
             } catch (e: Exception) {
                 if (savedId != null) {
-                    onResult(true, "Invoice saved on this device. Some details or cloud sync still need checking.")
+                    _syncMessage.value = "Invoice saved on this device. Cloud sync needs checking: " +
+                        (e.message ?: "Please try syncing again.")
+                    if (!localSaveReported) onResult(true, _syncMessage.value ?: "Invoice saved on this device.")
                 } else {
-                    onResult(false, "Invoice not saved: " + (e.message ?: "Please try again."))
+                    if (!localSaveReported) onResult(false, "Invoice not saved: " + (e.message ?: "Please try again."))
                 }
             }
         }
