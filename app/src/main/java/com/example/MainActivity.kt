@@ -807,8 +807,9 @@ fun BatchBossApp(
                             coroutineScope.launch { snackbarHostState.showSnackbar("Status updated to $status") }
                         },
                         onConvertToInvoice = { quote ->
-                            viewModel.convertQuoteToInvoice(quote)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("${quote.docType} converted to Invoice!") }
+                            viewModel.convertQuoteToInvoice(quote) { _, message ->
+                                coroutineScope.launch { snackbarHostState.showSnackbar(message) }
+                            }
                         },
                         onDeleteQuote = { id ->
                             viewModel.deleteQuote(id)
