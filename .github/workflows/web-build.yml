@@ -33,8 +33,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Validate Firebase web configuration
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -54,7 +52,7 @@ jobs:
           test "$VITE_FIREBASE_PROJECT_ID" = "batch-boss-android" || { echo "Firebase project must be batch-boss-android"; exit 1; }
       - name: Install customer portal dependencies
         working-directory: web
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Build customer portal
         working-directory: web
         run: npm run build
