@@ -77,9 +77,17 @@ fun BatchBossApp(
     val allLoginLogs by viewModel.allLoginLogs.collectAsStateWithLifecycle()
     val allDeletionRequests by viewModel.allDeletionRequests.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val syncMessage by viewModel.syncMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(syncMessage) {
+        val message = syncMessage
+        if (!message.isNullOrBlank()) {
+            viewModel.dismissSyncMessage()
+            snackbarHostState.showSnackbar(message)
+        }
+    }
     val subscriptionUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val subscriptionLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(subscriptionLifecycle) {
