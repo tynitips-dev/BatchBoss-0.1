@@ -1360,17 +1360,20 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 ) {
                     _syncMessage.value =
                         "Invoice saved on this device. Sign in to the matching Firebase bakery to sync it."
+                    onResult(true, _syncMessage.value ?: "Invoice saved locally; cloud sync pending.")
                     return@launch
                 }
                 val result = FirebaseService.saveInvoiceToCloud(bakeryId, invoice.copy(id = invId))
                 if (result.isSuccess) {
                     repository.updateInvoice(invoice.copy(id = invId, firestoreId = "android-" + invoice.invoiceNumber))
                     _syncMessage.value = "Invoice synced to Firebase."
+                    onResult(true, "Invoice synced to Firebase.")
                 } else {
                     // Keep the local record pending. Never reassign it to another bakery.
                     _syncMessage.value =
                         "Invoice saved on this device, but cloud sync failed: " +
                             (result.exceptionOrNull()?.message ?: "Check connection and Pro access.")
+                    onResult(true, _syncMessage.value ?: "Invoice saved locally; cloud sync pending.")
                 }
             } catch (e: Exception) {
                 if (savedId != null) {
