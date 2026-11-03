@@ -49,6 +49,9 @@ jobs:
           -keyalg RSA -keysize 2048 -validity 30
           -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Test Android cloud login and local data guards
+        run: gradle testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: gradle assembleDebug bundleRelease --stacktrace
 

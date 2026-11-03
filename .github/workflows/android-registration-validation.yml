@@ -1,0 +1,72 @@
+name: Validate Android and web registration alignment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "web/src/accountPlatform.ts"
+      - "web/src/App.tsx"
+      - "tests/android-web-registration-contract.cjs"
+      - ".github/workflows/android-registration-validation.yml"
+
+jobs:
+  registration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out BatchBoss
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Restore existing Firebase configuration for test build
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON_BASE64" || { echo "Android Firebase config GitHub secret is missing"; exit 1; }
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+
+      - name: Verify exact Firebase project and package
+        run: |
+          node - <<'NODE'
+          const config = require('./app/google-services.json');
+          const project = config.project_info?.project_id;
+          const validClient = config.client?.some(c => c.client_info?.android_client_info?.package_name === 'com.aistudio.batchboss.kqwxrv');
+          if (project !== 'batch-boss-android' || !validClient) throw new Error('Firebase config does not match BatchBoss Android and the working web app project');
+          console.log('Verified Android Firebase project and package for shared registration');
+          NODE
+
+      - name: Verify shared registration contract
+        run: node --test tests/android-web-registration-contract.cjs
+
+      - name: Create disposable CI debug signing key
+        run: >-
+          keytool -genkeypair -noprompt -keystore debug.keystore
+          -storepass android -keypass android -alias androiddebugkey
+          -keyalg RSA -keysize 2048 -validity 30
+          -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Run Firebase login and local data safety unit tests
+        run: gradle :app:testDebugUnitTest --tests "com.example.ui.CloudWorkspaceGateTest" --stacktrace
+
+      - name: Compile registration-safe test APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Upload internal registration validation APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatchBoss-android-registration-validation-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
