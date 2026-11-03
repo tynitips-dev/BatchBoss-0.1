@@ -582,6 +582,11 @@ class AppRepository(private val database: AppDatabase) {
                         bakeryId = bakeryId
                     )
                     invoiceDao.updateInvoice(updated)
+                } else if (docId.isNotBlank() && existing.firestoreId != docId) {
+                    // A delayed acknowledgement from Firestore may carry an older timestamp
+                    // than the saved phone copy. Link the cloud identity even in that case,
+                    // without overwriting the newer local invoice contents or paid status.
+                    invoiceDao.updateInvoice(existing.copy(firestoreId = docId))
                 }
             } else {
                 val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
