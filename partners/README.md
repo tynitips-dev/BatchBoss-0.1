@@ -7,6 +7,8 @@ A separate, BatchBoss-branded **partners.batchboss.co.za** workspace for:
 - Sales follow-ups that agents can update without editing paid-sale status.
 - Test-only source-verified first-payment ingestion with nonpayable credits, first-sale ownership checks, and full refund/chargeback reconciliation. Production commissions require a trusted payment bridge.
 - Independent partner admin console.
+- Agent **Request Payout** action: the agent never selects a payout amount or accesses customer payments/refunds. Only approved, explicitly provider-verified, payable commissions can be requested. A transaction locks the eligible ledger records to one open request.
+- Admin payout approvals and separate **record completed external transfer** step. This system does NOT move money; final paid status requires an admin-confirmed outside payment reference and audit record.
 
 ## Current status
 
@@ -55,9 +57,19 @@ to a verified admin Firebase Authentication user via a trusted one-off Firebase 
 4. In the test-only emulator, the baker/supplier backend verifies a TEST Paystack charge and delivers an authenticated private event with an opaque referral subject.
 5. The test receiver checks the partner code, immutable subject ownership and first successful payment reference, creating one **NONPAYABLE** credit. A verified full refund/chargeback test event reverses it with effective commission zero; duplicate deliveries cannot pay twice.
 6. The admin browser **cannot** create a payable commission by ticking a verification checkbox. A trusted production provider integration and signed cross-project delivery must be reviewed and deployed before genuine commissions can be created.
-7. After production sign-off, finance may approve and record a payout manually; this code does not transfer funds.
+7. Following provider verification and individual commission approval, a partner may request the server-computed eligible balance. One open request at a time prevents double claims. Emulator and test credits do not meet payout eligibility.
+8. Finance may approve or reject a requested payout. Rejection unlocks its commissions. Approval alone never pays.
+9. After verifying a real external bank transfer, an admin records its reference and note; the same Firestore transaction marks the linked commissions and request paid. No funds are sent by the software.
 
 **Manual "paid" is a record, not a payment transfer.** New manual payment-credit creation is explicitly blocked. The isolated partner test receiver supports idempotent full reversals; baker and supplier source systems do not yet emit refund events. Partial refunds must be held for policy review. All real refunds, chargebacks and payout adjustments require a production reconciliation service.
+
+## Payout implementation safeguards
+
+- Existing records do **not** become payable merely because their status is approved: `paymentVerification` must equal `provider-verified` and `payable` must be `true`, set exclusively by a future audited trusted settlement bridge.
+- The request API accepts **no client amount, commission IDs or recipient details**. The server selects commissions owned by the authenticated partner, checks eligibility again inside a Firestore transaction and attaches each to the request.
+- Admin review, completed-transfer attestation and audit logs are role-restricted; regular agent actions cannot refund, reverse, approve or mark paid.
+- A reversal during a payout request blocks approval or paid recording until the request is rejected and reconciled.
+- Maximum 75 commissions per request and 200 records per account view; accounts above these bounds require finance reconciliation and pagination before commercial use.
 
 ## Production gates (not yet complete)
 
