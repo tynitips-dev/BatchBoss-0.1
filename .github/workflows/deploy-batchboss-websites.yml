@@ -53,36 +53,28 @@ jobs:
         with:
           name: batchboss-baker-web-dist
           path: web-dist
-      - name: Check deployment configuration
+      - name: Configure SFTP deployment
         env:
-          XNEELO_SSH_HOST: ${{ secrets.XNEELO_SSH_HOST }}
-          XNEELO_SSH_USER: ${{ secrets.XNEELO_SSH_USER }}
-          XNEELO_SSH_KEY: ${{ secrets.XNEELO_SSH_KEY }}
-          XNEELO_SSH_HOST_KEY: ${{ secrets.XNEELO_SSH_HOST_KEY }}
+          XNEELO_SFTP_PASSWORD: ${{ secrets.XNEELO_SFTP_PASSWORD }}
+        run: |
+          if [ -z "$XNEELO_SFTP_PASSWORD" ]; then echo "::error::Missing XNEELO_SFTP_PASSWORD"; exit 1; fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Deploy BatchBoss marketing site and baker portal
+        env:
+          XNEELO_SFTP_PASSWORD: ${{ secrets.XNEELO_SFTP_PASSWORD }}
+          XNEELO_SFTP_HOST: ${{ vars.XNEELO_SFTP_HOST }}
+          XNEELO_SFTP_USER: ${{ vars.XNEELO_SFTP_USER }}
           XNEELO_MARKETING_PATH: ${{ vars.XNEELO_MARKETING_PATH }}
           XNEELO_APP_PATH: ${{ vars.XNEELO_APP_PATH }}
         run: |
-          for name in XNEELO_SSH_HOST XNEELO_SSH_USER XNEELO_SSH_KEY XNEELO_SSH_HOST_KEY XNEELO_MARKETING_PATH XNEELO_APP_PATH; do
+          for name in XNEELO_SFTP_HOST XNEELO_SFTP_USER XNEELO_MARKETING_PATH XNEELO_APP_PATH; do
             if [ -z "${!name}" ]; then echo "::error::Missing $name"; exit 1; fi
           done
-      - name: Configure verified SSH host
-        env:
-          XNEELO_SSH_KEY: ${{ secrets.XNEELO_SSH_KEY }}
-          XNEELO_SSH_HOST_KEY: ${{ secrets.XNEELO_SSH_HOST_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$XNEELO_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$XNEELO_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          # Do not mirror/delete remote files: existing marketing assets and other portals must remain.
+          # Require strict server host-key validation; GitHub secret must contain a verified known_hosts entry.
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\\n' "${{ secrets.XNEELO_SFTP_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Deploy website and baker portal over SSH
-        env:
-          XNEELO_SSH_HOST: ${{ secrets.XNEELO_SSH_HOST }}
-          XNEELO_SSH_USER: ${{ secrets.XNEELO_SSH_USER }}
-          XNEELO_MARKETING_PATH: ${{ vars.XNEELO_MARKETING_PATH }}
-          XNEELO_APP_PATH: ${{ vars.XNEELO_APP_PATH }}
-        run: |
-          # No --delete: preserve existing marketing-site assets and hosting files.
-          rsync -az --exclude README.md -e 'ssh -o StrictHostKeyChecking=yes' website/ "$XNEELO_SSH_USER@$XNEELO_SSH_HOST:$XNEELO_MARKETING_PATH/"
-          rsync -az -e 'ssh -o StrictHostKeyChecking=yes' web-dist/ "$XNEELO_SSH_USER@$XNEELO_SSH_HOST:$XNEELO_APP_PATH/"
+          if [ ! -s ~/.ssh/known_hosts ]; then echo "::error::Missing verified XNEELO_SFTP_KNOWN_HOSTS"; exit 1; fi
+          export LFTP_PASSWORD="$XNEELO_SFTP_PASSWORD"
+          lftp -u "$XNEELO_SFTP_USER","$LFTP_PASSWORD" "sftp://$XNEELO_SFTP_HOST:22" -e "set sftp:auto-confirm no; mirror --reverse --verbose --exclude-glob README.md website/ $XNEELO_MARKETING_PATH; mirror --reverse --verbose web-dist/ $XNEELO_APP_PATH; bye"
