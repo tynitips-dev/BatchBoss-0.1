@@ -38,7 +38,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
 }
 
 @Composable
@@ -94,7 +93,6 @@ fun BatchBossApp(
             .onFailure { coroutineScope.launch { snackbarHostState.showSnackbar("Open the BatchBoss website to manage your subscription.") } }
     }
 
-
     // Determine if bottom navigation bar should be visible
     val showBottomBar = when (currentScreen) {
         is Screen.Home,
@@ -137,7 +135,7 @@ fun BatchBossApp(
             is Screen.UnitConverter, is Screen.RecipeScaler, is Screen.AddSupplier,
             is Screen.InvoicesList, is Screen.QuotesList, is Screen.CustomersList,
             is Screen.ProductsServicesList, is Screen.PremiumSubscription, is Screen.AboutBatchBoss,
-            is Screen.AccountDataDeletion, is Screen.FirebaseSync -> viewModel.navigateTo(Screen.QuickActions)
+            is Screen.AccountDataDeletion -> viewModel.navigateTo(Screen.QuickActions)
             is Screen.Notifications, is Screen.Tasks, is Screen.LowStock, is Screen.PackagingList -> viewModel.navigateTo(Screen.Home)
             is Screen.Login, is Screen.CreateAccount, is Screen.ForgotPassword -> viewModel.navigateTo(Screen.Home)
             else -> viewModel.navigateTo(Screen.Home)
@@ -595,7 +593,6 @@ fun BatchBossApp(
                         onOpenProductsServices = { viewModel.navigateTo(Screen.ProductsServicesList) },
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
-                        onOpenFirebaseSync = { viewModel.navigateTo(Screen.FirebaseSync) },
                         onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
                     )
                 }
@@ -936,27 +933,6 @@ fun BatchBossApp(
                     )
                 }
 
-                is Screen.FirebaseSync -> {
-                    FirebaseSyncScreen(
-                        recipes = recipes,
-                        ingredients = selectedRecipeIngredients,
-                        inventory = allInventory,
-                        userProfile = userProfile,
-                        onBack = { viewModel.navigateTo(Screen.QuickActions) },
-                        onRestoreData = { resRecipes, resIngs, resInv ->
-                            viewModel.restoreCloudData(resRecipes, resIngs, resInv) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Restored ${resRecipes.size} recipes and ${resInv.size} items from Firestore!")
-                                }
-                            }
-                        },
-                        onSyncWebBackend = { onResult ->
-                            viewModel.syncWithWebBackend { success, msg ->
-                                onResult(success, msg)
-                            }
-                        }
-                    )
-                }
             }
 
             // Paywall Dialog
