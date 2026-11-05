@@ -30,9 +30,10 @@ import kotlinx.coroutines.launch
         DocumentLineItemEntity::class,
         UserLoginLogEntity::class,
         DataDeletionRequestEntity::class,
-        PackagingItemEntity::class
+        PackagingItemEntity::class,
+        PendingCloudChange::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -57,6 +58,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userLoginLogDao(): UserLoginLogDao
     abstract fun dataDeletionRequestDao(): DataDeletionRequestDao
 
+    abstract fun pendingCloudChangeDao(): PendingCloudChangeDao
+
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -69,6 +72,12 @@ abstract class AppDatabase : RoomDatabase() {
                 found
             }
             if (!exists) db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS pending_cloud_changes (bakeryId TEXT NOT NULL, path TEXT NOT NULL, collection TEXT NOT NULL, localId INTEGER NOT NULL, revision TEXT NOT NULL, ancestors TEXT NOT NULL, expectedUpdatedAt INTEGER, deleted INTEGER NOT NULL, PRIMARY KEY(bakeryId, path))")
+            }
         }
 
         val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
@@ -209,7 +218,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         internal fun builder(context: Context, name: String): RoomDatabase.Builder<AppDatabase> =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
 
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {

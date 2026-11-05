@@ -79,6 +79,12 @@ fun BatchBossApp(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val saveSyncMessage by viewModel.syncMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(saveSyncMessage) {
+        val message = saveSyncMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.dismissSyncMessage()
+    }
     val subscriptionUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val subscriptionLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(subscriptionLifecycle) {
@@ -305,15 +311,12 @@ fun BatchBossApp(
                         onToggleAlert = { id -> viewModel.toggleInventoryAlert(id) },
                         onUpdateStockPrice = { id, unitPrice, currentStock, minStock ->
                             viewModel.updateStockPrice(id, unitPrice, currentStock, minStock)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock price and quantity updated!") }
                         },
                         onAddNewStockItem = { name, unitPrice, currentStock, minStock, unit ->
                             viewModel.addNewStockItem(name, unitPrice, currentStock, minStock, unit)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to stock!") }
                         },
                         onDeleteStockItem = { id ->
                             viewModel.deleteStockItem(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock item removed") }
                         }
                     )
                 }
@@ -327,15 +330,12 @@ fun BatchBossApp(
                         onToggleAlert = { id -> viewModel.toggleInventoryAlert(id) },
                         onUpdateStockPrice = { id, unitPrice, currentStock, minStock ->
                             viewModel.updateStockPrice(id, unitPrice, currentStock, minStock)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock price and quantity updated!") }
                         },
                         onAddNewStockItem = { name, unitPrice, currentStock, minStock, unit ->
                             viewModel.addNewStockItem(name, unitPrice, currentStock, minStock, unit)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to stock!") }
                         },
                         onDeleteStockItem = { id ->
                             viewModel.deleteStockItem(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Stock item removed") }
                         },
                         onScanBarcode = { viewModel.navigateTo(Screen.BarcodeScanner) },
                         onNavigateToPackaging = { viewModel.navigateTo(Screen.PackagingList) }
@@ -392,7 +392,6 @@ fun BatchBossApp(
                         onScanRecipeAi = { viewModel.navigateTo(Screen.AiRecipeScanner) },
                         onDeleteRecipe = { id ->
                             viewModel.deleteRecipe(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe deleted successfully") }
                         }
                     )
                 }
@@ -407,17 +406,14 @@ fun BatchBossApp(
                         onCalculatePricing = { selectedRecipe?.let { viewModel.navigateTo(Screen.RecipeCosting(it.id)) } },
                         onUpdatePricing = { id, labour, overheads, pkg, utils, profit, customSellingPrice ->
                             viewModel.updateRecipePricing(id, labour, overheads, pkg, utils, profit, customSellingPrice)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe pricing saved!") }
                         },
                         onDeleteRecipe = { id ->
                             viewModel.deleteRecipe(id)
                             viewModel.navigateTo(Screen.RecipesList)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe deleted successfully") }
                         },
                         onUpdatePhoto = { photoUri ->
                             selectedRecipe?.let {
                                 viewModel.updateRecipePhoto(it.id, photoUri)
-                                coroutineScope.launch { snackbarHostState.showSnackbar("Recipe photo updated!") }
                             }
                         }
                     )
@@ -431,11 +427,9 @@ fun BatchBossApp(
                         onNavigateToCosting = { selectedRecipe?.let { viewModel.navigateTo(Screen.RecipeCosting(it.id)) } },
                         onUpdateIngredientCost = { id, cost, qty ->
                             viewModel.updateIngredientCost(id, cost, qty)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Ingredient cost updated!") }
                         },
                         onDeleteIngredient = { id ->
                             viewModel.deleteIngredient(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Ingredient removed from recipe") }
                         }
                     )
                 }
@@ -449,7 +443,6 @@ fun BatchBossApp(
                         onCalculatePricing = { selectedRecipe?.let { viewModel.navigateTo(Screen.PricingCalculator(it.id)) } },
                         onUpdatePricing = { id, labour, overheads, pkg, utils, profit, customSellingPrice ->
                             viewModel.updateRecipePricing(id, labour, overheads, pkg, utils, profit, customSellingPrice)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe costing updated!") }
                         }
                     )
                 }
@@ -462,12 +455,10 @@ fun BatchBossApp(
                         onBack = { selectedRecipe?.let { viewModel.navigateTo(Screen.RecipeCosting(it.id)) } },
                         onSavePricing = { margin ->
                             selectedRecipe?.let { viewModel.updateRecipeProfitMargin(it.id, margin) }
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Profit margin saved!") }
                         },
                         onViewAnalysis = { selectedRecipe?.let { viewModel.navigateTo(Screen.ProfitAnalysis(it.id)) } },
                         onUpdatePricing = { id, labour, overheads, pkg, utils, profit, customSellingPrice ->
                             viewModel.updateRecipePricing(id, labour, overheads, pkg, utils, profit, customSellingPrice)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe pricing saved!") }
                         }
                     )
                 }
@@ -484,11 +475,9 @@ fun BatchBossApp(
                         onBack = { viewModel.navigateTo(Screen.RecipesList) },
                         onSave = { name, category, desc, servings, batchSize, labour, overheads, pkg, utils, profit, ings ->
                             viewModel.saveNewRecipe(name, category, desc, servings, batchSize, labour, overheads, pkg, utils, profit, ings)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe created successfully!") }
                         },
                         onSaveWithPhoto = { name, category, desc, servings, batchSize, labour, overheads, pkg, utils, profit, ings, photoUri ->
                             viewModel.saveNewRecipe(name, category, desc, servings, batchSize, labour, overheads, pkg, utils, profit, ings, photoUri = photoUri)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe created successfully!") }
                         }
                     )
                 }
@@ -603,15 +592,12 @@ fun BatchBossApp(
                         onBack = { viewModel.navigateTo(Screen.QuickActions) },
                         onAddCustomer = { name, phone, email, address, notes ->
                             viewModel.addCustomer(name, phone, email, address, notes)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Customer added successfully!") }
                         },
                         onUpdateCustomer = { updated ->
                             viewModel.updateCustomer(updated)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Customer updated!") }
                         },
                         onDeleteCustomer = { id ->
                             viewModel.deleteCustomer(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Customer removed") }
                         }
                     )
                 }
@@ -641,7 +627,6 @@ fun BatchBossApp(
                         },
                         onDeleteProductClick = { id ->
                             viewModel.deleteProductService(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Item removed from catalog") }
                         },
                         onViewPriceHistory = { product ->
                             viewingHistoryProduct = product
@@ -675,7 +660,6 @@ fun BatchBossApp(
                                         linkedRecipeId = recipeId,
                                         changeNotes = notes
                                     )
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Updated '$name'") }
                                 } else {
                                     viewModel.saveProductService(
                                         name = name,
@@ -690,7 +674,6 @@ fun BatchBossApp(
                                         isService = service,
                                         linkedRecipeId = recipeId
                                     )
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Added '$name' to catalog") }
                                 }
                                 showAddEditDialog = false
                                 editingProduct = null
@@ -745,15 +728,12 @@ fun BatchBossApp(
                                 packagingTotal = packagingTotal,
                                 packagingItems = packagingItems
                             )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice created!") }
                         },
                         onUpdateStatus = { id, status ->
                             viewModel.updateInvoiceStatus(id, status)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice status updated to $status") }
                         },
                         onDeleteInvoice = { id ->
                             viewModel.deleteInvoice(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Invoice deleted") }
                         },
                         onUpdateBranding = { logoUri, bakeryName, phone, email, address, bankName, accountNumber, branchCode, vatNumber, defaultHourlyRate ->
                             viewModel.updateBusinessBranding(
@@ -792,19 +772,15 @@ fun BatchBossApp(
                         },
                         onCreateQuote = { clientName, phone, eventType, eventDate, itemName, cost, margin, price, status, docType, subtotal, discount, taxRate, taxAmount, lineItems ->
                             viewModel.createQuote(clientName, phone, eventType, eventDate, itemName, cost, margin, price, status, docType, subtotal, discount, taxRate, taxAmount, lineItems)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("$docType created!") }
                         },
                         onUpdateStatus = { id, status ->
                             viewModel.updateQuoteStatus(id, status)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Status updated to $status") }
                         },
                         onConvertToInvoice = { quote ->
                             viewModel.convertQuoteToInvoice(quote)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("${quote.docType} converted to Invoice!") }
                         },
                         onDeleteQuote = { id ->
                             viewModel.deleteQuote(id)
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Deleted") }
                         },
                         onUpdateBranding = { logoUri, bakeryName, phone, email, address, bankName, accountNumber, branchCode, vatNumber, defaultHourlyRate ->
                             viewModel.updateBusinessBranding(
@@ -870,7 +846,6 @@ fun BatchBossApp(
                                 instructions = instructions,
                                 photoUri = photoUri
                             )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Recipe '$name' imported & created successfully!") }
                         }
                     )
                 }
@@ -889,7 +864,6 @@ fun BatchBossApp(
                                 category = category,
                                 barcode = barcode
                             )
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Added $name to stock & ingredient list!") }
                             viewModel.navigateTo(Screen.InventoryList)
                         }
                     )

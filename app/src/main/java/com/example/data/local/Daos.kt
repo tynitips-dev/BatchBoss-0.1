@@ -33,6 +33,9 @@ interface UserAccountDao {
 
 @Dao
 interface CustomerDao {
+    @Query("SELECT * FROM customers WHERE id = :id LIMIT 1")
+    suspend fun getCustomerByIdOnce(id: Long): CustomerEntity?
+
     @Query("SELECT * FROM customers WHERE userId = :userId ORDER BY name ASC")
     fun getCustomersByUser(userId: Long): Flow<List<CustomerEntity>>
 

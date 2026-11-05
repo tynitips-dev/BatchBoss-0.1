@@ -53,14 +53,14 @@ jobs:
         with:
           node-version: '22'
       - name: Compile Android and run isolated supplier tests
-        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' --tests 'com.example.Version22MigrationTest' --tests 'com.example.RecipePhotoCompatibilityTest' -x :app:processDebugGoogleServices --stacktrace
+        run: gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests 'com.example.BusinessSyncRepairTest' --tests 'com.example.SupplierCompatibilityTest' --tests 'com.example.SubscriptionAlignmentTest' --tests 'com.example.Version22MigrationTest' --tests 'com.example.RecipePhotoCompatibilityTest' -x :app:processDebugGoogleServices --stacktrace
       - name: Verify actual Android supplier transactions against local Firestore
         run: >-
           npx --yes firebase-tools@14.22.0 emulators:exec
           --project demo-batchboss-supplier-sync
           --config tests/supplier-emulator/firebase.json
           --only firestore
-          "gradle :app:testDebugUnitTest --tests com.example.SupplierFirestoreEmulatorTest -x :app:processDebugGoogleServices --no-daemon --stacktrace"
+          "gradle :app:testDebugUnitTest --tests com.example.SupplierFirestoreEmulatorTest --tests com.example.BusinessSyncFirestoreEmulatorTest -x :app:processDebugGoogleServices --no-daemon --stacktrace"
       - name: Preserve supplier test results
         if: always()
         uses: actions/upload-artifact@v4

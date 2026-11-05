@@ -255,6 +255,30 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     private val _syncMessage = MutableStateFlow<String?>(null)
     val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
 
+    private fun saveChanges(label: String, block: suspend () -> Unit) {
+        val localUserId = _currentUserId.value
+        viewModelScope.launch {
+            val bakeryId: String
+            try {
+                check(_isUserLoggedIn.value) { "Sign in to your bakery before saving." }
+                bakeryId = repository.getUserByIdOnce(localUserId)?.bakeryId.orEmpty()
+                check(bakeryId.isNotBlank()) { "Your account has no bakery workspace. Sign in again before saving." }
+                repository.atomic {
+                    check(_currentUserId.value == localUserId) { "Account changed before saving." }
+                    block()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                _syncMessage.value = "Could not save $label: "+(error.localizedMessage ?: "Please try again.")
+                return@launch
+            }
+            if (_currentUserId.value != localUserId) return@launch
+            val result = FirebaseService.flushPendingChanges(bakeryId, repository)
+            _syncMessage.value = if (result.isSuccess) "$label saved and synced."
+                else "$label changes saved on this device. Cloud sync pending: "+(result.exceptionOrNull()?.localizedMessage ?: "Try Sync again when connected.")
+        }
+    }
+
     fun dismissSyncMessage() {
         _syncMessage.value = null
     }
@@ -454,13 +478,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun updateStockPrice(id: Long, unitPrice: Double, currentStock: Double, minStock: Double) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             repository.updateStockPrice(id, unitPrice, currentStock, minStock)
         }
     }
 
     fun addNewStockItem(name: String, unitPrice: Double, currentStock: Double, minStock: Double, unit: String) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             val isLow = currentStock <= minStock
             repository.insertInventoryItem(
                 InventoryItemEntity(
@@ -478,7 +502,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteStockItem(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Changes") {
             repository.deleteInventoryItem(id)
         }
     }
@@ -492,7 +516,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         unit: String,
         category: String
     ) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             val calcUnitPrice = if (gramsPerUnit > 0) packagePrice / gramsPerUnit else packagePrice
             val isLow = currentStock <= minStock
             repository.insertInventoryItem(
@@ -520,7 +544,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         currentStock: Double,
         minStock: Double
     ) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             val calcUnitPrice = if (gramsPerUnit > 0) packagePrice / gramsPerUnit else packagePrice
             repository.updateStockItemFull(id, calcUnitPrice, packagePrice, gramsPerUnit, currentStock, minStock)
         }
@@ -688,20 +712,22 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun syncAllWithCloud(onResult: ((Boolean, String) -> Unit)? = null) {
         viewModelScope.launch {
+            if (_isSyncing.value) return@launch
             _isSyncing.value = true
-            val bId = userProfile.value?.bakeryId?.ifBlank { com.example.data.remote.FirebaseService.currentBakeryId }
-                ?: com.example.data.remote.FirebaseService.currentBakeryId
-            val result = com.example.data.remote.FirebaseService.syncAllWithCloud(bId, repository)
-            _isSyncing.value = false
-            if (result.isSuccess) {
-                val msg = result.getOrNull() ?: "Sync complete"
-                _syncMessage.value = msg
-                onResult?.invoke(true, msg)
-            } else {
-                val err = result.exceptionOrNull()?.message ?: "Sync error"
-                _syncMessage.value = err
-                onResult?.invoke(false, err)
-            }
+            try {
+                val bId = repository.getUserByIdOnce(_currentUserId.value)?.bakeryId.orEmpty()
+                check(bId.isNotBlank()) { "Sign in to your bakery workspace before syncing." }
+                repository.recoverOwnedLocalRecords(_currentUserId.value, bId)
+                val result = FirebaseService.syncAllWithCloud(bId, repository)
+                val message = result.getOrNull() ?: result.exceptionOrNull()?.localizedMessage ?: "Sync failed. Your pending changes are retained."
+                _syncMessage.value = message
+                onResult?.invoke(result.isSuccess, message)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                val message = error.localizedMessage ?: "Sync failed. Your pending changes are retained."
+                _syncMessage.value = message
+                onResult?.invoke(false, message)
+            } finally { _isSyncing.value = false }
         }
     }
 
@@ -712,7 +738,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         unit: String,
         cost: Double
     ) {
-        viewModelScope.launch {
+        saveChanges("Recipe") {
             repository.insertIngredient(
                 RecipeIngredientEntity(
                     recipeId = recipeId,
@@ -726,13 +752,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteIngredient(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             repository.deleteIngredient(id)
         }
     }
 
     fun deleteRecipe(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Changes") {
             repository.deleteRecipe(id)
             if (_selectedRecipeId.value == id) {
                 _selectedRecipeId.value = null
@@ -789,30 +815,20 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         profitMargin: Double,
         sellingPrice: Double
     ) {
-        viewModelScope.launch {
+        saveChanges("Changes") {
             repository.updateRecipePricing(id, labour, overheads, packaging, utilities, profitMargin, sellingPrice)
         }
     }
 
     fun updateRecipePhoto(id: Long, photoUri: String) {
-        viewModelScope.launch {
-            val recipe = repository.getRecipeByIdOnce(id) ?: return@launch
-            val bakeryId = userProfile.value?.bakeryId.orEmpty()
-            if (bakeryId.isBlank() || recipe.bakeryId != bakeryId) return@launch
-            try {
-                val portable = com.example.data.remote.RecipePhoto.portable(photoUri)
-                if (recipe.firestoreId.isNotBlank()) {
-                    FirebaseService.saveRecipePhotoToCloud(bakeryId, recipe.firestoreId, portable).getOrThrow()
-                }
-                repository.updateRecipePhoto(id, portable)
-            } catch (e: Exception) {
-                _syncMessage.value = e.message ?: "Could not prepare recipe photo. Please choose it again."
-            }
+        saveChanges("Recipe photo") {
+            val portable = com.example.data.remote.RecipePhoto.portable(photoUri)
+            repository.updateRecipePhoto(id, portable)
         }
     }
 
     fun updateIngredientCost(id: Long, cost: Double, quantity: Double) {
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             repository.updateIngredientCost(id, cost, quantity)
         }
     }
@@ -849,18 +865,15 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         instructions: String = "",
         photoUri: String = ""
     ) {
-        viewModelScope.launch {
+        saveChanges("Recipe") {
             val uid = _currentUserId.value
-            val currentProfile = userProfile.value
-            val bId = currentProfile?.bakeryId?.ifBlank {
-                generateBakeryId(uid, currentProfile.bakeryName)
-            } ?: generateBakeryId(uid, "artisan")
+            val bId = requireNotNull(repository.getUserByIdOnce(uid)).bakeryId
 
             val portablePhoto = try {
                 com.example.data.remote.RecipePhoto.portable(photoUri)
             } catch (e: Exception) {
                 _syncMessage.value = e.message ?: "Could not prepare recipe photo. Please choose it again."
-                return@launch
+                return@saveChanges
             }
             val newRecipe = RecipeEntity(
                 userId = uid,
@@ -906,10 +919,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            // Sync newly created recipe to web backend
-            try {
-                WebSyncService.syncRecipe(bId, newRecipe.copy(id = recipeId), updatedIngredients)
-            } catch (_: Throwable) {}
+
 
             navigateTo(Screen.RecipeDetail(recipeId))
         }
@@ -927,7 +937,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     ) {
         val calculatedUnitPrice = if (gramsPerUnit > 0) packagePrice / gramsPerUnit else packagePrice
         val effectiveUserId = if (_currentUserId.value > 0) _currentUserId.value else 1L
-        viewModelScope.launch {
+        saveChanges("Ingredient") {
             repository.insertInventoryItem(
                 InventoryItemEntity(
                     userId = effectiveUserId,
@@ -1168,7 +1178,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         linkedRecipeId: Long? = null,
         onSuccess: (Long) -> Unit = {}
     ) {
-        viewModelScope.launch {
+        saveChanges("Product") {
             val product = ProductServiceEntity(
                 userId = _currentUserId.value,
                 name = name.trim(),
@@ -1216,7 +1226,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         linkedRecipeId: Long?,
         changeNotes: String = ""
     ) {
-        viewModelScope.launch {
+        saveChanges("Product") {
             val oldPrice = existing.sellingPrice
             val priceChanged = kotlin.math.abs(oldPrice - sellingPrice) > 0.001
             val updated = existing.copy(
@@ -1252,7 +1262,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun updateProductService(updated: ProductServiceEntity) {
-        viewModelScope.launch {
+        saveChanges("Product") {
             repository.updateProduct(updated.copy(updatedAt = System.currentTimeMillis()))
         }
     }
@@ -1265,7 +1275,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteProductService(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Product") {
             repository.deleteProduct(id)
         }
     }
@@ -1290,9 +1300,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         packagingTotal: Double = 0.0,
         packagingItems: List<InvoicePackagingItem> = emptyList()
     ) {
-        viewModelScope.launch {
+        saveChanges("Invoice") {
             val count = (allInvoices.value.size + 1008)
-            val invNumber = "INV-2024-$count"
+            val invNumber = "INV-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
             val lineItemsJson = LineItemJsonUtil.toJson(items)
             val packagingItemsJson = InvoicePackagingJsonUtil.toJson(packagingItems)
             val finalDescription = if (orderDescription.isNotBlank()) {
@@ -1323,36 +1333,18 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     packagingItemsJson = packagingItemsJson
                 )
             )
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
-                }
-                repository.insertLineItems(dbEntities)
-            }
+
         }
     }
 
     fun updateInvoiceStatus(id: Long, status: String) {
-        viewModelScope.launch {
+        saveChanges("Invoice") {
             repository.updateInvoiceStatus(id, status)
         }
     }
 
     fun deleteInvoice(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Invoice") {
             repository.deleteInvoice(id)
             repository.deleteLineItems("INVOICE", id)
         }
@@ -1377,10 +1369,10 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         items: List<LineItem> = emptyList(),
         totalCost: Double = estimatedCost
     ) {
-        viewModelScope.launch {
+        saveChanges("Quote") {
             val count = (allQuotes.value.size + 1008)
             val prefix = if (docType.equals("Estimate", ignoreCase = true)) "EST" else "QT"
-            val quoteNumber = "$prefix-2024-$count"
+            val quoteNumber = "$prefix-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
             val lineItemsJson = LineItemJsonUtil.toJson(items)
             val finalItemName = if (recipeOrItemName.isNotBlank()) {
                 recipeOrItemName
@@ -1411,42 +1403,24 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     totalCost = totalCost
                 )
             )
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = docType.uppercase(),
-                        documentId = quoteId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
-                }
-                repository.insertLineItems(dbEntities)
-            }
+
         }
     }
 
     fun updateQuoteStatus(id: Long, status: String) {
-        viewModelScope.launch {
+        saveChanges("Quote") {
             repository.updateQuoteStatus(id, status)
         }
     }
 
     fun convertQuoteToInvoice(quote: QuoteEntity) {
-        viewModelScope.launch {
+        saveChanges("Invoice") {
             repository.updateQuoteStatus(quote.id, "Accepted")
             val invCount = (allInvoices.value.size + 1008)
             val invId = repository.insertInvoice(
                 InvoiceEntity(
                     userId = _currentUserId.value,
-                    invoiceNumber = "INV-2024-$invCount",
+                    invoiceNumber = "INV-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}",
                     clientName = quote.clientName,
                     clientPhone = quote.clientPhone,
                     orderDescription = "${quote.eventType}: ${quote.recipeOrItemName}",
@@ -1463,30 +1437,12 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             )
             val items = quote.items
-            if (items.isNotEmpty()) {
-                val dbEntities = items.map {
-                    DocumentLineItemEntity(
-                        documentType = "INVOICE",
-                        documentId = invId,
-                        userId = _currentUserId.value,
-                        productId = it.productId,
-                        itemName = it.itemName,
-                        description = it.description,
-                        quantity = it.quantity,
-                        unit = it.unit,
-                        unitPrice = it.unitPrice,
-                        discount = it.discount,
-                        costPrice = it.costPrice,
-                        lineTotal = it.lineTotal
-                    )
-                }
-                repository.insertLineItems(dbEntities)
-            }
+
         }
     }
 
     fun deleteQuote(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Quote") {
             repository.deleteQuote(id)
             repository.deleteLineItems("QUOTE", id)
             repository.deleteLineItems("ESTIMATE", id)
@@ -1501,12 +1457,9 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
         address: String = "",
         notes: String = ""
     ) {
-        viewModelScope.launch {
+        saveChanges("Customer") {
             val uid = _currentUserId.value
-            val currentProfile = userProfile.value
-            val bId = currentProfile?.bakeryId?.ifBlank {
-                generateBakeryId(uid, currentProfile.bakeryName)
-            } ?: generateBakeryId(uid, "artisan")
+            val bId = requireNotNull(repository.getUserByIdOnce(uid)).bakeryId
 
             val customer = CustomerEntity(
                 userId = uid,
@@ -1520,31 +1473,21 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val newId = repository.insertCustomer(customer)
             val savedCustomer = customer.copy(id = newId)
 
-            // Real-time synchronization with website backend
-            try {
-                WebSyncService.syncCustomer(bId, savedCustomer)
-            } catch (_: Throwable) {}
+
         }
     }
 
     fun updateCustomer(customer: CustomerEntity) {
-        viewModelScope.launch {
-            val currentProfile = userProfile.value
-            val bId = customer.bakeryId.ifBlank {
-                currentProfile?.bakeryId?.ifBlank {
-                    generateBakeryId(_currentUserId.value, currentProfile.bakeryName)
-                } ?: generateBakeryId(_currentUserId.value, "artisan")
-            }
+        saveChanges("Customer") {
+            val bId = requireNotNull(repository.getUserByIdOnce(_currentUserId.value)).bakeryId
             val updated = customer.copy(userId = _currentUserId.value, bakeryId = bId)
             repository.updateCustomer(updated)
-            try {
-                WebSyncService.syncCustomer(bId, updated)
-            } catch (_: Throwable) {}
+
         }
     }
 
     fun deleteCustomer(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Customer") {
             repository.deleteCustomer(id)
         }
     }
@@ -1967,91 +1910,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun syncWithWebBackend(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
-        viewModelScope.launch {
-            val uid = _currentUserId.value
-            val profile = userProfile.value ?: UserProfileEntity()
-            val bId = profile.bakeryId
-            if (bId.isBlank()) {
-                onComplete(false, "Your Firebase account is missing its bakery workspace ID.")
-                return@launch
-            }
-
-            val customersList = repository.getCustomersByUser(uid).first()
-            val recipesList = repository.getRecipesByUser(uid).first()
-            val inventoryList = repository.getInventoryByBakery(bId).first()
-            val packagingList = repository.getPackagingByBakery(bId).first()
-
-            var syncedItems = 0
-            if (WebSyncService.syncProfile(bId, profile)) syncedItems++
-
-            for (cust in customersList) {
-                if (WebSyncService.syncCustomer(bId, cust)) syncedItems++
-            }
-
-            for (rec in recipesList) {
-                val ings = repository.getIngredientsForRecipeOnce(rec.id)
-                if (WebSyncService.syncRecipe(bId, rec, ings)) syncedItems++
-            }
-
-            for (item in inventoryList) {
-                if (WebSyncService.syncInventory(bId, item)) syncedItems++
-            }
-
-            for (pkg in packagingList) {
-                if (WebSyncService.syncPackaging(bId, pkg)) syncedItems++
-            }
-
-            val webInventory = WebSyncService.fetchBakeryInventory(bId)
-            if (webInventory.isNotEmpty()) {
-                repository.syncInventoryWithFirestore(bId, webInventory)
-            }
-
-            val webPackaging = WebSyncService.fetchBakeryPackaging(bId)
-            if (webPackaging.isNotEmpty()) {
-                repository.syncPackagingWithFirestore(bId, webPackaging)
-            }
-
-            try {
-                // Download website changes first. Room REPLACE uses the stable cloud IDs,
-                // so repeated syncs update records instead of creating duplicates.
-                val restore = FirebaseService.restoreDataFromCloud(bId)
-                if (!restore.success || restore.data == null) {
-                    onComplete(false, restore.message)
-                    return@launch
-                }
-                val cloud = restore.data
-                for (recipe in cloud.recipes) repository.insertRecipe(recipe.copy(userId = uid, bakeryId = bId))
-                for (ingredient in cloud.ingredients) repository.insertIngredient(ingredient.copy(userId = uid))
-                for (item in cloud.inventory) repository.insertInventoryItem(item.copy(userId = uid))
-                for (customer in cloud.customers) repository.insertCustomer(customer.copy(userId = uid, bakeryId = bId))
-                repository.insertPackagingList(cloud.packaging.map { it.copy(userId = uid, bakeryId = bId) })
-
-                // Read the merged Room data and upload local additions/edits using the
-                // same numeric document IDs used by the website importer.
-                val customersList = repository.getCustomersByUser(uid).first()
-                val recipesList = repository.getRecipesByUser(uid).first()
-                val inventoryList = repository.getInventoryByUser(uid).first()
-                val packagingList = repository.getPackagingByUser(uid).first()
-                val ingredientsList = recipesList.flatMap { repository.getIngredientsForRecipeOnce(it.id) }
-
-                val upload = FirebaseService.backupDataToCloud(
-                    recipes = recipesList,
-                    ingredients = emptyList(),
-                    inventory = repository.getInventoryByBakery(bId).first(),
-                    customers = customersList,
-                    packaging = repository.getPackagingByBakery(bId).first(),
-                    bakeryId = bId
-                )
-                if (!upload.success) {
-                    onComplete(false, upload.message)
-                    return@launch
-                }
-                syncSupplierRecords().getOrThrow()
-                WebSyncService.syncProfile(bId, profile)
-                onComplete(true, "Sync complete: ${recipesList.size} recipes, ${inventoryList.size} ingredients/stock items, ${customersList.size} customers and ${packagingList.size} packaging items.")
-            } catch (error: Throwable) {
-                onComplete(false, error.localizedMessage ?: "Website synchronisation failed.")
-            }
-        }
+        syncAllWithCloud(onComplete)
     }
+
 }
