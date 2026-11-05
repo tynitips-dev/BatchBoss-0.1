@@ -1,0 +1,88 @@
+name: Deploy BatchBoss websites to Xneelo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'website/**'
+      - '.github/workflows/deploy-batchboss-websites.yml'
+
+concurrency:
+  group: batchboss-websites-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web app dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build baker web app
+        working-directory: web
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: G-DKPHWXB2CD
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: batchboss-baker-web-dist
+          path: web/dist/
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: batchboss-baker-web-dist
+          path: web-dist
+      - name: Check deployment configuration
+        env:
+          XNEELO_SSH_HOST: ${{ secrets.XNEELO_SSH_HOST }}
+          XNEELO_SSH_USER: ${{ secrets.XNEELO_SSH_USER }}
+          XNEELO_SSH_KEY: ${{ secrets.XNEELO_SSH_KEY }}
+          XNEELO_SSH_HOST_KEY: ${{ secrets.XNEELO_SSH_HOST_KEY }}
+          XNEELO_MARKETING_PATH: ${{ vars.XNEELO_MARKETING_PATH }}
+          XNEELO_APP_PATH: ${{ vars.XNEELO_APP_PATH }}
+        run: |
+          for name in XNEELO_SSH_HOST XNEELO_SSH_USER XNEELO_SSH_KEY XNEELO_SSH_HOST_KEY XNEELO_MARKETING_PATH XNEELO_APP_PATH; do
+            if [ -z "${!name}" ]; then echo "::error::Missing $name"; exit 1; fi
+          done
+      - name: Configure verified SSH host
+        env:
+          XNEELO_SSH_KEY: ${{ secrets.XNEELO_SSH_KEY }}
+          XNEELO_SSH_HOST_KEY: ${{ secrets.XNEELO_SSH_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$XNEELO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$XNEELO_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy website and baker portal over SSH
+        env:
+          XNEELO_SSH_HOST: ${{ secrets.XNEELO_SSH_HOST }}
+          XNEELO_SSH_USER: ${{ secrets.XNEELO_SSH_USER }}
+          XNEELO_MARKETING_PATH: ${{ vars.XNEELO_MARKETING_PATH }}
+          XNEELO_APP_PATH: ${{ vars.XNEELO_APP_PATH }}
+        run: |
+          # No --delete: preserve existing marketing-site assets and hosting files.
+          rsync -az --exclude README.md -e 'ssh -o StrictHostKeyChecking=yes' website/ "$XNEELO_SSH_USER@$XNEELO_SSH_HOST:$XNEELO_MARKETING_PATH/"
+          rsync -az -e 'ssh -o StrictHostKeyChecking=yes' web-dist/ "$XNEELO_SSH_USER@$XNEELO_SSH_HOST:$XNEELO_APP_PATH/"
