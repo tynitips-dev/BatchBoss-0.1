@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
 import { signupPlatform } from './accountPlatform'
+import { trackBakerSignup } from './visitorAnalytics'
 import { auth, db, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
@@ -149,6 +150,7 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           uid, email, role: 'owner', joinedAt: serverTimestamp(),
         })
         await batch.commit()
+        void trackBakerSignup().catch(() => {})
       }
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
