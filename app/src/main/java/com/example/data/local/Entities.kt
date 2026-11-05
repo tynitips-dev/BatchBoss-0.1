@@ -432,7 +432,9 @@ data class LineItem(
     val unitPrice: Double = 0.0,
     val discount: Double = 0.0,
     val costPrice: Double = 0.0,
-    val lineTotal: Double = 0.0
+    val lineTotal: Double = 0.0,
+    val productFirestoreId: String? = null,
+    val kind: String = "product"
 ) {
     fun calculateLineTotal(): Double {
         val gross = quantity * unitPrice
@@ -447,6 +449,8 @@ object LineItemJsonUtil {
             val obj = org.json.JSONObject()
             obj.put("id", item.id)
             if (item.productId != null) obj.put("productId", item.productId)
+            obj.put("productFirestoreId", item.productFirestoreId)
+            obj.put("kind", item.kind)
             obj.put("itemName", item.itemName)
             obj.put("description", item.description)
             obj.put("quantity", item.quantity)
@@ -471,6 +475,8 @@ object LineItemJsonUtil {
                     LineItem(
                         id = obj.optString("id", java.util.UUID.randomUUID().toString()),
                         productId = if (obj.has("productId")) obj.optLong("productId") else null,
+                        productFirestoreId = obj.optString("productFirestoreId").takeIf { it.isNotBlank() },
+                        kind = obj.optString("kind", "product"),
                         itemName = obj.optString("itemName", ""),
                         description = obj.optString("description", ""),
                         quantity = obj.optDouble("quantity", 1.0),

@@ -1301,6 +1301,7 @@ fun CreateQuoteDialog(
             onSelectProduct = { prod ->
                 lineItems = lineItems + LineItem(
                     productId = prod.id,
+                    productFirestoreId = prod.firestoreId.takeIf { it.isNotBlank() },
                     itemName = prod.name,
                     description = prod.description,
                     quantity = 1.0,
