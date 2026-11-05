@@ -14,6 +14,7 @@ const DEMO = {
     { id: "demo2", businessName: "Golden Whisk Packaging", businessEmail: "info@example.co.za", leadType: "supplier", agentStage: "follow-up", saleStatus: "unverified", createdAtMillis: Date.now() - 86400000 * 5 },
     { id: "demo3", businessName: "Bloom Cakes", businessEmail: "cakes@example.co.za", leadType: "baker", agentStage: "new", saleStatus: "unverified", createdAtMillis: Date.now() - 86400000 * 6 }
   ],
+  payoutRequests: [], payoutEligibleCents: 0, openPayoutRequest: false,
   commissions: [
     { id: "sample1", businessName: "Sweet Treats Bakery", planId: "bakerAnnual", amountCents: 119900, commissionCents: 29975, rateBps: 2500, status: "approved", createdAtMillis: Date.now() - 86400000 * 2 },
     { id: "sample2", businessName: "Bake Supply Co.", planId: "supplierGrowth", amountCents: 39900, commissionCents: 7980, rateBps: 2000, status: "paid", createdAtMillis: Date.now() - 86400000 * 12 }
@@ -30,7 +31,7 @@ function statusPill(value) {
     approved: "Approved", pending: "Pending", paid: "Paid", reversed: "Reversed",
     contacted: "Contacted", "follow-up": "Follow-up", new: "New",
     "payment-verified": "Verified sale", unverified: "Not paid",
-    suspended: "Suspended", rejected: "Rejected"
+    suspended: "Suspended", rejected: "Rejected", requested: "Requested"
   };
   const cls = ["approved", "paid", "payment-verified"].includes(value) ? "green" :
     ["pending", "follow-up"].includes(value) ? "amber" :
@@ -72,11 +73,12 @@ async function refresh() {
   state.loading = false; render();
 }
 async function loadAdmin() {
-  const [partners, leads, commissions] = await Promise.all([
-    call("adminListPartners"), call("adminListLeads"), call("adminListCommissions")
+  const [partners, leads, commissions, payouts] = await Promise.all([
+    call("adminListPartners"), call("adminListLeads"), call("adminListCommissions"), call("adminListPayoutRequests")
   ]);
   state.admin = { partners: partners.partners, leads: leads.leads, commissions: commissions.commissions,
-    truncated: Boolean(partners.truncated || leads.truncated || commissions.truncated) };
+    payouts: payouts.payouts,
+    truncated: Boolean(partners.truncated || leads.truncated || commissions.truncated || payouts.truncated) };
 }
 function renderAuth() {
   const signup = state.authMode === "register";
@@ -185,6 +187,13 @@ function commissionTable(items) {
       money(v.commissionCents) + '</td><td>' + statusPill(v.status) + '</td></tr>').join("") +
     '</tbody></table></div>';
 }
+function payoutTable(items) {
+  if (!items.length) return '<div class="empty">No payout requests yet.</div>';
+  return '<div class="table-wrap"><table class="data-table"><thead><tr><th>Requested</th><th>Amount</th><th>Status</th></tr></thead><tbody>' +
+    items.map(v => '<tr><td>' + formatDate(v.createdAtMillis) + '</td><td class="amount">' +
+      money(v.amountCents) + '</td><td>' + statusPill(v.status) + '</td></tr>').join("") +
+    '</tbody></table></div>';
+}
 function planLabel(id) {
   return ({ bakerMonthly: "Baker Pro Monthly", bakerAnnual: "Baker Pro Annual",
     supplierDirectory: "Supplier Directory", supplierGrowth: "Supplier Growth",
@@ -234,15 +243,27 @@ function renderLeads() {
       "Only add business details you are authorised to share") + '</div></div>';
 }
 function renderCommissions() {
-  const items = state.overview.commissions;
+  const o = state.overview;
+  const items = o.commissions || [];
   const paid = items.filter(v => v.status === "paid").reduce((sum, v) => sum + v.commissionCents, 0);
   const pending = items.filter(v => v.status === "pending" || v.status === "approved").reduce((sum, v) => sum + v.commissionCents, 0);
+  const eligible = Number(o.payoutEligibleCents || 0);
+  const disabled = !configured || !eligible || o.openPayoutRequest || o.truncated ? " disabled" : "";
   return '<div class="heading"><div><div class="eyebrow">My earnings</div><h1>Commission tracker</h1>' +
-    '<p class="subtext">A transparent record of verified qualifying sales.</p></div></div>' +
+    '<p class="subtext">Your own sales and commission history. You cannot change customer payments or refunds.</p></div></div>' +
+    (!configured ? notice("Preview only. Payout requests cannot be submitted until Firebase is connected and production payment verification is live.", "blue") : "") +
     '<div class="stats"><div class="stat"><div class="stat-label">Total paid</div><strong class="number">' + money(paid) + '</strong></div>' +
-    '<div class="stat"><div class="stat-label">Awaiting payout</div><strong class="number">' + money(pending) + '</strong></div></div>' +
+    '<div class="stat"><div class="stat-label">Pending or approved</div><strong class="number">' + money(pending) + '</strong></div>' +
+    '<div class="stat"><div class="stat-label">Eligible to request</div><strong class="number">' + money(eligible) + '</strong></div></div>' +
+    card("Request Payout",
+      '<p class="subtext">Only real, provider-verified and administrator-approved commissions qualify. The amount is set by BatchBoss, not by the agent.</p>' +
+      '<div class="actions" style="margin-top:16px"><button class="btn pink" data-action="request-payout" type="button"' + disabled + '>Request Payout · ' + money(eligible) + '</button></div>' +
+      (o.openPayoutRequest ? notice("You already have an open payout request. It must be approved, paid or rejected before requesting again.", "blue") : "") +
+      (o.truncated ? notice("Contact support to reconcile your full commission history before requesting a payout.", "blue") : ""),
+      "A request goes to BatchBoss for review; it does not transfer money") +
+    card("My payout requests", payoutTable(o.payoutRequests || [])) +
     card("Commission history", commissionTable(items)) +
-    notice("Commissions are calculated only from verified first payments. Pending and approved balances are not yet paid. Payouts are recorded by an administrator, not sent automatically.", "blue");
+    notice("Agents cannot collect customer payments, approve their own payouts, issue refunds or mark commissions paid. BatchBoss must first verify the customer's payment, then review and manually pay approved payout requests.", "blue");
 }
 function renderResources() {
   const pitch = "Good day! I’m a BatchBoss Sales Partner. BatchBoss helps South African bakers manage recipes, costing, stock, quotes and invoices. Would you like more information about the baker plans or supplier advertising opportunities?";
@@ -260,7 +281,7 @@ function planOptions() {
       .map(v => '<option value="' + v + '">' + esc(planLabel(v)) + '</option>').join("");
 }
 function renderAdmin() {
-  const admin = state.admin || { partners: [], leads: [], commissions: [] };
+  const admin = state.admin || { partners: [], leads: [], commissions: [], payouts: [] };
   const applications = admin.partners;
   const page = state.page;
   let inner = "";
@@ -289,21 +310,42 @@ function renderAdmin() {
         '<p class="subtext">Test payments never create payable commissions. This system has not been connected to production billing.</p>');
   } else {
     inner = '<div class="heading"><div><div class="eyebrow">Finance controls</div><h1>Commission approvals</h1>' +
-      '<p class="subtext">Approve verified commissions and record manual payouts with an audit note.</p></div></div>' +
+      '<p class="subtext">Review agent payout requests and separately record completed external transfers.</p></div></div>' +
       card("Commission ledger", admin.commissions.length ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Business</th><th>Package</th><th>Amount</th><th>Commission</th><th>Status</th></tr></thead><tbody>' +
         admin.commissions.map(v => '<tr><td><strong>' + esc(v.businessName) + '</strong><small>' + esc(v.provider) +
           " · " + esc(v.reference) + '</small></td><td>' + esc(planLabel(v.planId)) +
           '</td><td>' + money(v.amountCents) + '</td><td class="amount">' + money(v.commissionCents) +
           '</td><td>' + statusPill(v.status) + '</td></tr>').join("") + '</tbody></table></div>' :
         '<div class="empty">No commissions recorded.</div>') +
-      card("Approve, record payout or reverse", '<form class="fields" data-form="commission-change">' +
+      card("Payout requests", admin.payouts.length ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Agent</th><th>Requested</th><th>Amount</th><th>Status</th></tr></thead><tbody>' +
+        admin.payouts.map(v => '<tr><td>' + esc(admin.partners.find(p => p.uid === v.partnerUid)?.fullName || "Partner") +
+          '</td><td>' + formatDate(v.createdAtMillis) + '</td><td class="amount">' + money(v.amountCents) +
+          '</td><td>' + statusPill(v.status) + '</td></tr>').join("") + '</tbody></table></div>' :
+        '<div class="empty">No agent payout requests yet.</div>') +
+      card("Review an agent payout request", '<form class="fields" data-form="review-payout">' +
+        '<div class="field wide"><label>Request</label><select name="requestId" required><option value="">Choose pending request</option>' +
+        admin.payouts.filter(v => v.status === "requested").map(v => '<option value="' + esc(v.id) + '">' +
+          esc(admin.partners.find(p => p.uid === v.partnerUid)?.fullName || "Partner") +
+          ' · ' + money(v.amountCents) + '</option>').join("") + '</select></div>' +
+        '<div class="field"><label>Decision</label><select name="decision"><option value="approved">Approve for manual payment</option><option value="rejected">Reject request</option></select></div>' +
+        '<div class="field wide"><label>Reason / audit note</label><textarea name="note" minlength="8" maxlength="250" required placeholder="Why this request was approved or rejected"></textarea></div>' +
+        '<div class="field wide"><button class="btn" type="submit">Save decision</button></div></form>') +
+      card("Record an already completed external transfer", '<form class="fields" data-form="paid-payout">' +
+        '<div class="field wide"><label>Approved request</label><select name="requestId" required><option value="">Choose approved request</option>' +
+        admin.payouts.filter(v => v.status === "approved").map(v => '<option value="' + esc(v.id) + '">' +
+          esc(admin.partners.find(p => p.uid === v.partnerUid)?.fullName || "Partner") +
+          ' · ' + money(v.amountCents) + '</option>').join("") + '</select></div>' +
+        '<div class="field wide"><label>External transfer reference</label><input name="transferReference" minlength="4" maxlength="100" required placeholder="Bank transaction reference for transfer already made"></div>' +
+        '<div class="field wide"><label>Audit note</label><textarea name="note" minlength="8" maxlength="250" required placeholder="Record the confirmed bank payment details"></textarea></div>' +
+        '<div class="field wide"><button class="btn" type="submit">Record completed payout</button></div></form>') +
+      card("Approve or reverse an individual commission", '<form class="fields" data-form="commission-change">' +
         '<div class="field wide"><label>Commission</label><select name="commissionId" required><option value="">Choose commission</option>' +
-        admin.commissions.filter(v => v.status !== "reversed").map(v => '<option value="' + esc(v.id) +
+        admin.commissions.filter(v => v.status !== "reversed" && v.status !== "paid").map(v => '<option value="' + esc(v.id) +
           '">' + esc(v.businessName) + " · " + money(v.commissionCents) + " · " + esc(v.status) + '</option>').join("") +
-        '</select></div><div class="field"><label>New status</label><select name="nextStatus"><option value="approved">Approved</option><option value="paid">Paid (manual payment completed)</option><option value="reversed">Reversed</option></select></div>' +
-        '<div class="field wide"><label>Audit note / payment evidence</label><textarea name="note" required maxlength="250" placeholder="Reason or payout reference, verified outside this portal"></textarea></div>' +
+        '</select></div><div class="field"><label>New status</label><select name="nextStatus"><option value="approved">Approved</option><option value="reversed">Reversed</option></select></div>' +
+        '<div class="field wide"><label>Audit note</label><textarea name="note" required maxlength="250" placeholder="Reason for decision"></textarea></div>' +
         '<div class="field wide"><button class="btn" type="submit">Update commission</button></div></form>') +
-      notice("Mark as Paid only after you have made and confirmed a payout outside this portal. Reversing a paid entry does not recover funds automatically.", "blue");
+      notice("A Request Payout is not a payment. Only mark a request paid after a real transfer has cleared outside BatchBoss. Reversals or chargebacks require reconciliation before payment.", "blue");
   }
   return (admin.truncated ? notice("More than 200 records exist. Pagination and exports must be added before full operational use.", "blue") : "") + inner;
 }
@@ -333,6 +375,15 @@ root.addEventListener("click", async event => {
   const action = buttonEl.dataset.action;
   if (action === "tab") { state.page = buttonEl.dataset.tab; state.error = ""; render(); return; }
   if (action === "go-leads") { state.page = "leads"; render(); return; }
+  if (action === "request-payout") {
+    if (!configured || !state.overview || state.overview.openPayoutRequest ||
+        !state.overview.payoutEligibleCents || state.overview.truncated) return;
+    if (!confirm("Request your eligible verified commissions? BatchBoss must approve and manually pay you; no money moves now.")) return;
+    await perform(async () => {
+      await call("requestPartnerPayout");
+      await refresh(); toast("Payout request submitted for approval.");
+    }); return;
+  }
   if (action === "signin-mode" || action === "register-mode") { state.authMode = action === "signin-mode" ? "signin" : "register"; state.error = ""; render(); return; }
   if (action === "logout") { await perform(async () => firebase.authSignOut(firebase.auth)); return; }
   if (action === "refresh") { await refresh(); return; }
@@ -389,8 +440,21 @@ root.addEventListener("submit", async event => {
       await call("updatePartnerLead", { leadId: data.leadId, agentStage: data.agentStage, note: data.note });
       await refresh(); toast("Follow-up saved.");
     });
+  } else if (kind === "review-payout") {
+    if (!confirm("Confirm " + data.decision + " for this payout request? No money will be sent.")) return;
+    await perform(async () => {
+      await call("adminReviewPayoutRequest", { requestId: data.requestId, decision: data.decision, note: data.note });
+      await loadAdmin(); toast("Payout request reviewed.");
+    });
+  } else if (kind === "paid-payout") {
+    if (!confirm("Only continue if the external bank transfer is already complete and you have verified the reference. Record payout as PAID?")) return;
+    await perform(async () => {
+      await call("adminRecordCompletedPayout", { requestId: data.requestId,
+        transferReference: data.transferReference, note: data.note });
+      await loadAdmin(); toast("Completed external payout recorded.");
+    });
   } else if (kind === "commission-change") {
-    if (!confirm("Confirm change to " + data.nextStatus + "? Paid means the money was already transferred manually.")) return;
+    if (!confirm("Confirm commission status change to " + data.nextStatus + "? This does not send any money.")) return;
     await perform(async () => {
       await call("adminChangeCommissionStatus", { commissionId: data.commissionId,
         nextStatus: data.nextStatus, note: data.note });
