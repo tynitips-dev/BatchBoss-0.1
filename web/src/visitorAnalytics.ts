@@ -1,7 +1,7 @@
 import { getAnalytics, isSupported, logEvent, setAnalyticsCollectionEnabled } from 'firebase/analytics'
 import { app } from './firebase'
 
-const measurementId=String(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID||'').trim()
+const measurementId=String(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID||'G-DKPHWXB2CD').trim()
 const consentKey='batchboss_analytics_consent'
 let started=false
 export function hasAnalyticsConfigured(){return /^G-[A-Z0-9]+$/.test(measurementId)}
@@ -19,3 +19,11 @@ export function acceptAnalytics(){
  void startAnalytics()
 }
 export function declineAnalytics(){localStorage.setItem(consentKey,'no')}
+
+/** Only after the new baker's profile has been committed; never send personal data. */
+export async function trackBakerSignup(){
+ if(!analyticsConsent()||!hasAnalyticsConfigured())return
+ if(!(await isSupported()))return
+ const analytics=getAnalytics(app)
+ logEvent(analytics,'sign_up',{method:'email'})
+}
