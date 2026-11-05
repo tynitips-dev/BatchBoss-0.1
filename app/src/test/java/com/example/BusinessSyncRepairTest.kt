@@ -162,4 +162,13 @@ class BusinessSyncRepairTest {
         repo.recoverOwnedLocalRecords(71, bakery)
         assertEquals(1, repo.pendingCloudChanges.list(bakery).size)
     }
+
+    @Test fun `legacy owned customers with a bakery but no cloud identity are queued on sync`() = runBlocking {
+        val id = repo.customerDao.insertCustomer(CustomerEntity(userId = 71, bakeryId = bakery, name = "Never uploaded"))
+        repo.recoverOwnedLocalRecords(71, bakery)
+        assertEquals(id.toString(), repo.customerDao.getCustomerByIdOnce(id)!!.firestoreId)
+        assertEquals("customers/$id", repo.pendingCloudChanges.list(bakery).single().path)
+        repo.recoverOwnedLocalRecords(71, bakery)
+        assertEquals(1, repo.pendingCloudChanges.list(bakery).size)
+    }
 }

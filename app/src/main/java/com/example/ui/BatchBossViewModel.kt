@@ -266,6 +266,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                 repository.atomic {
                     check(_currentUserId.value == localUserId) { "Account changed before saving." }
                     block()
+                    check(_currentUserId.value == localUserId) { "Account changed while saving; no changes were committed." }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (error: Exception) {
@@ -274,6 +275,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             }
             if (_currentUserId.value != localUserId) return@launch
             val result = FirebaseService.flushPendingChanges(bakeryId, repository)
+            if (_currentUserId.value != localUserId) return@launch
             _syncMessage.value = if (result.isSuccess) "$label saved and synced."
                 else "$label changes saved on this device. Cloud sync pending: "+(result.exceptionOrNull()?.localizedMessage ?: "Try Sync again when connected.")
         }
@@ -869,12 +871,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
             val uid = _currentUserId.value
             val bId = requireNotNull(repository.getUserByIdOnce(uid)).bakeryId
 
-            val portablePhoto = try {
-                com.example.data.remote.RecipePhoto.portable(photoUri)
-            } catch (e: Exception) {
-                _syncMessage.value = e.message ?: "Could not prepare recipe photo. Please choose it again."
-                return@saveChanges
-            }
+            val portablePhoto = com.example.data.remote.RecipePhoto.portable(photoUri)
             val newRecipe = RecipeEntity(
                 userId = uid,
                 bakeryId = bId,

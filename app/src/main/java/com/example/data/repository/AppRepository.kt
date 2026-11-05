@@ -49,12 +49,12 @@ class AppRepository(private val database: AppDatabase) {
     /** Recover only rows explicitly owned by this established local account; never claim userId=0 legacy data. */
     suspend fun recoverOwnedLocalRecords(userId: Long, bakeryId: String) = database.withTransaction {
         require(userId > 0 && userAccountDao.getUserByIdOnce(userId)?.bakeryId == bakeryId && bakeryId.isNotBlank())
-        for (row in customerDao.getCustomersByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) insertCustomer(row.copy(bakeryId = bakeryId))
-        for (row in productServiceDao.getProductsByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) insertProduct(row.copy(bakeryId = bakeryId))
-        for (row in invoiceDao.getInvoicesByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) insertInvoice(row.copy(bakeryId = bakeryId))
-        for (row in quoteDao.getQuotesByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) insertQuote(row.copy(bakeryId = bakeryId))
-        for (row in inventoryDao.getInventoryByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) insertInventoryItem(row.copy(bakeryId = bakeryId))
-        for (row in recipeDao.getRecipesByUser(userId).first().filter { it.userId == userId && it.bakeryId.isBlank() }) {
+        for (row in customerDao.getCustomersByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertCustomer(row.copy(bakeryId = bakeryId))
+        for (row in productServiceDao.getProductsByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertProduct(row.copy(bakeryId = bakeryId))
+        for (row in invoiceDao.getInvoicesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertInvoice(row.copy(bakeryId = bakeryId))
+        for (row in quoteDao.getQuotesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertQuote(row.copy(bakeryId = bakeryId))
+        for (row in inventoryDao.getInventoryByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertInventoryItem(row.copy(bakeryId = bakeryId))
+        for (row in recipeDao.getRecipesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) {
             insertRecipe(row.copy(bakeryId = bakeryId))
             for (ingredient in ingredientDao.getIngredientsForRecipeOnce(row.id)) insertIngredient(ingredient)
         }
