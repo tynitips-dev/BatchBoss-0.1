@@ -7,6 +7,7 @@ const {
   PLANS, PAYMENT_PROVIDERS, calculateCommission, canTransition,
   validateBusinessEmail, publicPartner
 } = require("./commissionPolicy");
+const { MAX_PAYOUT_ITEMS, isPayoutEligible, sumPayout, validPayoutChange } = require("./payoutPolicy");
 
 if (!getApps().length) initializeApp();
 const db = () => getFirestore();
@@ -71,9 +72,10 @@ exports.getPartnerOverview = onCall(async (request) => {
   if (!profile.exists) return { role: "applicant", status: "not-applied" };
   const partner = publicPartner(profile.data());
   if (partner.status !== "approved") return { role: "applicant", ...partner };
-  const [leads, commissions] = await Promise.all([
-    collection("partnerLeads").where("partnerUid", "==", uid).limit(LIMIT).get(),
-    collection("partnerCommissions").where("partnerUid", "==", uid).limit(LIMIT).get()
+  const [leads, commissions, payouts] = await Promise.all([
+    collection("partnerLeads").where("partnerUid", "==", uid).limit(LIMIT + 1).get(),
+    collection("partnerCommissions").where("partnerUid", "==", uid).limit(LIMIT + 1).get(),
+    collection("partnerPayoutRequests").where("partnerUid", "==", uid).limit(LIMIT + 1).get()
   ]);
   const leadItems = leads.docs.map(doc => {
     const d = doc.data();
@@ -89,12 +91,22 @@ exports.getPartnerOverview = onCall(async (request) => {
     return {
       id: doc.id, businessName: d.businessName, planId: d.planId,
       amountCents: d.amountCents, commissionCents: d.commissionCents,
-      rateBps: d.rateBps, status: d.status, createdAtMillis: plainTime(d.createdAt)
+      rateBps: d.rateBps, status: d.status,
+      paymentVerification: d.paymentVerification, payable: d.payable,
+      payoutRequestId: d.payoutRequestId || null, createdAtMillis: plainTime(d.createdAt)
     };
   }).sort(sortNewest);
+  const truncated = leads.size > LIMIT || commissions.size > LIMIT || payouts.size > LIMIT;
   return {
-    role: "partner", partner, leads: leadItems, commissions: commissionItems,
-    truncated: leads.size === LIMIT || commissions.size === LIMIT
+    role: "partner", partner, leads: leadItems.slice(0, LIMIT), commissions: commissionItems.slice(0, LIMIT),
+    payoutRequests: payouts.docs.slice(0, LIMIT).map(d => ({
+      id: d.id, amountCents: d.get("amountCents"), status: d.get("status"),
+      createdAtMillis: plainTime(d.get("createdAt")), paidAtMillis: plainTime(d.get("paidAt"))
+    })).sort(sortNewest),
+    openPayoutRequest: Boolean(profile.get("openPayoutRequestId")),
+    payoutEligibleCents: truncated || profile.get("openPayoutRequestId") ? 0 :
+      commissionItems.reduce((sum, v) => sum + (isPayoutEligible(v) ? v.commissionCents : 0), 0),
+    truncated
   };
 });
 
@@ -225,7 +237,7 @@ exports.adminChangeCommissionStatus = onCall(async request => {
   const nextStatus = request.data?.nextStatus;
   const note = safe(request.data?.note, 250);
   if (!/^[a-zA-Z0-9_-]{10,160}$/.test(commissionId) ||
-      !["approved", "paid", "reversed"].includes(nextStatus) || !note) {
+      !["approved", "reversed"].includes(nextStatus) || !note) {
     throw new HttpsError("invalid-argument", "Commission status and audit note required.");
   }
   const ref = collection("partnerCommissions").doc(commissionId);
@@ -244,6 +256,170 @@ exports.adminChangeCommissionStatus = onCall(async request => {
   });
   // "paid" records a verified manual payout; it does not send money.
   return { status: nextStatus };
+});
+
+
+function payoutId(value) {
+  const id = safe(value, 160);
+  if (!/^[a-zA-Z0-9_-]{10,160}$/.test(id)) {
+    throw new HttpsError("invalid-argument", "Invalid payout request.");
+  }
+  return id;
+}
+function auditPayout(t, requestId, status, adminUid, note) {
+  t.create(collection("partnerPayoutAudit").doc(), {
+    requestId, status, adminUid, note, createdAt: now()
+  });
+}
+
+// Agents can only REQUEST an amount derived on the server from immutable,
+// independently provider-verified commission ledger records. Never send money.
+exports.requestPartnerPayout = onCall(async request => {
+  const { uid } = await approvedPartner(request);
+  const snapshot = await collection("partnerCommissions")
+    .where("partnerUid", "==", uid).limit(LIMIT + 1).get();
+  if (snapshot.size > LIMIT) {
+    throw new HttpsError("failed-precondition", "Account requires finance reconciliation before requesting a payout.");
+  }
+  const eligible = snapshot.docs.filter(doc => isPayoutEligible(doc.data()));
+  if (!eligible.length || eligible.length > MAX_PAYOUT_ITEMS) {
+    throw new HttpsError("failed-precondition", "No eligible payout, or too many entries for one request.");
+  }
+  const requestRef = collection("partnerPayoutRequests").doc();
+  const partnerRef = collection("partnerProfiles").doc(uid);
+  const summary = await db().runTransaction(async t => {
+    const profile = await t.get(partnerRef);
+    if (profile.get("status") !== "approved" || profile.get("openPayoutRequestId")) {
+      throw new HttpsError("failed-precondition", "Partner not approved or another payout request is open.");
+    }
+    const verified = [];
+    for (const item of eligible) {
+      const doc = await t.get(item.ref);
+      if (!doc.exists || doc.get("partnerUid") !== uid || !isPayoutEligible(doc.data())) {
+        throw new HttpsError("failed-precondition", "Payout balance changed. Refresh and try again.");
+      }
+      verified.push(doc.data());
+    }
+    const amountCents = sumPayout(verified);
+    for (const item of eligible) t.update(item.ref, { payoutRequestId: requestRef.id, updatedAt: now() });
+    t.create(requestRef, {
+      partnerUid: uid, commissionIds: eligible.map(d => d.id),
+      amountCents, status: "requested", createdAt: now(), updatedAt: now()
+    });
+    t.update(partnerRef, { openPayoutRequestId: requestRef.id, updatedAt: now() });
+    return { id: requestRef.id, amountCents };
+  });
+  return { ...summary, status: "requested", message: "Request submitted for administrator review; no funds transferred." };
+});
+
+exports.adminListPayoutRequests = onCall(async request => {
+  adminUser(request);
+  const snapshot = await collection("partnerPayoutRequests").limit(LIMIT + 1).get();
+  return {
+    payouts: snapshot.docs.slice(0, LIMIT).map(d => {
+      const v = d.data();
+      return { id: d.id, partnerUid: v.partnerUid, amountCents: v.amountCents,
+        status: v.status, createdAtMillis: plainTime(v.createdAt) };
+    }).sort(sortNewest),
+    truncated: snapshot.size > LIMIT
+  };
+});
+
+// A reviewer may approve or reject the request, but approval does NOT pay.
+exports.adminReviewPayoutRequest = onCall(async request => {
+  const adminUid = adminUser(request);
+  const requestId = payoutId(request.data?.requestId);
+  const decision = request.data?.decision;
+  const note = safe(request.data?.note, 250);
+  if (!["approved", "rejected"].includes(decision) || note.length < 8) {
+    throw new HttpsError("invalid-argument", "Decision and a review note are required.");
+  }
+  const requestRef = collection("partnerPayoutRequests").doc(requestId);
+  await db().runTransaction(async t => {
+    const payout = await t.get(requestRef);
+    if (!payout.exists || !validPayoutChange(payout.get("status"), decision)) {
+      throw new HttpsError("failed-precondition", "Payout request is no longer awaiting review.");
+    }
+    const uid = payout.get("partnerUid");
+    const partnerRef = collection("partnerProfiles").doc(uid);
+    const partner = await t.get(partnerRef);
+    if (partner.get("openPayoutRequestId") !== requestId) {
+      throw new HttpsError("failed-precondition", "Payout request ownership changed.");
+    }
+    const docs = [];
+    for (const id of payout.get("commissionIds") || []) {
+      const ref = collection("partnerCommissions").doc(id);
+      const doc = await t.get(ref);
+      if (!doc.exists || doc.get("partnerUid") !== uid || doc.get("payoutRequestId") !== requestId) {
+        throw new HttpsError("failed-precondition", "Locked commission mismatch.");
+      }
+      docs.push({ ref, data: doc.data() });
+    }
+    if (decision === "approved") {
+      if (partner.get("status") !== "approved" ||
+          docs.length === 0 ||
+          !docs.every(d => isPayoutEligible({ ...d.data, payoutRequestId: null })) ||
+          sumPayout(docs.map(d => ({ ...d.data, payoutRequestId: null }))) !== payout.get("amountCents")) {
+        throw new HttpsError("failed-precondition", "Commission balance or verification changed. Reject and reconcile.");
+      }
+    } else {
+      for (const d of docs) t.update(d.ref, { payoutRequestId: FieldValue.delete(), updatedAt: now() });
+      t.update(partnerRef, { openPayoutRequestId: FieldValue.delete(), updatedAt: now() });
+    }
+    t.update(requestRef, { status: decision, reviewedBy: adminUid, reviewedAt: now(), updatedAt: now() });
+    auditPayout(t, requestId, decision, adminUid, note);
+  });
+  return { status: decision };
+});
+
+// Records an already-completed EXTERNAL transfer. This function never sends money.
+exports.adminRecordCompletedPayout = onCall(async request => {
+  const adminUid = adminUser(request);
+  const requestId = payoutId(request.data?.requestId);
+  const transferReference = safe(request.data?.transferReference, 100);
+  const note = safe(request.data?.note, 250);
+  if (transferReference.length < 4 || note.length < 8) {
+    throw new HttpsError("invalid-argument", "External transfer reference and audit note are required.");
+  }
+  const requestRef = collection("partnerPayoutRequests").doc(requestId);
+  await db().runTransaction(async t => {
+    const payout = await t.get(requestRef);
+    if (!payout.exists || !validPayoutChange(payout.get("status"), "paid")) {
+      throw new HttpsError("failed-precondition", "Payout must be approved and unpaid.");
+    }
+    const uid = payout.get("partnerUid");
+    const partnerRef = collection("partnerProfiles").doc(uid);
+    const partner = await t.get(partnerRef);
+    if (partner.get("openPayoutRequestId") !== requestId) {
+      throw new HttpsError("failed-precondition", "Open payout request mismatch.");
+    }
+    const docs = [];
+    for (const id of payout.get("commissionIds") || []) {
+      const ref = collection("partnerCommissions").doc(id);
+      const doc = await t.get(ref);
+      if (!doc.exists || doc.get("partnerUid") !== uid || doc.get("payoutRequestId") !== requestId ||
+          !isPayoutEligible({ ...doc.data(), payoutRequestId: null })) {
+        throw new HttpsError("failed-precondition", "A commission changed or was reversed. Reconcile before paying.");
+      }
+      docs.push({ ref, data: doc.data() });
+    }
+    if (!docs.length || sumPayout(docs.map(d => ({ ...d.data, payoutRequestId: null }))) !== payout.get("amountCents")) {
+      throw new HttpsError("failed-precondition", "Payout amount mismatch.");
+    }
+    for (const d of docs) {
+      t.update(d.ref, { status: "paid", paidAt: now(), paidBy: adminUid, updatedAt: now() });
+      t.create(collection("partnerCommissionAudit").doc(), {
+        commissionId: d.ref.id, previousStatus: "approved", nextStatus: "paid",
+        adminUid, note: "External payout " + transferReference, createdAt: now()
+      });
+    }
+    t.update(requestRef, {
+      status: "paid", paidAt: now(), paidBy: adminUid, transferReference, updatedAt: now()
+    });
+    t.update(partnerRef, { openPayoutRequestId: FieldValue.delete(), updatedAt: now() });
+    auditPayout(t, requestId, "paid", adminUid, note);
+  });
+  return { status: "paid", message: "External payout recorded; no money was sent by the portal." };
 });
 
 // Test bridge is deliberately absent from every deployed Functions export.
