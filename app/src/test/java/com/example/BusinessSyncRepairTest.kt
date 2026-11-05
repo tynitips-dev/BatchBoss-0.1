@@ -125,7 +125,7 @@ class BusinessSyncRepairTest {
     }
 
     @Test fun `recipe ingredient writes inherit the parent workspace and survive empty snapshots`() = runBlocking {
-        val recipeId = repo.insertRecipe(RecipeEntity(userId = 71, name = "Cake", category = "Cakes", description = "", servings = 4, batchSize = 1, difficulty = "Easy", rating = 0.0, reviewCount = 0, imageResName = ""))
+        val recipeId = repo.insertRecipe(RecipeEntity(userId = 71, name = "Cake", category = "Cakes", description = "", servings = 4, batchSize = 1, difficulty = "Easy", labourCost = 0.0, profitMarginPercent = 40.0, rating = 0.0, reviewCount = 0, imageResName = ""))
         val parent = repo.getRecipeByIdOnce(recipeId)!!
         val id = repo.insertIngredient(RecipeIngredientEntity(recipeId = recipeId, name = "Flour", quantity = 500.0, unit = "g", cost = 10.0))
         val ingredient = repo.ingredientDao.getIngredientByIdOnce(id)!!
