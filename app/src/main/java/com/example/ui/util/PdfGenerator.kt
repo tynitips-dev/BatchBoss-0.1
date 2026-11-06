@@ -39,26 +39,53 @@ object PdfGenerator {
     private val COLOR_BORDER = Color.rgb(226, 232, 240)
     private val COLOR_AMBER = Color.rgb(217, 119, 6)
 
-    // Read the baker's locally selected image when rendering the PDF. A preset
-    // emblem or unreadable image falls back to the bundled BatchBoss graphic.
+    // Read the baker's locally selected image when rendering the PDF.
+    // Checks the direct URI, and if expired/unreadable, checks the persistent
+    // private storage copy saved in bakery-branding/ before falling back to the BatchBoss emblem.
     private fun loadBakeryLogo(context: Context, logoUri: String): Bitmap? {
-        val localLogo = if (logoUri.isNotBlank() && !logoUri.startsWith("emblem_")) {
-            try {
+        var bitmap: Bitmap? = null
+        if (logoUri.isNotBlank() && !logoUri.startsWith("emblem_")) {
+            bitmap = try {
                 val uri = Uri.parse(logoUri)
                 when (uri.scheme) {
-                    "content", "android.resource" ->
-                        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-                    "file" -> BitmapFactory.decodeFile(uri.path)
-                    null -> BitmapFactory.decodeFile(logoUri)
-                    else -> null // Remote images require a separately managed cached asset.
+                    "content", "android.resource" -> {
+                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                            BitmapFactory.decodeStream(inputStream)
+                        }
+                    }
+                    "file" -> {
+                        val path = uri.path
+                        if (!path.isNullOrBlank() && File(path).exists()) {
+                            BitmapFactory.decodeFile(path)
+                        } else null
+                    }
+                    else -> {
+                        if (File(logoUri).exists()) {
+                            BitmapFactory.decodeFile(logoUri)
+                        } else null
+                    }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 null
             }
-        } else null
-        return localLogo ?: try {
+        }
+
+        // If direct URI failed (e.g. expired PhotoPicker permission) or was blank,
+        // check persistent private storage where the baker's logo is cached.
+        if (bitmap == null) {
+            val persistentLogo = File(context.filesDir, "bakery-branding/bakery-logo.jpg")
+            if (persistentLogo.exists() && persistentLogo.length() > 0) {
+                bitmap = try {
+                    BitmapFactory.decodeFile(persistentLogo.absolutePath)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+
+        return bitmap ?: try {
             BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             null
         }
     }
@@ -379,12 +406,8 @@ object PdfGenerator {
         paint.color = COLOR_AMBER
         canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 10f, paint)
 
-        // Logo Emblem
-        val logoBmp: Bitmap? = try {
-            BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
-        } catch (e: Exception) {
-            null
-        }
+        // Bakery logo first, BatchBoss emblem only if no custom logo is available.
+        val logoBmp = loadBakeryLogo(context, biz.logoUri)
 
         var textStartX = MARGIN_LEFT
         if (logoBmp != null) {

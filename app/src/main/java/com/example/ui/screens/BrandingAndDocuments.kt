@@ -149,7 +149,7 @@ fun EditBusinessBrandingDialog(
                 bitmap.recycle()
                 logoUri = Uri.fromFile(output).toString()
                 errorMessage = null
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 errorMessage = "Could not save that logo. Please choose another image."
             }
         }
