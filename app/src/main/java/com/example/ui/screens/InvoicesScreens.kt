@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.local.CustomerEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.InvoicePackagingItem
 import com.example.data.local.InvoicePackagingJsonUtil
@@ -51,6 +52,7 @@ private fun formatZar(amount: Double): String {
 @Composable
 fun InvoicesListScreen(
     invoices: List<InvoiceEntity>,
+    customers: List<CustomerEntity> = emptyList(),
     products: List<ProductServiceEntity> = emptyList(),
     packaging: List<PackagingItemEntity> = emptyList(),
     onBack: () -> Unit,
@@ -382,6 +384,7 @@ fun InvoicesListScreen(
 
     if (showCreateDialog) {
         CreateInvoiceDialog(
+            customers = customers,
             products = products,
             packaging = packaging,
             onDismiss = { showCreateDialog = false },
@@ -693,6 +696,7 @@ private fun InvoiceItemCard(
 
 @Composable
 fun CreateInvoiceDialog(
+    customers: List<CustomerEntity> = emptyList(),
     products: List<ProductServiceEntity> = emptyList(),
     packaging: List<PackagingItemEntity> = emptyList(),
     onDismiss: () -> Unit,
@@ -717,6 +721,9 @@ fun CreateInvoiceDialog(
 ) {
     var clientName by remember { mutableStateOf("") }
     var clientPhone by remember { mutableStateOf("") }
+    var selectedCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    var customerQuery by remember { mutableStateOf("") }
+    var showCustomerPicker by remember { mutableStateOf(false) }
     var orderDesc by remember { mutableStateOf("") }
     var dueDate by remember { mutableStateOf("25 Sep 2026") }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -790,6 +797,54 @@ fun CreateInvoiceDialog(
         }
     }
 
+    if (showCustomerPicker) {
+        AlertDialog(
+            onDismissRequest = { showCustomerPicker = false },
+            title = { Text("Choose a saved customer") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = customerQuery,
+                        onValueChange = { customerQuery = it },
+                        label = { Text("Search name, phone or email") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_search_invoice_customers")
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val matches = customers
+                        .filter {
+                            customerQuery.isBlank() ||
+                                it.name.contains(customerQuery, ignoreCase = true) ||
+                                it.phone.contains(customerQuery, ignoreCase = true) ||
+                                it.email.contains(customerQuery, ignoreCase = true)
+                        }
+                        .sortedBy { it.name.lowercase(Locale.getDefault()) }
+                    if (matches.isEmpty()) {
+                        Text("No saved customers found", color = MediumText)
+                    } else {
+                        LazyColumn(modifier = Modifier.heightIn(max = 330.dp)) {
+                            items(matches, key = { it.id }) { customer ->
+                                ListItem(
+                                    headlineContent = { Text(customer.name) },
+                                    supportingContent = {
+                                        Text(listOf(customer.phone, customer.email).filter { it.isNotBlank() }.joinToString(" • "))
+                                    },
+                                    modifier = Modifier.clickable {
+                                        selectedCustomer = customer
+                                        clientName = customer.name
+                                        clientPhone = customer.phone
+                                        hasError = false
+                                        showCustomerPicker = false
+                                    }.testTag("select_invoice_customer_${customer.id}")
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showCustomerPicker = false }) { Text("Close") } }
+        )
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -857,6 +912,23 @@ fun CreateInvoiceDialog(
                             letterSpacing = 1.sp
                         )
                         Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedButton(
+                            onClick = { customerQuery = ""; showCustomerPicker = true },
+                            modifier = Modifier.fillMaxWidth().testTag("btn_select_saved_invoice_customer"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Outlined.PersonSearch, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Select saved customer")
+                        }
+                        selectedCustomer?.let { customer ->
+                            val details = listOf(customer.email, customer.address).filter { it.isNotBlank() }
+                            if (details.isNotEmpty()) {
+                                Text(details.joinToString(" • "), fontSize = 11.sp, color = MediumText)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         OutlinedTextField(
                             value = clientName,
