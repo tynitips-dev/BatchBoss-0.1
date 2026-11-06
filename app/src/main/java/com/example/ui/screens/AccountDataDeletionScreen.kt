@@ -573,7 +573,7 @@ fun AccountDataDeletionScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved. BatchBoss™",
+                        text = "© 2026 Neon Water Digital Solutions. All rights reserved. BatchBoss™",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = DarkTextMuted,
@@ -581,7 +581,7 @@ fun AccountDataDeletionScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "BatchBoss™ is a trademark of Tada Innovations (Pty) Ltd.",
+                        text = "BatchBoss™ is a trademark of Neon Water Digital Solutions.",
                         fontSize = 10.sp,
                         color = DarkTextMuted.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center

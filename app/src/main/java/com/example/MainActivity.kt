@@ -696,6 +696,7 @@ fun BatchBossApp(
                     val allPackaging by viewModel.allPackaging.collectAsStateWithLifecycle(emptyList())
                     InvoicesListScreen(
                         invoices = allInvoices,
+                        customers = customers,
                         products = allProducts,
                         packaging = allPackaging,
                         profile = userProfile,
