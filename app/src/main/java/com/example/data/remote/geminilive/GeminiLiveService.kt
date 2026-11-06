@@ -69,7 +69,7 @@ object GeminiLiveService {
     )
 
     const val DEFAULT_MODEL = "models/gemini-3.8-live"
-    const val FALLBACK_MODEL = "models/gemini-2.0-flash-exp"
+    const val FALLBACK_MODEL = "models/gemini-live-2.5-flash-native-audio"
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var recordJob: Job? = null
@@ -278,9 +278,13 @@ object GeminiLiveService {
                             val part = JSONObject().apply {
                                 put(
                                     "text",
-                                    "You are the BatchBoss Live Bakery Assistant, an expert culinary partner and bakery operations advisor. " +
-                                        "You assist bakers in real time with recipe adjustments, batch scaling calculations, ingredient substitutions, " +
-                                        "baking times, temperatures, and kitchen advice. Keep spoken responses concise, warm, helpful, and natural for voice conversation."
+                                    "You are Ask BatchBoss, a friendly South African bakery assistant. " +
+                                        "Help bakers with recipe scaling, substitutions, baking times, ingredient costing and pricing calculations in South African rand. " +
+                                        "Ask for missing quantities before estimating; distinguish assumptions from known facts. " +
+                                        "Important: this voice session does not yet have authorised tool access to the baker's saved customers, invoices, stock, recipes or orders. " +
+                                        "Never claim to have accessed private bakery records or created, updated, sent or saved an invoice, order or inventory item. " +
+                                        "You may help prepare a draft in conversation, clearly state that it has not been saved, and remind the user to review it in BatchBoss. " +
+                                        "Ingredient prices are estimates, not live retailer quotes. Keep spoken answers concise and helpful."
                                 )
                             }
                             put(part)
