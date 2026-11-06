@@ -197,4 +197,14 @@ class BusinessSyncRepairTest {
         repo.recoverOwnedLocalRecords(71, bakery)
         assertEquals(1, repo.pendingCloudChanges.list(bakery).size)
     }
+
+    @Test fun `editing legacy recipe pricing assigns a cloud identity and queues the edit`() = runBlocking {
+        val id = repo.recipeDao.insertRecipe(RecipeEntity(userId = 71, bakeryId = bakery, name = "Legacy cake",
+            category = "Cakes", description = "", servings = 4, batchSize = 1, difficulty = "Easy",
+            labourCost = 0.0, profitMarginPercent = 40.0, rating = 0.0, reviewCount = 0, imageResName = ""))
+        repo.updateProfitMargin(id, 55.0)
+        assertEquals(55.0, repo.getRecipeByIdOnce(id)!!.profitMarginPercent, 0.0)
+        assertTrue(repo.getRecipeByIdOnce(id)!!.firestoreId.isNotBlank())
+        assertEquals("recipes", repo.pendingCloudChanges.list(bakery).single().collection)
+    }
 }

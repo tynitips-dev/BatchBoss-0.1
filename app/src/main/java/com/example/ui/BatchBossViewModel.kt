@@ -431,13 +431,13 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Actions
     fun toggleFavoriteRecipe(id: Long) {
-        viewModelScope.launch {
+        saveChanges("Recipe") {
             repository.toggleFavoriteRecipe(id)
         }
     }
 
     fun updateRecipeProfitMargin(id: Long, marginPercent: Double) {
-        viewModelScope.launch {
+        saveChanges("Recipe pricing") {
             repository.updateProfitMargin(id, marginPercent)
         }
     }

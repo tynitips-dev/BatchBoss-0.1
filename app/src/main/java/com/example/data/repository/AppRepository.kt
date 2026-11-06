@@ -122,12 +122,14 @@ class AppRepository(private val database: AppDatabase) {
         for (ingredient in ingredientDao.getIngredientsForRecipeOnce(id)) deleteIngredient(ingredient.id)
     }
 
-    suspend fun toggleFavoriteRecipe(id: Long) = recipeDao.toggleFavorite(id)
+    suspend fun toggleFavoriteRecipe(id: Long) = database.withTransaction {
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(isFavorite = !old.isFavorite, updatedAt = System.currentTimeMillis()))
+    }
 
     suspend fun updateProfitMargin(id: Long, margin: Double) = database.withTransaction {
-        val old = recipeDao.getRecipeByIdOnce(id) ?: return@withTransaction
-        recipeDao.updateProfitMargin(id, margin)
-        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "recipes", id, old.firestoreId, old.updatedAt)
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(profitMarginPercent = margin, updatedAt = System.currentTimeMillis()))
     }
 
     suspend fun updateRecipePricing(
@@ -139,15 +141,15 @@ class AppRepository(private val database: AppDatabase) {
         profitMargin: Double,
         sellingPrice: Double
     ) = database.withTransaction {
-        val old = recipeDao.getRecipeByIdOnce(id) ?: return@withTransaction
-        recipeDao.updateRecipePricing(id, labour, overheads, packaging, utilities, profitMargin, sellingPrice)
-        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "recipes", id, old.firestoreId, old.updatedAt)
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(labourCost = labour, overheadsCost = overheads, packagingCost = packaging,
+            utilitiesCost = utilities, profitMarginPercent = profitMargin, customSellingPrice = sellingPrice,
+            updatedAt = System.currentTimeMillis()))
     }
 
     suspend fun updateRecipePhoto(id: Long, photoUri: String) = database.withTransaction {
-        val old = recipeDao.getRecipeByIdOnce(id) ?: return@withTransaction
-        recipeDao.updateRecipePhoto(id, photoUri)
-        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "recipes", id, old.firestoreId, old.updatedAt)
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(photoUri = photoUri, updatedAt = System.currentTimeMillis()))
     }
 
     // Ingredients
