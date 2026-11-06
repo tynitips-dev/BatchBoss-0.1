@@ -58,6 +58,7 @@ fun HomeScreen(
     onOpenInvoices: () -> Unit = {},
     onOpenScanner: () -> Unit = {},
     onOpenPackaging: () -> Unit = {},
+    onOpenGeminiLiveVoice: () -> Unit = {},
     onSync: () -> Unit = {},
     isSyncing: Boolean = false
 ) {
@@ -364,6 +365,67 @@ fun HomeScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Gemini Live Voice Assistant Banner
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = BatchPinkContainer,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BatchPinkLight),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenGeminiLiveVoice)
+                    .testTag("card_home_gemini_live")
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(BatchPink),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.RecordVoiceOver,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Gemini Live Voice",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DarkText
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(4.dp), color = BatchPink) {
+                                Text(
+                                    text = "3.8 LIVE",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Talk hands-free while baking • Real-time AI advice",
+                            fontSize = 11.sp,
+                            color = MediumText
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = BatchPink)
                 }
             }
         }

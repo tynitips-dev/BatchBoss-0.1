@@ -18,7 +18,7 @@ export function ProfileName({profile}:{profile:UserProfile}) {
  return <form className="content-card modal-form" onSubmit={save}><h3>Your name</h3><div className="split-fields"><label>First name<input name="firstName" required defaultValue={displayName(profile)==='Baker'?'':profile.firstName}/></label><label>Surname<input name="surname" defaultValue={profile.surname||''}/></label></div><button className="outline-button" disabled={busy}>Save name</button><p role="status">{message}</p></form>
 }
 export function StockCards({items,onEdit,bakeryId,collectionName}:{items:Item[];onEdit:(item:Item)=>void;bakeryId:string;collectionName:string}){
- const [query,setQuery]=useState('');const [filter,setFilter]=useState('active');const [error,setError]=useState('')
+ const [query,setQuery]=useState('');const [filter,setFilter]=useState('active');const [error,setError]=useState('');const [deleteError,setDeleteError]=useState('')
  const visible=items.filter(i=>(filter==='archived'?i.archived===true:i.archived!==true)&& (filter!=='low'||n(i.currentStock)<=n(i.minStock))&&text(i.name).toLowerCase().includes(query.toLowerCase()))
  async function archive(i:Item){try{await updateDoc(doc(db,'bakeries',bakeryId,collectionName,i.id),{archived:i.archived!==true,updatedAt:Date.now()});setError('')}catch{setError('Could not update this item. Please try again.')}}
  async function remove(i:Item){if(!window.confirm(`Permanently delete ${text(i.name)||'this item'}? This cannot be undone and may affect recipes using it.`))return;try{await deleteDoc(doc(db,'bakeries',bakeryId,collectionName,i.id));setError('')}catch{setError('Could not delete this item. Please try again.')}}

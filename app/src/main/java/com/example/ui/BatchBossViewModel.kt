@@ -61,6 +61,7 @@ sealed class Screen {
     data class CreateEditProductService(val productId: Long? = null) : Screen()
     data object PremiumSubscription : Screen()
     data object AiRecipeScanner : Screen()
+    data object GeminiLiveVoice : Screen()
     data object BarcodeScanner : Screen()
     data object BakingSupplyStoreLocator : Screen()
     data object AboutBatchBoss : Screen()

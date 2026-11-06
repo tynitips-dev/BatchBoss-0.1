@@ -48,7 +48,8 @@ fun QuickActionsScreen(
     onOpenStoreLocator: () -> Unit = {},
     onOpenAboutBatchBoss: () -> Unit = {},
     onOpenAccountDataDeletion: () -> Unit = {},
-    onOpenPackaging: () -> Unit = {}
+    onOpenPackaging: () -> Unit = {},
+    onOpenGeminiLiveVoice: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier
@@ -184,6 +185,16 @@ fun QuickActionsScreen(
                     onClick = onOpenBarcodeScanner,
                     modifier = Modifier.weight(1f)
                 )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                QuickActionPill(
+                    icon = Icons.Outlined.RecordVoiceOver,
+                    label = "Gemini Live Voice",
+                    onClick = onOpenGeminiLiveVoice,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.weight(2f))
             }
         }
 

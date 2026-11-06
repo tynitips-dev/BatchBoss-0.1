@@ -254,6 +254,7 @@ fun BatchBossApp(
                         onOpenInvoices = { viewModel.navigateTo(Screen.InvoicesList) },
                         onOpenScanner = { viewModel.navigateTo(Screen.AiRecipeScanner) },
                         onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) },
+                        onOpenGeminiLiveVoice = { viewModel.navigateTo(Screen.GeminiLiveVoice) },
                         onSync = {
                             viewModel.syncAllWithCloud { success, msg ->
                                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
@@ -582,7 +583,8 @@ fun BatchBossApp(
                         onOpenProductsServices = { viewModel.navigateTo(Screen.ProductsServicesList) },
                         onOpenAboutBatchBoss = { viewModel.navigateTo(Screen.AboutBatchBoss) },
                         onOpenAccountDataDeletion = { viewModel.navigateTo(Screen.AccountDataDeletion) },
-                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) }
+                        onOpenPackaging = { viewModel.navigateTo(Screen.PackagingList) },
+                        onOpenGeminiLiveVoice = { viewModel.navigateTo(Screen.GeminiLiveVoice) }
                     )
                 }
 
@@ -848,6 +850,12 @@ fun BatchBossApp(
                                 photoUri = photoUri
                             )
                         }
+                    )
+                }
+
+                is Screen.GeminiLiveVoice -> {
+                    GeminiLiveScreen(
+                        onBack = { viewModel.navigateTo(Screen.Home) }
                     )
                 }
 
