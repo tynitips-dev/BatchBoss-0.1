@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.batchboss.kqwxrv"
     minSdk = 24
     targetSdk = 36
-    versionCode = 27
-    versionName = "27.0"
+    versionCode = 28
+    versionName = "28.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -55,9 +55,8 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = true
-      isShrinkResources = true
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      isMinifyEnabled = false
+      isShrinkResources = false
       signingConfig = signingConfigs.getByName("release")
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
