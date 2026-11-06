@@ -574,7 +574,7 @@ fun AboutBatchBossScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved.",
+                        text = "© 2026 Neon Water Digital Solutions. All rights reserved.",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkText,
@@ -582,7 +582,7 @@ fun AboutBatchBossScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "BatchBoss™ is a trademark of Tada Innovations (Pty) Ltd.",
+                        text = "BatchBoss™ is a trademark of Neon Water Digital Solutions.",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = MediumText,
