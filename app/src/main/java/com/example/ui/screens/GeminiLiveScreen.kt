@@ -214,7 +214,7 @@ fun GeminiLiveScreen(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Gemini Live Voice",
+                                text = "Ask BatchBoss",
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = DarkText
@@ -478,7 +478,7 @@ fun GeminiLiveScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Powered by Google's Gemini 3.8 Live API.\nTap 'Start Live Voice' to talk hands-free while baking, asking about recipe scaling, substitutions, oven times, or costs.",
+                        text = "Powered by Gemini Live.\nTap 'Start Live Voice' to talk hands-free while baking, asking about recipe scaling, substitutions, oven times, or costs.",
                         fontSize = 13.sp,
                         color = MediumText,
                         textAlign = TextAlign.Center,
@@ -777,7 +777,7 @@ private fun LiveMessageBubble(message: LiveChatMessage) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isUser) "You" else "Gemini Live Assistant",
+                        text = if (isUser) "You" else "Ask BatchBoss",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = if (isUser) Color.White.copy(alpha = 0.9f) else BatchPinkDark
@@ -856,7 +856,7 @@ private fun LiveSettingsDialog(
                             .clickable { onSelectModel(GeminiLiveService.FALLBACK_MODEL) }
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
-                            Text("gemini-2.0-flash", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkText)
+                            Text("gemini-live-2.5-flash-native-audio", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkText)
                             Text("Experimental live model", fontSize = 10.sp, color = MediumText)
                         }
                     }
