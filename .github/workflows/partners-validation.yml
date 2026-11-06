@@ -1,0 +1,30 @@
+name: Sales Partners validation
+on:
+  pull_request:
+    paths:
+      - "partners/**"
+      - ".github/workflows/partners-validation.yml"
+  push:
+    branches:
+      - "feature/sales-partners-portal-20261029"
+    paths:
+      - "partners/**"
+      - ".github/workflows/partners-validation.yml"
+jobs:
+  policy-and-syntax:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: partners/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify Node syntax
+        run: |
+          node --check index.js
+          node --check commissionPolicy.js
+          node --check ../web/app.js
+      - name: Test commission business policy
+        run: npm test
