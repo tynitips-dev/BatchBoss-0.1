@@ -39,6 +39,30 @@ object PdfGenerator {
     private val COLOR_BORDER = Color.rgb(226, 232, 240)
     private val COLOR_AMBER = Color.rgb(217, 119, 6)
 
+    // Read the baker's locally selected image when rendering the PDF. A preset
+    // emblem or unreadable image falls back to the bundled BatchBoss graphic.
+    private fun loadBakeryLogo(context: Context, logoUri: String): Bitmap? {
+        val localLogo = if (logoUri.isNotBlank() && !logoUri.startsWith("emblem_")) {
+            try {
+                val uri = Uri.parse(logoUri)
+                when (uri.scheme) {
+                    "content", "android.resource" ->
+                        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                    "file" -> BitmapFactory.decodeFile(uri.path)
+                    null -> BitmapFactory.decodeFile(logoUri)
+                    else -> null // Remote images require a separately managed cached asset.
+                }
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+        return localLogo ?: try {
+            BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun generateInvoicePdf(context: Context, invoice: InvoiceEntity, profile: UserProfileEntity?): File {
         val biz = profile ?: UserProfileEntity()
         val document = PdfDocument()
@@ -86,12 +110,8 @@ object PdfGenerator {
         paint.color = COLOR_PRIMARY
         canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 10f, paint)
 
-        // Logo Emblem
-        val logoBmp: Bitmap? = try {
-            BitmapFactory.decodeResource(context.resources, R.drawable.img_batchboss_emblem)
-        } catch (e: Exception) {
-            null
-        }
+        // Bakery logo first, BatchBoss emblem only if no logo is available.
+        val logoBmp = loadBakeryLogo(context, biz.logoUri)
 
         var textStartX = MARGIN_LEFT
         if (logoBmp != null) {

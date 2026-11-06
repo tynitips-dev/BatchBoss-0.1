@@ -55,8 +55,14 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      // Generate R8 mapping for release verification and Play Console diagnostics.
+      isMinifyEnabled = true
+      // Keep resource shrinking disabled until regression tests validate assets.
       isShrinkResources = false
+      proguardFiles(
+        getDefaultProguardFile("proguard-android-optimize.txt"),
+        "proguard-rules.pro"
+      )
       signingConfig = signingConfigs.getByName("release")
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }

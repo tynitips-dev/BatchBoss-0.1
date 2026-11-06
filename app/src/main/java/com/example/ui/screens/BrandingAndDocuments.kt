@@ -4,6 +4,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.File
+import java.io.FileOutputStream
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -107,6 +111,7 @@ fun EditBusinessBrandingDialog(
         defaultHourlyRate: Double
     ) -> Unit
 ) {
+    val context = LocalContext.current
     val current = profile ?: UserProfileEntity()
     var logoUri by remember { mutableStateOf(current.logoUri) }
     var bakeryName by remember { mutableStateOf(current.bakeryName) }
@@ -125,7 +130,28 @@ fun EditBusinessBrandingDialog(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            logoUri = uri.toString()
+            try {
+                // The photo-picker URI may expire. Keep a bounded, private JPEG
+                // copy so invoices can still show the logo after app restarts.
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
+                var sample = 1
+                while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
+                val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                    ?: throw IllegalArgumentException("Unable to open selected image")
+                val dir = File(context.filesDir, "bakery-branding").apply { mkdirs() }
+                val output = File(dir, "bakery-logo.jpg")
+                FileOutputStream(output).use { out ->
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)) { "Could not save logo image" }
+                }
+                bitmap.recycle()
+                logoUri = Uri.fromFile(output).toString()
+                errorMessage = null
+            } catch (_: Exception) {
+                errorMessage = "Could not save that logo. Please choose another image."
+            }
         }
     }
 
