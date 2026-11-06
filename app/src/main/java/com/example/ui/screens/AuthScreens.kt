@@ -155,7 +155,7 @@ fun SplashScreen(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved. BatchBoss™",
+                text = "© 2026 Neon Water Digital Solutions. All rights reserved. BatchBoss™",
                 color = LightText.copy(alpha = 0.85f),
                 fontSize = 10.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
