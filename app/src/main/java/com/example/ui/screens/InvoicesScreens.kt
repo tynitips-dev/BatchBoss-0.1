@@ -719,6 +719,7 @@ fun CreateInvoiceDialog(
     var clientPhone by remember { mutableStateOf("") }
     var orderDesc by remember { mutableStateOf("") }
     var dueDate by remember { mutableStateOf("25 Sep 2026") }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var status by remember { mutableStateOf("Pending") }
 
     // Line items list
@@ -880,14 +881,39 @@ fun CreateInvoiceDialog(
                                 modifier = Modifier.weight(1f).testTag("input_invoice_phone")
                             )
 
-                            OutlinedTextField(
-                                value = dueDate,
-                                onValueChange = { dueDate = it },
-                                label = { Text("Due Date") },
-                                singleLine = true,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f).testTag("input_invoice_due_date")
-                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                OutlinedTextField(
+                                    value = dueDate,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Due Date") },
+                                    trailingIcon = { Icon(Icons.Outlined.CalendarMonth, contentDescription = null) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .clickable {
+                                            val dateFormat = java.text.SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH)
+                                            val selected = java.util.Calendar.getInstance()
+                                            dateFormat.parse(dueDate)?.let { selected.time = it }
+                                            android.app.DatePickerDialog(
+                                                context,
+                                                { _, year, month, day ->
+                                                    val picked = java.util.Calendar.getInstance()
+                                                    picked.set(year, month, day)
+                                                    dueDate = dateFormat.format(picked.time)
+                                                },
+                                                selected.get(java.util.Calendar.YEAR),
+                                                selected.get(java.util.Calendar.MONTH),
+                                                selected.get(java.util.Calendar.DAY_OF_MONTH)
+                                            ).show()
+                                        }
+                                        .testTag("input_invoice_due_date")
+                                )
+                            }
                         }
                     }
 
