@@ -2061,7 +2061,7 @@ object FirebaseService {
                                         }
                                         syncScope.launch {
                                             try {
-                                                val localRecipe = repo.getRecipeByFirestoreId(recipeFirestoreId)
+                                                val localRecipe = repo.getRecipeByFirestoreId(recipeFirestoreId, targetBakeryId)
                                                 val localRecipeId = localRecipe?.id ?: 0L
                                                 repo.syncRecipeIngredientsWithFirestore(
                                                     targetBakeryId,
@@ -2378,7 +2378,7 @@ object FirebaseService {
                 val recipeFirestoreId = recipeDoc.id
                 val ingSnapshot = recipeDoc.reference.collection("ingredients").get().awaitTask()
                 val ingItems = ingSnapshot.documents.mapNotNull { documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId) }
-                val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId)
+                val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId, targetBakeryId)
                 val localRecipeId = localRecipe?.id ?: 0L
                 repository.syncRecipeIngredientsWithFirestore(targetBakeryId, recipeFirestoreId, localRecipeId, ingItems)
             }

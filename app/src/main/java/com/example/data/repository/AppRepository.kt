@@ -101,7 +101,7 @@ class AppRepository(private val database: AppDatabase) {
 
     fun getRecipeById(id: Long): Flow<RecipeEntity?> = recipeDao.getRecipeById(id)
     suspend fun getRecipeByIdOnce(id: Long): RecipeEntity? = recipeDao.getRecipeByIdOnce(id)
-    suspend fun getRecipeByFirestoreId(firestoreId: String): RecipeEntity? = recipeDao.getRecipeByFirestoreId(firestoreId)
+    suspend fun getRecipeByFirestoreId(firestoreId: String, bakeryId: String): RecipeEntity? = recipeDao.getRecipeByCloudIdentity(firestoreId, bakeryId)
 
     suspend fun insertRecipe(recipe: RecipeEntity): Long = database.withTransaction {
         val old = if (recipe.id > 0) recipeDao.getRecipeByIdOnce(recipe.id) else null
@@ -500,11 +500,15 @@ class AppRepository(private val database: AppDatabase) {
         recipeLocalId: Long,
         remoteItems: List<RecipeIngredientEntity>
     ): Int = database.withTransaction {
+        val parent = recipeDao.getRecipeByIdOnce(recipeLocalId)
+        require(parent != null && parent.bakeryId == bakeryId && parent.firestoreId == recipeFirestoreId) {
+            "The recipe is not available in this bakery workspace. Sync recipes before their ingredients."
+        }
         val localIngredients = (if (recipeFirestoreId.isNotBlank()) {
             ingredientDao.getIngredientsForRecipeFirestoreIdOnce(recipeFirestoreId)
         } else emptyList()).ifEmpty {
             if (recipeLocalId > 0) ingredientDao.getIngredientsForRecipeOnce(recipeLocalId) else emptyList()
-        }
+        }.filter { it.bakeryId == bakeryId }
 
         val localByFirestoreId = localIngredients.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
 

@@ -207,4 +207,21 @@ class BusinessSyncRepairTest {
         assertTrue(repo.getRecipeByIdOnce(id)!!.firestoreId.isNotBlank())
         assertEquals("recipes", repo.pendingCloudChanges.list(bakery).single().collection)
     }
+
+    @Test fun `identical old recipe document IDs in two bakeries cannot cross link ingredients`() = runBlocking {
+        val recipe = RecipeEntity(userId = 71, bakeryId = bakery, firestoreId = "1", name = "Recipe A",
+            category = "Cakes", description = "", servings = 4, batchSize = 1, difficulty = "Easy",
+            labourCost = 0.0, profitMarginPercent = 40.0, rating = 0.0, reviewCount = 0, imageResName = "")
+        val a = repo.recipeDao.insertRecipe(recipe)
+        val b = repo.recipeDao.insertRecipe(recipe.copy(userId = 72, bakeryId = "bakery-other", name = "Recipe B"))
+        val ingredient = RecipeIngredientEntity(recipeId = a, bakeryId = bakery, recipeFirestoreId = "1",
+            firestoreId = "same-ingredient-id", name = "A ingredient", quantity = 1.0, unit = "g", cost = 1.0)
+        val firstId = repo.ingredientDao.insertIngredient(ingredient)
+        repo.ingredientDao.insertIngredient(ingredient.copy(recipeId = b, bakeryId = "bakery-other", name = "B ingredient"))
+        assertEquals(b, repo.getRecipeByFirestoreId("1", "bakery-other")!!.id)
+        repo.syncRecipeIngredientsWithFirestore("bakery-other", "1", b,
+            listOf(ingredient.copy(bakeryId = "bakery-other", name = "Updated B", updatedAt = Long.MAX_VALUE)))
+        assertEquals("A ingredient", repo.ingredientDao.getIngredientByIdOnce(firstId)!!.name)
+        assertEquals("Updated B", repo.getIngredientsForRecipeOnce(b).single().name)
+    }
 }

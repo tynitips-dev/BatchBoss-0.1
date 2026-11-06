@@ -126,6 +126,9 @@ interface RecipeDao {
     @Query("SELECT * FROM recipes WHERE firestoreId = :firestoreId LIMIT 1")
     suspend fun getRecipeByFirestoreId(firestoreId: String): RecipeEntity?
 
+    @Query("SELECT * FROM recipes WHERE firestoreId = :firestoreId AND bakeryId = :bakeryId LIMIT 1")
+    suspend fun getRecipeByCloudIdentity(firestoreId: String, bakeryId: String): RecipeEntity?
+
     @Query("SELECT * FROM recipes ORDER BY id ASC")
     fun getAllRecipes(): Flow<List<RecipeEntity>>
 
