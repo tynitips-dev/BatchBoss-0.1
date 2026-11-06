@@ -2,6 +2,9 @@ package com.example.data.repository
 
 import com.example.data.local.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import androidx.room.withTransaction
+import java.util.UUID
 
 class AppRepository(private val database: AppDatabase) {
     val userAccountDao = database.userAccountDao()
@@ -25,6 +28,63 @@ class AppRepository(private val database: AppDatabase) {
     val userLoginLogDao = database.userLoginLogDao()
     val dataDeletionRequestDao = database.dataDeletionRequestDao()
 
+    suspend fun <T> atomic(block: suspend () -> T): T = database.withTransaction { block() }
+
+    val pendingCloudChanges = database.pendingCloudChangeDao()
+
+    suspend fun acknowledgeCloudChange(change: PendingCloudChange, serverUpdatedAt: Long) = database.withTransaction {
+        if (pendingCloudChanges.get(change.bakeryId, change.path)?.revision != change.revision) return@withTransaction
+        if (!change.deleted) when (change.collection) {
+            "customers" -> customerDao.getCustomerByIdOnce(change.localId)?.let { customerDao.updateCustomer(it.copy(updatedAt = serverUpdatedAt)) }
+            "products" -> productServiceDao.getProductByIdOnce(change.localId)?.let { productServiceDao.updateProduct(it.copy(updatedAt = serverUpdatedAt)) }
+            "invoices" -> invoiceDao.getInvoiceByIdOnce(change.localId)?.let { invoiceDao.updateInvoice(it.copy(updatedAt = serverUpdatedAt)) }
+            "quotes" -> quoteDao.getQuoteByIdOnce(change.localId)?.let { quoteDao.updateQuote(it.copy(updatedAt = serverUpdatedAt)) }
+            "inventory" -> inventoryDao.getInventoryByIdOnce(change.localId)?.let { inventoryDao.updateItem(it.copy(updatedAt = serverUpdatedAt)) }
+            "recipes" -> recipeDao.getRecipeByIdOnce(change.localId)?.let { recipeDao.updateRecipe(it.copy(updatedAt = serverUpdatedAt)) }
+            "ingredients" -> ingredientDao.getIngredientByIdOnce(change.localId)?.let { ingredientDao.updateIngredient(it.copy(updatedAt = serverUpdatedAt)) }
+        }
+        pendingCloudChanges.acknowledge(change.bakeryId, change.path, change.revision)
+    }
+
+    /** Recover only rows explicitly owned by this established local account; never claim userId=0 legacy data. */
+    suspend fun recoverOwnedLocalRecords(userId: Long, bakeryId: String) = database.withTransaction {
+        require(userId > 0 && userAccountDao.getUserByIdOnce(userId)?.bakeryId == bakeryId && bakeryId.isNotBlank())
+        for (row in customerDao.getCustomersByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertCustomer(row.copy(bakeryId = bakeryId))
+        for (row in productServiceDao.getProductsByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertProduct(row.copy(bakeryId = bakeryId))
+        for (row in invoiceDao.getInvoicesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertInvoice(row.copy(bakeryId = bakeryId))
+        for (row in quoteDao.getQuotesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertQuote(row.copy(bakeryId = bakeryId))
+        for (row in inventoryDao.getInventoryByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) insertInventoryItem(row.copy(bakeryId = bakeryId))
+        for (row in recipeDao.getRecipesByUser(userId).first().filter { it.userId == userId && (it.bakeryId.isBlank() || it.bakeryId == bakeryId && it.firestoreId.isBlank()) }) {
+            insertRecipe(row.copy(bakeryId = bakeryId))
+            for (ingredient in ingredientDao.getIngredientsForRecipeOnce(row.id)) insertIngredient(ingredient)
+        }
+    }
+
+    suspend fun parentIsPending(change: PendingCloudChange): Boolean = change.collection == "ingredients" &&
+        pendingCloudChanges.get(change.bakeryId, change.path.substringBefore("/ingredients/")) != null
+
+    private suspend fun workspace(userId: Long, supplied: String): String {
+        val accountBakery = userAccountDao.getUserByIdOnce(userId)?.bakeryId.orEmpty()
+        require(supplied.isBlank() || accountBakery.isBlank() || supplied == accountBakery) { "The record belongs to another bakery." }
+        return supplied.ifBlank { accountBakery }.also {
+            require(it.isNotBlank()) { "Sign in to your bakery workspace before saving." }
+        }
+    }
+
+    private suspend fun queue(bakeryId: String, collection: String, localId: Long, documentId: String,
+                              previousUpdatedAt: Long?, deleted: Boolean = false, parent: String = "") {
+        val path = if (parent.isBlank()) "$collection/$documentId" else "recipes/$parent/ingredients/$documentId"
+        val previous = pendingCloudChanges.get(bakeryId, path)
+        pendingCloudChanges.put(PendingCloudChange(bakeryId, path, collection, localId, UUID.randomUUID().toString(),
+            previous?.let { (it.ancestors.split(',').filter(String::isNotBlank) + it.revision).joinToString(",") }.orEmpty(),
+            if (previous != null) previous.expectedUpdatedAt else previousUpdatedAt, deleted))
+    }
+
+    private fun LineItem.toDocumentRow(type: String, id: Long, uid: Long) = DocumentLineItemEntity(
+        documentType = type, documentId = id, userId = uid, productId = productId, itemName = itemName,
+        description = description, quantity = quantity, unit = unit, unitPrice = unitPrice,
+        discount = discount, costPrice = costPrice, lineTotal = lineTotal)
+
     // User Accounts
     val allUsers: Flow<List<UserAccountEntity>> = userAccountDao.getAllUsers()
     fun getUserById(id: Long): Flow<UserAccountEntity?> = userAccountDao.getUserById(id)
@@ -41,20 +101,36 @@ class AppRepository(private val database: AppDatabase) {
 
     fun getRecipeById(id: Long): Flow<RecipeEntity?> = recipeDao.getRecipeById(id)
     suspend fun getRecipeByIdOnce(id: Long): RecipeEntity? = recipeDao.getRecipeByIdOnce(id)
-    suspend fun getRecipeByFirestoreId(firestoreId: String): RecipeEntity? = recipeDao.getRecipeByFirestoreId(firestoreId)
+    suspend fun getRecipeByFirestoreId(firestoreId: String, bakeryId: String): RecipeEntity? = recipeDao.getRecipeByCloudIdentity(firestoreId, bakeryId)
 
-    suspend fun insertRecipe(recipe: RecipeEntity): Long = recipeDao.insertRecipe(recipe)
-
-    suspend fun updateRecipe(recipe: RecipeEntity) = recipeDao.updateRecipe(recipe)
-
-    suspend fun deleteRecipe(id: Long) {
-        ingredientDao.deleteIngredientsForRecipe(id)
-        recipeDao.deleteRecipe(id)
+    suspend fun insertRecipe(recipe: RecipeEntity): Long = database.withTransaction {
+        val old = if (recipe.id > 0) recipeDao.getRecipeByIdOnce(recipe.id) else null
+        val bId = workspace(recipe.userId, recipe.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == recipe.userId && userAccountDao.getUserByIdOnce(recipe.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = recipe.copy(bakeryId = bId, firestoreId = recipe.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } })
+        val id = recipeDao.insertRecipe(record)
+        queue(bId, "recipes", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
     }
 
-    suspend fun toggleFavoriteRecipe(id: Long) = recipeDao.toggleFavorite(id)
+    suspend fun updateRecipe(recipe: RecipeEntity) { insertRecipe(recipe) }
 
-    suspend fun updateProfitMargin(id: Long, margin: Double) = recipeDao.updateProfitMargin(id, margin)
+    suspend fun deleteRecipe(id: Long) = database.withTransaction {
+        val old = recipeDao.getRecipeByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "recipes", id, old.firestoreId, old.updatedAt, deleted = true)
+        recipeDao.deleteRecipe(id)
+        for (ingredient in ingredientDao.getIngredientsForRecipeOnce(id)) deleteIngredient(ingredient.id)
+    }
+
+    suspend fun toggleFavoriteRecipe(id: Long) = database.withTransaction {
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(isFavorite = !old.isFavorite, updatedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun updateProfitMargin(id: Long, margin: Double) = database.withTransaction {
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(profitMarginPercent = margin, updatedAt = System.currentTimeMillis()))
+    }
 
     suspend fun updateRecipePricing(
         id: Long,
@@ -64,9 +140,17 @@ class AppRepository(private val database: AppDatabase) {
         utilities: Double,
         profitMargin: Double,
         sellingPrice: Double
-    ) = recipeDao.updateRecipePricing(id, labour, overheads, packaging, utilities, profitMargin, sellingPrice)
+    ) = database.withTransaction {
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(labourCost = labour, overheadsCost = overheads, packagingCost = packaging,
+            utilitiesCost = utilities, profitMarginPercent = profitMargin, customSellingPrice = sellingPrice,
+            updatedAt = System.currentTimeMillis()))
+    }
 
-    suspend fun updateRecipePhoto(id: Long, photoUri: String) = recipeDao.updateRecipePhoto(id, photoUri)
+    suspend fun updateRecipePhoto(id: Long, photoUri: String) = database.withTransaction {
+        val old = requireNotNull(recipeDao.getRecipeByIdOnce(id)) { "The recipe no longer exists." }
+        updateRecipe(old.copy(photoUri = photoUri, updatedAt = System.currentTimeMillis()))
+    }
 
     // Ingredients
     fun getIngredientsForRecipe(recipeId: Long): Flow<List<RecipeIngredientEntity>> =
@@ -84,17 +168,33 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun getIngredientsByBakeryOnce(bakeryId: String): List<RecipeIngredientEntity> =
         ingredientDao.getIngredientsByBakeryOnce(bakeryId)
 
-    suspend fun updateIngredientCost(id: Long, cost: Double, quantity: Double) =
-        ingredientDao.updateIngredientCost(id, cost, quantity)
-
-    suspend fun saveIngredients(recipeId: Long, ingredients: List<RecipeIngredientEntity>) {
-        ingredientDao.deleteIngredientsForRecipe(recipeId)
-        ingredientDao.insertIngredients(ingredients)
+    suspend fun updateIngredientCost(id: Long, cost: Double, quantity: Double) = database.withTransaction {
+        val old = ingredientDao.getIngredientByIdOnce(id) ?: return@withTransaction
+        insertIngredient(old.copy(cost = cost, quantity = quantity, updatedAt = System.currentTimeMillis()))
     }
 
-    suspend fun insertIngredient(ingredient: RecipeIngredientEntity): Long = ingredientDao.insertIngredient(ingredient)
+    suspend fun saveIngredients(recipeId: Long, ingredients: List<RecipeIngredientEntity>) = database.withTransaction {
+        for (old in ingredientDao.getIngredientsForRecipeOnce(recipeId)) deleteIngredient(old.id)
+        for (ingredient in ingredients) insertIngredient(ingredient.copy(id = 0, recipeId = recipeId))
+    }
 
-    suspend fun deleteIngredient(id: Long) = ingredientDao.deleteIngredient(id)
+    suspend fun insertIngredient(ingredient: RecipeIngredientEntity): Long = database.withTransaction {
+        val parent = requireNotNull(recipeDao.getRecipeByIdOnce(ingredient.recipeId)) { "Save the recipe before its ingredients." }
+        require(parent.bakeryId.isNotBlank() && parent.firestoreId.isNotBlank()) { "The recipe has no cloud identity." }
+        val old = if (ingredient.id > 0) ingredientDao.getIngredientByIdOnce(ingredient.id) else null
+        require(old == null || old.bakeryId == parent.bakeryId || old.bakeryId.isBlank() && old.recipeId == parent.id) { "Cannot replace another bakery's ingredient." }
+        val record = ingredient.copy(bakeryId = parent.bakeryId, userId = parent.userId,
+            recipeFirestoreId = parent.firestoreId, firestoreId = ingredient.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { UUID.randomUUID().toString() } })
+        val id = ingredientDao.insertIngredient(record)
+        queue(parent.bakeryId, "ingredients", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt, parent = parent.firestoreId)
+        id
+    }
+
+    suspend fun deleteIngredient(id: Long) = database.withTransaction {
+        val old = ingredientDao.getIngredientByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "ingredients", id, old.firestoreId, old.updatedAt, deleted = true, parent = old.recipeFirestoreId)
+        ingredientDao.deleteIngredient(id)
+    }
 
     // Tasks
     val allTasks: Flow<List<TaskEntity>> = taskDao.getAllTasks()
@@ -119,19 +219,31 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun toggleInventoryAlert(id: Long) = inventoryDao.toggleAlert(id)
 
-    suspend fun updateStockPrice(id: Long, unitPrice: Double, currentStock: Double, minStock: Double) {
-        val isLow = currentStock <= minStock
-        inventoryDao.updateStockPriceAndQuantity(id, unitPrice, currentStock, minStock, isLow)
+    suspend fun updateStockPrice(id: Long, unitPrice: Double, currentStock: Double, minStock: Double) = database.withTransaction {
+        val old = inventoryDao.getInventoryByIdOnce(id) ?: return@withTransaction
+        insertInventoryItem(old.copy(unitPrice = unitPrice, currentStock = currentStock, minStock = minStock, isLowStock = currentStock <= minStock, updatedAt = System.currentTimeMillis()))
     }
 
-    suspend fun updateStockItemFull(id: Long, unitPrice: Double, packagePrice: Double, gramsPerUnit: Double, currentStock: Double, minStock: Double) {
-        val isLow = currentStock <= minStock
-        inventoryDao.updateStockItemFull(id, unitPrice, packagePrice, gramsPerUnit, currentStock, minStock, isLow)
+    suspend fun updateStockItemFull(id: Long, unitPrice: Double, packagePrice: Double, gramsPerUnit: Double, currentStock: Double, minStock: Double) = database.withTransaction {
+        val old = inventoryDao.getInventoryByIdOnce(id) ?: return@withTransaction
+        insertInventoryItem(old.copy(unitPrice = unitPrice, currentStock = currentStock, minStock = minStock, isLowStock = currentStock <= minStock, updatedAt = System.currentTimeMillis(), packagePrice = packagePrice, gramsPerUnit = gramsPerUnit))
     }
 
-    suspend fun insertInventoryItem(item: InventoryItemEntity): Long = inventoryDao.insertItem(item.normalized())
+    suspend fun insertInventoryItem(item: InventoryItemEntity): Long = database.withTransaction {
+        val old = if (item.id > 0) inventoryDao.getInventoryByIdOnce(item.id) else null
+        val bId = workspace(item.userId, item.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == item.userId && userAccountDao.getUserByIdOnce(item.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = item.copy(bakeryId = bId, firestoreId = item.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } }).normalized()
+        val id = inventoryDao.insertItem(record)
+        queue(bId, "inventory", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
+    }
 
-    suspend fun deleteInventoryItem(id: Long) = inventoryDao.deleteItem(id)
+    suspend fun deleteInventoryItem(id: Long) = database.withTransaction {
+        val old = inventoryDao.getInventoryByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "inventory", id, old.firestoreId, old.updatedAt, deleted = true)
+        inventoryDao.deleteItem(id)
+    }
 
     // Packaging
     val allPackaging: Flow<List<PackagingItemEntity>> = packagingDao.getAllPackaging()
@@ -234,25 +346,25 @@ class AppRepository(private val database: AppDatabase) {
      * Newest updatedAt wins. Preserves local primary key ID.
      * Automatically recalculates recipe ingredient costs affected by inventory changes.
      */
-    suspend fun syncInventoryWithFirestore(bakeryId: String, remoteItems: List<InventoryItemEntity>): Int {
+    suspend fun syncInventoryWithFirestore(bakeryId: String, remoteItems: List<InventoryItemEntity>): Int = database.withTransaction {
         val localItems = inventoryDao.getInventoryByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByName = localItems.associateBy { it.name.trim().lowercase() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "inventory" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val norm = remote.normalized()
             val docId = norm.firestoreId.ifBlank { if (norm.id > 0) norm.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
-            try {
                 val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                    ?: (if (norm.id > 0) localById[norm.id] else null)
-                    ?: localByName[norm.name.trim().lowercase()]
 
-                if (existing != null) {
+                if (existing?.id in dirtyIds) continue
+            if (existing != null) {
                     if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                     if (norm.updatedAt >= existing.updatedAt) {
                         val updated = norm.copy(
@@ -264,7 +376,7 @@ class AppRepository(private val database: AppDatabase) {
                         inventoryDao.updateItem(updated)
                     }
                 } else {
-                    val newLocalId = if (norm.id > 0 && !localById.containsKey(norm.id)) norm.id else 0L
+                    val newLocalId = 0L
                     val newItem = norm.copy(
                         id = newLocalId,
                         firestoreId = docId,
@@ -273,12 +385,10 @@ class AppRepository(private val database: AppDatabase) {
                     val insertedId = inventoryDao.insertItem(newItem)
                     if (docId.isBlank()) remoteDocIds.add(insertedId.toString())
                 }
-            } catch (e: Throwable) {
-                android.util.Log.e("AppRepository", "Error syncing inventory item ${norm.name} ($docId): ${e.message}", e)
-            }
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
@@ -288,7 +398,7 @@ class AppRepository(private val database: AppDatabase) {
         // Recalculate recipe ingredient costs based on new inventory prices
         recalculateRecipeIngredientCosts(bakeryId)
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
@@ -323,22 +433,23 @@ class AppRepository(private val database: AppDatabase) {
     /**
      * Reconciles Firestore recipe documents into Room for the specified bakery.
      */
-    suspend fun syncRecipesWithFirestore(bakeryId: String, remoteItems: List<RecipeEntity>): Int {
+    suspend fun syncRecipesWithFirestore(bakeryId: String, remoteItems: List<RecipeEntity>): Int = database.withTransaction {
         val localItems = recipeDao.getRecipesByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByName = localItems.associateBy { it.name.trim().lowercase() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "recipes" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: localByName[remote.name.trim().lowercase()]
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -351,7 +462,7 @@ class AppRepository(private val database: AppDatabase) {
                     recipeDao.updateRecipe(updated)
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
@@ -363,6 +474,7 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
@@ -375,7 +487,7 @@ class AppRepository(private val database: AppDatabase) {
             }
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
@@ -387,27 +499,32 @@ class AppRepository(private val database: AppDatabase) {
         recipeFirestoreId: String,
         recipeLocalId: Long,
         remoteItems: List<RecipeIngredientEntity>
-    ): Int {
+    ): Int = database.withTransaction {
+        val parent = recipeDao.getRecipeByIdOnce(recipeLocalId)
+        require(parent != null && parent.bakeryId == bakeryId && parent.firestoreId == recipeFirestoreId) {
+            "The recipe is not available in this bakery workspace. Sync recipes before their ingredients."
+        }
         val localIngredients = (if (recipeFirestoreId.isNotBlank()) {
             ingredientDao.getIngredientsForRecipeFirestoreIdOnce(recipeFirestoreId)
         } else emptyList()).ifEmpty {
             if (recipeLocalId > 0) ingredientDao.getIngredientsForRecipeOnce(recipeLocalId) else emptyList()
-        }
+        }.filter { it.bakeryId == bakeryId }
 
         val localByFirestoreId = localIngredients.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localIngredients.associateBy { it.id }
-        val localByName = localIngredients.associateBy { it.name.trim().lowercase() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "ingredients" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: localByName[remote.name.trim().lowercase()]
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -422,7 +539,7 @@ class AppRepository(private val database: AppDatabase) {
                     ingredientDao.updateIngredient(updated)
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
@@ -436,34 +553,36 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localIngredients.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             ingredientDao.deleteIngredientsByIds(toDelete.map { it.id })
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
      * Reconciles Firestore customers documents into Room.
      */
-    suspend fun syncCustomersWithFirestore(bakeryId: String, remoteItems: List<CustomerEntity>): Int {
+    suspend fun syncCustomersWithFirestore(bakeryId: String, remoteItems: List<CustomerEntity>): Int = database.withTransaction {
         val localItems = customerDao.getCustomersByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByName = localItems.associateBy { it.name.trim().lowercase() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "customers" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: localByName[remote.name.trim().lowercase()]
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -476,7 +595,7 @@ class AppRepository(private val database: AppDatabase) {
                     customerDao.updateCustomer(updated)
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
@@ -488,34 +607,36 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             customerDao.deleteCustomersByIds(toDelete.map { it.id })
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
      * Reconciles Firestore products documents into Room.
      */
-    suspend fun syncProductsWithFirestore(bakeryId: String, remoteItems: List<ProductServiceEntity>): Int {
+    suspend fun syncProductsWithFirestore(bakeryId: String, remoteItems: List<ProductServiceEntity>): Int = database.withTransaction {
         val localItems = productServiceDao.getProductsByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByName = localItems.associateBy { it.name.trim().lowercase() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "products" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: localByName[remote.name.trim().lowercase()]
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -528,7 +649,7 @@ class AppRepository(private val database: AppDatabase) {
                     productServiceDao.updateProduct(updated)
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
@@ -540,34 +661,36 @@ class AppRepository(private val database: AppDatabase) {
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             productServiceDao.deleteProductsByIds(toDelete.map { it.id })
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
      * Reconciles Firestore invoices documents into Room.
      */
-    suspend fun syncInvoicesWithFirestore(bakeryId: String, remoteItems: List<InvoiceEntity>): Int {
+    suspend fun syncInvoicesWithFirestore(bakeryId: String, remoteItems: List<InvoiceEntity>): Int = database.withTransaction {
         val localItems = invoiceDao.getInvoicesByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByNumber = localItems.associateBy { it.invoiceNumber.trim() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "invoices" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: (if (remote.invoiceNumber.isNotBlank()) localByNumber[remote.invoiceNumber.trim()] else null)
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -578,48 +701,53 @@ class AppRepository(private val database: AppDatabase) {
                         bakeryId = bakeryId
                     )
                     invoiceDao.updateInvoice(updated)
+                    documentLineItemDao.deleteLineItems("INVOICE", updated.id)
+                    documentLineItemDao.insertLineItems(updated.items.map { it.toDocumentRow("INVOICE", updated.id, updated.userId) })
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
                     bakeryId = bakeryId
                 )
                 val insertedId = invoiceDao.insertInvoice(newItem)
+                documentLineItemDao.insertLineItems(newItem.items.map { it.toDocumentRow("INVOICE", insertedId, newItem.userId) })
                 if (docId.isBlank()) remoteDocIds.add(insertedId.toString())
             }
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             invoiceDao.deleteInvoicesByIds(toDelete.map { it.id })
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
      * Reconciles Firestore quotes documents into Room.
      */
-    suspend fun syncQuotesWithFirestore(bakeryId: String, remoteItems: List<QuoteEntity>): Int {
+    suspend fun syncQuotesWithFirestore(bakeryId: String, remoteItems: List<QuoteEntity>): Int = database.withTransaction {
         val localItems = quoteDao.getQuotesByBakeryOnce(bakeryId)
         val localByFirestoreId = localItems.filter { it.firestoreId.isNotBlank() }.associateBy { it.firestoreId }
-        val localById = localItems.associateBy { it.id }
-        val localByNumber = localItems.associateBy { it.quoteNumber.trim() }
 
         val remoteDocIds = mutableSetOf<String>()
 
+        val pending = pendingCloudChanges.list(bakeryId).filter { it.collection == "quotes" }
+        val dirtyIds = pending.map { it.localId }.toSet()
+        val dirtyDocuments = pending.map { it.path.substringAfterLast('/') }.toSet()
         for (remote in remoteItems) {
+            if (remote.firestoreId in dirtyDocuments) continue
             val docId = remote.firestoreId.ifBlank { if (remote.id > 0) remote.id.toString() else "" }
             if (docId.isNotBlank()) remoteDocIds.add(docId)
 
             val existing = (if (docId.isNotBlank()) localByFirestoreId[docId] else null)
-                ?: (if (remote.id > 0) localById[remote.id] else null)
-                ?: (if (remote.quoteNumber.isNotBlank()) localByNumber[remote.quoteNumber.trim()] else null)
 
+            if (existing?.id in dirtyIds) continue
             if (existing != null) {
                 if (docId.isNotBlank()) remoteDocIds.add(existing.firestoreId.ifBlank { existing.id.toString() })
                 if (remote.updatedAt >= existing.updatedAt) {
@@ -630,27 +758,31 @@ class AppRepository(private val database: AppDatabase) {
                         bakeryId = bakeryId
                     )
                     quoteDao.updateQuote(updated)
+                    documentLineItemDao.deleteLineItems(updated.docType.uppercase(), updated.id)
+                    documentLineItemDao.insertLineItems(updated.items.map { it.toDocumentRow(updated.docType.uppercase(), updated.id, updated.userId) })
                 }
             } else {
-                val newLocalId = if (remote.id > 0 && !localById.containsKey(remote.id)) remote.id else 0L
+                val newLocalId = 0L
                 val newItem = remote.copy(
                     id = newLocalId,
                     firestoreId = docId,
                     bakeryId = bakeryId
                 )
                 val insertedId = quoteDao.insertQuote(newItem)
+                documentLineItemDao.insertLineItems(newItem.items.map { it.toDocumentRow(newItem.docType.uppercase(), insertedId, newItem.userId) })
                 if (docId.isBlank()) remoteDocIds.add(insertedId.toString())
             }
         }
 
         val toDelete = localItems.filter { localItem ->
+            if (localItem.id in dirtyIds) return@filter false
             localItem.firestoreId.isNotBlank() && !remoteDocIds.contains(localItem.firestoreId)
         }
         if (toDelete.isNotEmpty()) {
             quoteDao.deleteQuotesByIds(toDelete.map { it.id })
         }
 
-        return remoteItems.size
+        remoteItems.size
     }
 
     /**
@@ -882,13 +1014,31 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun getInvoiceByFirestoreId(firestoreId: String): InvoiceEntity? = invoiceDao.getInvoiceByFirestoreId(firestoreId)
     suspend fun getInvoiceByIdOnce(id: Long): InvoiceEntity? = invoiceDao.getInvoiceByIdOnce(id)
 
-    suspend fun insertInvoice(invoice: InvoiceEntity): Long = invoiceDao.insertInvoice(invoice)
+    suspend fun insertInvoice(invoice: InvoiceEntity): Long = database.withTransaction {
+        val old = if (invoice.id > 0) invoiceDao.getInvoiceByIdOnce(invoice.id) else null
+        val bId = workspace(invoice.userId, invoice.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == invoice.userId && userAccountDao.getUserByIdOnce(invoice.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = invoice.copy(bakeryId = bId, firestoreId = invoice.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } })
+        val id = invoiceDao.insertInvoice(record)
+        documentLineItemDao.deleteLineItems("INVOICE", id)
+        documentLineItemDao.insertLineItems(record.items.map { it.toDocumentRow("INVOICE", id, record.userId) })
+        queue(bId, "invoices", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
+    }
 
-    suspend fun updateInvoice(invoice: InvoiceEntity) = invoiceDao.updateInvoice(invoice)
+    suspend fun updateInvoice(invoice: InvoiceEntity) { insertInvoice(invoice) }
 
-    suspend fun updateInvoiceStatus(id: Long, status: String) = invoiceDao.updateInvoiceStatus(id, status)
+    suspend fun updateInvoiceStatus(id: Long, status: String) = database.withTransaction {
+        val old = invoiceDao.getInvoiceByIdOnce(id) ?: return@withTransaction
+        updateInvoice(old.copy(status = status, updatedAt = System.currentTimeMillis()))
+    }
 
-    suspend fun deleteInvoice(id: Long) = invoiceDao.deleteInvoice(id)
+    suspend fun deleteInvoice(id: Long) = database.withTransaction {
+        val old = invoiceDao.getInvoiceByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "invoices", id, old.firestoreId, old.updatedAt, deleted = true)
+        invoiceDao.deleteInvoice(id)
+        documentLineItemDao.deleteLineItems("INVOICE", id)
+    }
 
     // Quotes
     val allQuotes: Flow<List<QuoteEntity>> = quoteDao.getAllQuotes()
@@ -898,13 +1048,33 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun getQuoteByFirestoreId(firestoreId: String): QuoteEntity? = quoteDao.getQuoteByFirestoreId(firestoreId)
     suspend fun getQuoteByIdOnce(id: Long): QuoteEntity? = quoteDao.getQuoteByIdOnce(id)
 
-    suspend fun insertQuote(quote: QuoteEntity): Long = quoteDao.insertQuote(quote)
+    suspend fun insertQuote(quote: QuoteEntity): Long = database.withTransaction {
+        val old = if (quote.id > 0) quoteDao.getQuoteByIdOnce(quote.id) else null
+        val bId = workspace(quote.userId, quote.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == quote.userId && userAccountDao.getUserByIdOnce(quote.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = quote.copy(bakeryId = bId, firestoreId = quote.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } })
+        val id = quoteDao.insertQuote(record)
+        documentLineItemDao.deleteLineItems("QUOTE", id)
+        documentLineItemDao.deleteLineItems("ESTIMATE", id)
+        documentLineItemDao.insertLineItems(record.items.map { it.toDocumentRow(record.docType.uppercase(), id, record.userId) })
+        queue(bId, "quotes", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
+    }
 
-    suspend fun updateQuote(quote: QuoteEntity) = quoteDao.updateQuote(quote)
+    suspend fun updateQuote(quote: QuoteEntity) { insertQuote(quote) }
 
-    suspend fun updateQuoteStatus(id: Long, status: String) = quoteDao.updateQuoteStatus(id, status)
+    suspend fun updateQuoteStatus(id: Long, status: String) = database.withTransaction {
+        val old = quoteDao.getQuoteByIdOnce(id) ?: return@withTransaction
+        updateQuote(old.copy(status = status, updatedAt = System.currentTimeMillis()))
+    }
 
-    suspend fun deleteQuote(id: Long) = quoteDao.deleteQuote(id)
+    suspend fun deleteQuote(id: Long) = database.withTransaction {
+        val old = quoteDao.getQuoteByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "quotes", id, old.firestoreId, old.updatedAt, deleted = true)
+        quoteDao.deleteQuote(id)
+        documentLineItemDao.deleteLineItems("QUOTE", id)
+        documentLineItemDao.deleteLineItems("ESTIMATE", id)
+    }
 
     // Customers
     fun getCustomersByUser(userId: Long): Flow<List<CustomerEntity>> = customerDao.getCustomersByUser(userId)
@@ -912,9 +1082,21 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun getCustomersByBakeryOnce(bakeryId: String): List<CustomerEntity> = customerDao.getCustomersByBakeryOnce(bakeryId)
     suspend fun getCustomerByFirestoreId(firestoreId: String): CustomerEntity? = customerDao.getCustomerByFirestoreId(firestoreId)
     fun getCustomerCountByUser(userId: Long): Flow<Int> = customerDao.getCustomerCountByUser(userId)
-    suspend fun insertCustomer(customer: CustomerEntity): Long = customerDao.insertCustomer(customer)
-    suspend fun updateCustomer(customer: CustomerEntity) = customerDao.updateCustomer(customer)
-    suspend fun deleteCustomer(id: Long) = customerDao.deleteCustomer(id)
+    suspend fun insertCustomer(customer: CustomerEntity): Long = database.withTransaction {
+        val old = if (customer.id > 0) customerDao.getCustomerByIdOnce(customer.id) else null
+        val bId = workspace(customer.userId, customer.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == customer.userId && userAccountDao.getUserByIdOnce(customer.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = customer.copy(bakeryId = bId, firestoreId = customer.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } })
+        val id = customerDao.insertCustomer(record)
+        queue(bId, "customers", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
+    }
+    suspend fun updateCustomer(customer: CustomerEntity) { insertCustomer(customer) }
+    suspend fun deleteCustomer(id: Long) = database.withTransaction {
+        val old = customerDao.getCustomerByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "customers", id, old.firestoreId, old.updatedAt, deleted = true)
+        customerDao.deleteCustomer(id)
+    }
 
     // Orders
     val allOrders: Flow<List<OrderEntity>> = orderDao.getOrdersByBakery("")
@@ -980,14 +1162,21 @@ class AppRepository(private val database: AppDatabase) {
     fun searchProducts(userId: Long, query: String): Flow<List<ProductServiceEntity>> =
         productServiceDao.searchProducts(userId, query)
 
-    suspend fun insertProduct(product: ProductServiceEntity): Long =
-        productServiceDao.insertProduct(product)
+    suspend fun insertProduct(product: ProductServiceEntity): Long = database.withTransaction {
+        val old = if (product.id > 0) productServiceDao.getProductByIdOnce(product.id) else null
+        val bId = workspace(product.userId, product.bakeryId)
+        require(old == null || old.bakeryId == bId || old.bakeryId.isBlank() && old.userId == product.userId && userAccountDao.getUserByIdOnce(product.userId)?.bakeryId == bId) { "Cannot replace another bakery's record." }
+        val record = product.copy(bakeryId = bId, firestoreId = product.firestoreId.ifBlank { old?.firestoreId.orEmpty().ifBlank { if (old != null) old.id.toString() else UUID.randomUUID().toString() } })
+        val id = productServiceDao.insertProduct(record)
+        queue(bId, "products", id, record.firestoreId, old?.takeIf { it.firestoreId.isNotBlank() }?.updatedAt)
+        id
+    }
 
-    suspend fun updateProduct(product: ProductServiceEntity) =
-        productServiceDao.updateProduct(product)
+    suspend fun updateProduct(product: ProductServiceEntity) { insertProduct(product) }
 
-    suspend fun deleteProduct(id: Long) {
-        productPriceHistoryDao.deleteHistoryForProduct(id)
+    suspend fun deleteProduct(id: Long) = database.withTransaction {
+        val old = productServiceDao.getProductByIdOnce(id) ?: return@withTransaction
+        if (old.firestoreId.isNotBlank()) queue(old.bakeryId, "products", id, old.firestoreId, old.updatedAt, deleted = true)
         productServiceDao.deleteProduct(id)
     }
 

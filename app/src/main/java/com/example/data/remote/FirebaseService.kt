@@ -2,6 +2,10 @@ package com.example.data.remote
 
 import android.util.Log
 import com.example.BatchBossApplication
+import com.example.data.local.PendingCloudChange
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import com.example.data.local.CustomerEntity
 import com.example.data.local.InventoryItemEntity
 import com.example.data.local.InvoiceEntity
@@ -89,13 +93,14 @@ data class CloudUserWorkspace(
  */
 suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T =
     suspendCancellableCoroutine { continuation ->
-        addOnSuccessListener { result ->
+        val executor = java.util.concurrent.Executor { it.run() }
+        addOnSuccessListener(executor) { result ->
             if (continuation.isActive) continuation.resume(result)
         }
-        addOnFailureListener { exception ->
+        addOnFailureListener(executor) { exception ->
             if (continuation.isActive) continuation.resumeWithException(exception)
         }
-        addOnCanceledListener {
+        addOnCanceledListener(executor) {
             continuation.cancel()
         }
     }
@@ -1207,33 +1212,23 @@ object FirebaseService {
         val invoiceNumber = doc.getString("invoiceNumber") ?: ("INV-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: (doc.get("clientName")?.toString()) ?: "Customer"
         val id = doc.getLong("id") ?: stableDocumentId(doc.id)
-        val clientPhone = doc.getString("clientPhone") ?: ""
-        val orderDescription = doc.getString("orderDescription") ?: ""
+        val clientPhone = doc.getString("clientPhone") ?: doc.getString("phone") ?: ""
+        val orderDescription = doc.getString("orderDescription") ?: doc.getString("summary") ?: ""
         val issueDate = doc.getString("issueDate") ?: "Today"
         val dueDate = doc.getString("dueDate") ?: ""
-        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", 0.0))
-        val status = doc.getString("status") ?: "Pending"
+        val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", extractNumber(doc, "total", 0.0)))
+        val status = BusinessDocumentCodec.androidStatus(doc.getString("status") ?: "Pending")
         val subtotal = extractNumber(doc, "subtotal", 0.0)
         val discountAmount = extractNumber(doc, "discount", extractNumber(doc, "discountAmount", 0.0))
-        val taxRatePercent = extractNumber(doc, "taxRate", extractNumber(doc, "taxRatePercent", 15.0))
-        val taxAmount = extractNumber(doc, "taxAmount", 0.0)
+        val taxAmount = extractNumber(doc, "taxAmount", extractNumber(doc, "vat", 0.0))
+        val taxRatePercent = extractNumber(doc, "taxRatePercent", extractNumber(doc, "taxRate", if (subtotal > discountAmount) taxAmount / (subtotal - discountAmount) * 100.0 else 0.0))
         val totalCost = extractNumber(doc, "totalCost", 0.0)
         val packagingTotal = extractNumber(doc, "packagingTotal", 0.0)
 
-        val lineItemsRaw = doc.get("lineItems")
-        val lineItemsJson = when (lineItemsRaw) {
-            is String -> lineItemsRaw
-            is List<*> -> {
-                val array = org.json.JSONArray()
-                for (item in lineItemsRaw) {
-                    if (item is Map<*, *>) array.put(org.json.JSONObject(item))
-                }
-                array.toString()
-            }
-            else -> doc.getString("lineItemsJson") ?: ""
-        }
+        val lineItemsRaw = doc.get("items") ?: doc.get("lineItems") ?: doc.get("lineItemsJson")
+        val lineItemsJson = BusinessDocumentCodec.lines(lineItemsRaw)
 
-        val packagingItemsRaw = doc.get("packagingItems")
+        val packagingItemsRaw = doc.get("packagingItems") ?: (doc.get("items") as? List<*>)?.filter { (it as? Map<*, *>)?.get("kind") == "packaging" }
         val packagingItemsJson = when (packagingItemsRaw) {
             is String -> packagingItemsRaw
             is List<*> -> {
@@ -1280,32 +1275,22 @@ object FirebaseService {
         val quoteNumber = doc.getString("quoteNumber") ?: ("QUO-" + doc.id.takeLast(4))
         val clientName = doc.getString("clientName") ?: "Customer"
         val id = doc.getLong("id") ?: stableDocumentId(doc.id)
-        val clientPhone = doc.getString("clientPhone") ?: ""
+        val clientPhone = doc.getString("clientPhone") ?: doc.getString("phone") ?: ""
         val eventType = doc.getString("eventType") ?: "Celebration"
         val eventDate = doc.getString("eventDate") ?: ""
-        val recipeOrItemName = doc.getString("recipeOrItemName") ?: ""
+        val recipeOrItemName = doc.getString("recipeOrItemName") ?: doc.getString("description") ?: ""
         val estimatedCost = extractNumber(doc, "estimatedCost", 0.0)
         val profitMarginPercent = extractNumber(doc, "profitMarginPercent", 40.0)
-        val quotedPrice = extractNumber(doc, "quotedPrice", 0.0)
-        val status = doc.getString("status") ?: "Sent"
-        val docType = doc.getString("docType") ?: "Quote"
+        val quotedPrice = extractNumber(doc, "quotedPrice", extractNumber(doc, "total", 0.0))
+        val status = BusinessDocumentCodec.androidStatus(doc.getString("status") ?: "Sent")
+        val docType = doc.getString("docType") ?: if (doc.getString("type") == "estimate") "Estimate" else "Quote"
         val subtotal = extractNumber(doc, "subtotal", 0.0)
-        val discountAmount = extractNumber(doc, "discountAmount", 0.0)
-        val taxRatePercent = extractNumber(doc, "taxRatePercent", 15.0)
-        val taxAmount = extractNumber(doc, "taxAmount", 0.0)
+        val discountAmount = extractNumber(doc, "discountAmount", extractNumber(doc, "discount", 0.0))
+        val taxAmount = extractNumber(doc, "taxAmount", extractNumber(doc, "vat", 0.0))
+        val taxRatePercent = extractNumber(doc, "taxRatePercent", extractNumber(doc, "taxRate", if (subtotal > discountAmount) taxAmount / (subtotal - discountAmount) * 100.0 else 0.0))
         val totalCost = extractNumber(doc, "totalCost", 0.0)
-        val lineItemsRaw = doc.get("lineItems")
-        val lineItemsJson = when (lineItemsRaw) {
-            is String -> lineItemsRaw
-            is List<*> -> {
-                val array = org.json.JSONArray()
-                for (item in lineItemsRaw) {
-                    if (item is Map<*, *>) array.put(org.json.JSONObject(item))
-                }
-                array.toString()
-            }
-            else -> doc.getString("lineItemsJson") ?: ""
-        }
+        val lineItemsRaw = doc.get("items") ?: doc.get("lineItems") ?: doc.get("lineItemsJson")
+        val lineItemsJson = BusinessDocumentCodec.lines(lineItemsRaw)
         val createdAt = (doc.get("createdAt") as? Number)?.toLong() ?: System.currentTimeMillis()
         val updatedAt = extractUpdatedAt(doc)
 
@@ -1403,9 +1388,74 @@ object FirebaseService {
         )
     }
 
+    private val pendingSyncMutex = Mutex()
+
+    internal suspend fun writeBusinessDocument(ref: com.google.firebase.firestore.DocumentReference,
+        data: Map<String, Any?>, pending: PendingCloudChange?) {
+        if (pending == null) { ref.set(data, SetOptions.merge()).awaitTask(); return }
+        ref.firestore.runTransaction { transaction ->
+            val remote = transaction.get(ref)
+            val remoteRevision = remote.getString("_clientMutationId").orEmpty()
+            if (remoteRevision != pending.revision) {
+                val ownEarlierWrite = remoteRevision.isNotBlank() && pending.ancestors.split(',').contains(remoteRevision)
+                val expected = pending.expectedUpdatedAt
+                check(!remote.exists() && (expected == null || pending.deleted) || ownEarlierWrite ||
+                    remote.exists() && expected != null && extractUpdatedAt(remote) == expected) {
+                    "This record changed on another device. Your local changes are retained; resolve the conflict before syncing."
+                }
+                if (pending.deleted) transaction.delete(ref)
+                else transaction.set(ref, data + ("_clientMutationId" to pending.revision), SetOptions.merge())
+            }
+        }.awaitTask()
+    }
+
+    suspend fun flushPendingChanges(bakeryId: String, repository: com.example.data.repository.AppRepository): Result<Unit> = pendingSyncMutex.withLock {
+        try {
+            val uid = currentUser?.uid ?: error("Sign in before syncing. Your changes remain on this device.")
+            require(bakeryId.isNotBlank() && bakeryId == currentBakeryId) { "No matching bakery workspace is active." }
+            val db = firestore ?: error("Cloud sync is unavailable.")
+            val failures = mutableListOf<String>()
+            for (change in repository.pendingCloudChanges.list(bakeryId)) {
+                check(currentUser?.uid == uid && currentBakeryId == bakeryId) { "Account changed during sync." }
+                try {
+                check(!repository.parentIsPending(change)) { "The recipe must sync before its ingredients. Your changes are retained." }
+                if (change.deleted) {
+                    val ref = db.document("bakeries/$bakeryId/${change.path}")
+                    writeBusinessDocument(ref, emptyMap(), change)
+                } else when (change.collection) {
+                    "customers" -> saveCustomerToCloud(bakeryId, requireNotNull(repository.customerDao.getCustomerByIdOnce(change.localId)), change).getOrThrow()
+                    "products" -> saveProductToCloud(bakeryId, requireNotNull(repository.productServiceDao.getProductByIdOnce(change.localId)), change).getOrThrow()
+                    "invoices" -> saveInvoiceToCloud(bakeryId, requireNotNull(repository.invoiceDao.getInvoiceByIdOnce(change.localId)), change).getOrThrow()
+                    "quotes" -> saveQuoteToCloud(bakeryId, requireNotNull(repository.quoteDao.getQuoteByIdOnce(change.localId)), change).getOrThrow()
+                    "inventory" -> saveInventoryToCloud(bakeryId, requireNotNull(repository.inventoryDao.getInventoryByIdOnce(change.localId)), change).getOrThrow()
+                    "recipes" -> saveRecipeToCloud(bakeryId, requireNotNull(repository.recipeDao.getRecipeByIdOnce(change.localId)), change).getOrThrow()
+                    "ingredients" -> {
+                        val item = requireNotNull(repository.ingredientDao.getIngredientByIdOnce(change.localId))
+                        saveRecipeIngredientToCloud(bakeryId, item.recipeFirestoreId, item, change).getOrThrow()
+                    }
+                    else -> error("Unsupported pending collection")
+                }
+                val confirmed = db.document("bakeries/$bakeryId/${change.path}").get(com.google.firebase.firestore.Source.SERVER).awaitTask()
+                check(if (change.deleted) !confirmed.exists() else confirmed.getString("_clientMutationId") == change.revision) {
+                    "The record changed during confirmation. Your changes remain queued."
+                }
+                repository.acknowledgeCloudChange(change, if (confirmed.exists()) extractUpdatedAt(confirmed) else 0L)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    failures.add(error.localizedMessage ?: "Upload failed")
+                    if (error is com.google.firebase.firestore.FirebaseFirestoreException &&
+                        error.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE) break
+                }
+            }
+            check(failures.isEmpty()) { "${failures.size} change(s) remain pending: ${failures.first()}" }
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { Result.failure(error) }
+    }
+
     // Cloud CRUD Operations
 
-    suspend fun saveInventoryToCloud(bakeryId: String, item: InventoryItemEntity): Result<Unit> {
+    suspend fun saveInventoryToCloud(bakeryId: String, item: InventoryItemEntity, pending: PendingCloudChange? = null): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1429,7 +1479,7 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save inventory item to cloud", e)
@@ -1449,7 +1499,7 @@ object FirebaseService {
         }
     }
 
-    suspend fun saveRecipeToCloud(bakeryId: String, item: RecipeEntity): Result<String> {
+    suspend fun saveRecipeToCloud(bakeryId: String, item: RecipeEntity, pending: PendingCloudChange? = null): Result<String> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1486,7 +1536,7 @@ object FirebaseService {
                 data.remove("photoDataUrl")
                 data.remove("photoUri")
             }
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(docId)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save recipe to cloud", e)
@@ -1521,7 +1571,7 @@ object FirebaseService {
     suspend fun saveRecipeIngredientToCloud(
         bakeryId: String,
         recipeFirestoreId: String,
-        ingredient: RecipeIngredientEntity
+        ingredient: RecipeIngredientEntity, pending: PendingCloudChange? = null
     ): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
@@ -1543,7 +1593,7 @@ object FirebaseService {
                 "createdAt" to ingredient.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save recipe ingredient to cloud", e)
@@ -1569,7 +1619,7 @@ object FirebaseService {
         }
     }
 
-    suspend fun saveCustomerToCloud(bakeryId: String, item: CustomerEntity): Result<Unit> {
+    suspend fun saveCustomerToCloud(bakeryId: String, item: CustomerEntity, pending: PendingCloudChange? = null): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1588,7 +1638,7 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save customer to cloud", e)
@@ -1608,7 +1658,7 @@ object FirebaseService {
         }
     }
 
-    suspend fun saveProductToCloud(bakeryId: String, item: ProductServiceEntity): Result<Unit> {
+    suspend fun saveProductToCloud(bakeryId: String, item: ProductServiceEntity, pending: PendingCloudChange? = null): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1631,7 +1681,7 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save product to cloud", e)
@@ -1651,7 +1701,7 @@ object FirebaseService {
         }
     }
 
-    suspend fun saveInvoiceToCloud(bakeryId: String, item: InvoiceEntity): Result<Unit> {
+    suspend fun saveInvoiceToCloud(bakeryId: String, item: InvoiceEntity, pending: PendingCloudChange? = null): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1667,8 +1717,13 @@ object FirebaseService {
                 "issueDate" to item.issueDate,
                 "dueDate" to item.dueDate,
                 "amount" to item.amount,
+                "total" to item.amount,
+                "phone" to item.clientPhone,
+                "summary" to item.orderDescription,
+                "items" to BusinessDocumentCodec.webInvoiceLines(item.lineItemsJson, item.packagingItemsJson),
+                "vat" to item.taxAmount,
                 "totalDue" to item.amount,
-                "status" to item.status,
+                "status" to item.status.lowercase(),
                 "subtotal" to item.subtotal,
                 "discount" to item.discountAmount,
                 "taxRate" to item.taxRatePercent,
@@ -1680,7 +1735,7 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save invoice to cloud", e)
@@ -1700,7 +1755,7 @@ object FirebaseService {
         }
     }
 
-    suspend fun saveQuoteToCloud(bakeryId: String, item: QuoteEntity): Result<Unit> {
+    suspend fun saveQuoteToCloud(bakeryId: String, item: QuoteEntity, pending: PendingCloudChange? = null): Result<Unit> {
         val db = firestore ?: return Result.failure(IllegalStateException("Firebase is not configured."))
         val targetBakeryId = bakeryId.ifBlank { currentBakeryId.ifBlank { getEffectiveUserId() } }
         val docId = if (item.firestoreId.isNotBlank()) item.firestoreId else (if (item.id > 0) item.id.toString() else System.currentTimeMillis().toString())
@@ -1718,7 +1773,14 @@ object FirebaseService {
                 "estimatedCost" to item.estimatedCost,
                 "profitMarginPercent" to item.profitMarginPercent,
                 "quotedPrice" to item.quotedPrice,
-                "status" to item.status,
+                "total" to item.quotedPrice,
+                "phone" to item.clientPhone,
+                "description" to item.recipeOrItemName,
+                "type" to item.docType.lowercase(),
+                "items" to BusinessDocumentCodec.webLines(item.lineItemsJson),
+                "vat" to item.taxAmount,
+                "discount" to item.discountAmount,
+                "status" to item.status.lowercase(),
                 "docType" to item.docType,
                 "subtotal" to item.subtotal,
                 "discountAmount" to item.discountAmount,
@@ -1729,7 +1791,7 @@ object FirebaseService {
                 "createdAt" to item.createdAt,
                 "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
             )
-            docRef.set(data, SetOptions.merge()).awaitTask()
+            writeBusinessDocument(docRef, data, pending)
             Result.success(Unit)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to save quote to cloud", e)
@@ -1999,7 +2061,7 @@ object FirebaseService {
                                         }
                                         syncScope.launch {
                                             try {
-                                                val localRecipe = repo.getRecipeByFirestoreId(recipeFirestoreId)
+                                                val localRecipe = repo.getRecipeByFirestoreId(recipeFirestoreId, targetBakeryId)
                                                 val localRecipeId = localRecipe?.id ?: 0L
                                                 repo.syncRecipeIngredientsWithFirestore(
                                                     targetBakeryId,
@@ -2220,6 +2282,7 @@ object FirebaseService {
         currentBakeryId = targetBakeryId
 
         return try {
+            flushPendingChanges(targetBakeryId, repository).getOrThrow()
             val bakeryDoc = db.collection("bakeries").document(targetBakeryId)
 
             // 1. Download & Repair Inventory
@@ -2315,7 +2378,7 @@ object FirebaseService {
                 val recipeFirestoreId = recipeDoc.id
                 val ingSnapshot = recipeDoc.reference.collection("ingredients").get().awaitTask()
                 val ingItems = ingSnapshot.documents.mapNotNull { documentToRecipeIngredient(it, targetBakeryId, recipeFirestoreId) }
-                val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId)
+                val localRecipe = repository.getRecipeByFirestoreId(recipeFirestoreId, targetBakeryId)
                 val localRecipeId = localRecipe?.id ?: 0L
                 repository.syncRecipeIngredientsWithFirestore(targetBakeryId, recipeFirestoreId, localRecipeId, ingItems)
             }
@@ -2357,13 +2420,8 @@ object FirebaseService {
 
             // Upload legitimate pending local changes (items with no firestoreId)
             val pendingPkg = repository.getPackagingByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p)
+            for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p).getOrThrow()
 
-            val pendingInv = repository.getInventoryByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i)
-
-            val pendingRecipes = repository.getRecipesByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r)
 
             // Recalculate affected recipes and inventory totals
             repository.recalculateRecipeIngredientCosts(targetBakeryId)
@@ -2371,6 +2429,7 @@ object FirebaseService {
             // Ensure listeners are active
             startAllRealtimeListeners(targetBakeryId, repository)
 
+            check(repository.pendingCloudChanges.list(targetBakeryId).isEmpty()) { "Some local changes remain pending. Tap Sync again to retry." }
             val finalMsg = if (offendingDocIds.isNotEmpty()) {
                 "Sync complete (normalised ${offendingDocIds.size} inventory items)"
             } else {

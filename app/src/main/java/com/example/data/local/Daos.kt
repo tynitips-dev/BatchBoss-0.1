@@ -33,6 +33,9 @@ interface UserAccountDao {
 
 @Dao
 interface CustomerDao {
+    @Query("SELECT * FROM customers WHERE id = :id LIMIT 1")
+    suspend fun getCustomerByIdOnce(id: Long): CustomerEntity?
+
     @Query("SELECT * FROM customers WHERE userId = :userId ORDER BY name ASC")
     fun getCustomersByUser(userId: Long): Flow<List<CustomerEntity>>
 
@@ -122,6 +125,9 @@ interface RecipeDao {
 
     @Query("SELECT * FROM recipes WHERE firestoreId = :firestoreId LIMIT 1")
     suspend fun getRecipeByFirestoreId(firestoreId: String): RecipeEntity?
+
+    @Query("SELECT * FROM recipes WHERE firestoreId = :firestoreId AND bakeryId = :bakeryId LIMIT 1")
+    suspend fun getRecipeByCloudIdentity(firestoreId: String, bakeryId: String): RecipeEntity?
 
     @Query("SELECT * FROM recipes ORDER BY id ASC")
     fun getAllRecipes(): Flow<List<RecipeEntity>>
