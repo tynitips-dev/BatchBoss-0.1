@@ -655,7 +655,7 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "© 2026 Tada Innovations (Pty) Ltd. All rights reserved. BatchBoss™",
+                    text = "© 2026 Neon Water Digital Solutions. All rights reserved. BatchBoss™",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     color = MediumText,
