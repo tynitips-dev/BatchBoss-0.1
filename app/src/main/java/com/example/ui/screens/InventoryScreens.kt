@@ -465,14 +465,23 @@ fun InventoryListScreen(
                 }
             }
 
-            // Items List
-            items(displayedItems, key = { it.id }) { item ->
-                StockItemCard(
-                    item = item,
-                    onEditClick = { editingItem = item },
-                    onToggleAlert = { onToggleAlert(item.id) },
-                    onDeleteClick = { itemToDelete = item }
-                )
+            // Compact two-column ingredient cards, matching the web app layout.
+            items(displayedItems.chunked(2)) { pair ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    pair.forEach { item ->
+                        CompactIngredientCard(
+                            item = item,
+                            modifier = Modifier.weight(1f),
+                            onEditClick = { editingItem = item },
+                            onToggleAlert = { onToggleAlert(item.id) },
+                            onDeleteClick = { itemToDelete = item }
+                        )
+                    }
+                    if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }
@@ -607,6 +616,72 @@ fun InventoryListScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun CompactIngredientCard(
+    item: InventoryItemEntity,
+    modifier: Modifier = Modifier,
+    onEditClick: () -> Unit,
+    onToggleAlert: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.testTag("card_stock_item_${item.id}"),
+        shape = RoundedCornerShape(12.dp),
+        color = CardBackground,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (item.isLowStock) BatchPinkLight else BorderLight)
+    ) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                item.name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = DarkText,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                "Stock: ${item.currentStock} ${item.unit}",
+                fontSize = 11.sp,
+                color = if (item.isLowStock) WarmAmber else MediumText,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                "R${String.format("%.2f", item.unitPrice)} / ${item.unit}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BatchPink,
+                maxLines = 1
+            )
+            Text(
+                if (item.isLowStock) "Low stock" else "In stock",
+                fontSize = 10.sp,
+                color = if (item.isLowStock) WarmAmber else MintGreen
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp).testTag("btn_edit_price_${item.id}")) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "Edit ingredient", tint = BatchPink, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onToggleAlert, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (item.alertEnabled) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationsOff,
+                        contentDescription = "Toggle stock alert",
+                        tint = if (item.alertEnabled) BatchPink else LightText,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp).testTag("btn_delete_stock_item_${item.id}")) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "Delete ingredient", tint = Color(0xFFD32F2F), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
     }
 }
 
