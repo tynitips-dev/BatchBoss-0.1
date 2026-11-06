@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All partner records, lead emails, referrals and commissions are private.
+    // No app client can access Firestore directly, even if signed in.
+    // Firebase Admin SDK functions enforce verified auth, approval and role ownership.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

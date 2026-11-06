@@ -167,6 +167,41 @@ test("actual baker handlers and isolated project delivery: signup -> checkout ->
  await assert.rejects(off.registerBakerTest(request));
 });
 
+test("payout authorization, concurrent locking, reversals and private rules use the integrated handlers",async()=>{
+ const central=load(path.join(partnerRoot,"partners/functions/index.js"),partnerDb,getAuth(partnerApp),{...process.env,GCLOUD_PROJECT:partnerProject});
+ const uid="payout-test-agent", reviewer="payout-test-reviewer";
+ const request=(user,data={},admin=false)=>({auth:{uid:user,token:{email_verified:true,...(admin?{batchbossPartnerAdmin:true}:{})}},data});
+ const profile=partnerDb.doc("partnerProfiles/"+uid);
+ const commission=partnerDb.doc("partnerCommissions/payout-commission-001");
+ await profile.set({status:"approved"});
+ await commission.set({partnerUid:uid,status:"approved",paymentVerification:"provider-verified",payable:true,commissionCents:3750});
+ await assert.rejects(central.adminListPayoutRequests(request(uid)),e=>e.code==="permission-denied");
+ const concurrent=await Promise.allSettled([central.requestPartnerPayout(request(uid)),central.requestPartnerPayout(request(uid))]);
+ assert.equal(concurrent.filter(r=>r.status==="fulfilled").length,1);
+ const payout=concurrent.find(r=>r.status==="fulfilled").value;
+ assert.equal(payout.amountCents,3750);
+ const data={requestId:payout.id,decision:"approved",note:"Fixture finance review"};
+ await assert.rejects(central.adminReviewPayoutRequest(request(uid,data,true)),e=>e.code==="permission-denied");
+ await central.adminReviewPayoutRequest(request(reviewer,data,true));
+ const complete={requestId:payout.id,transferReference:"fixture-record-only",note:"Fixture external record"};
+ await assert.rejects(central.adminRecordCompletedPayout(request(uid,complete,true)),e=>e.code==="permission-denied");
+ await profile.update({status:"suspended"});
+ await assert.rejects(central.adminRecordCompletedPayout(request(reviewer,complete,true)),e=>e.code==="failed-precondition");
+ await profile.update({status:"approved"});
+ await commission.update({status:"reversed"});
+ await assert.rejects(central.adminRecordCompletedPayout(request(reviewer,complete,true)),e=>e.code==="failed-precondition");
+ assert.equal((await partnerDb.doc("partnerPayoutRequests/"+payout.id).get()).get("status"),"approved");
+ const token=await idToken(partnerApp,uid);
+ for(const document of ["partnerPayoutRequests/"+payout.id,"partnerCommissions/payout-commission-001","partnerProfiles/"+uid]) {
+  assert.equal((await clientRead(partnerProject,document,token)).status,403);
+  const write=await nativeFetch("http://"+process.env.FIRESTORE_EMULATOR_HOST+"/v1/projects/"+partnerProject+"/databases/(default)/documents/"+document,{
+   method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({fields:{status:{stringValue:"paid"}}})});
+  assert.equal(write.status,403);
+ }
+ // Remove the synthetic eligible ledger so the source scenarios can prove zero payable credits.
+ await commission.delete();
+});
+
 test("supplier actual handlers deliver to the same isolated partner authority without exposing account IDs",{
  skip:!supplierRoot
 },async()=>{

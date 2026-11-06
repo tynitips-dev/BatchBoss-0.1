@@ -40,11 +40,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Check out the exact companion partner implementation
-        uses: actions/checkout@v4
-        with:
-          ref: 85ccbf281aec56e6bd10b6f34c5a755a49c78cf1
-          path: partner-pilot
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -57,10 +52,10 @@ jobs:
       - run: npm run build
         working-directory: functions
       - run: npm install --ignore-scripts --no-audit --no-fund
-        working-directory: partner-pilot/partners/functions
+        working-directory: partners/functions
       - name: Exercise actual handlers with local Auth, Firestore and mocked Paystack
         env:
-          BATCHBOSS_PARTNER_SOURCE: ${{ github.workspace }}/partner-pilot
+          BATCHBOSS_PARTNER_SOURCE: ${{ github.workspace }}
         run: >-
           npx --yes firebase-tools@15.34.1 emulators:exec
           --only auth,firestore --project demo-referral-tests
