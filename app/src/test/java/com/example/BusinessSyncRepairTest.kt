@@ -21,11 +21,12 @@ class BusinessSyncRepairTest {
     private lateinit var repo: AppRepository
     private val bakery = "bakery-fixture"
 
-    @Before fun setup() = runBlocking {
+    @Before fun setup(): Unit = runBlocking {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
         repo = AppRepository(db)
         repo.insertUserAccount(UserAccountEntity(id = 71, bakeryId = bakery, email = "fixture@example.test"))
+        Unit
     }
     @After fun close() { db.close() }
 
@@ -104,7 +105,28 @@ class BusinessSyncRepairTest {
         assertEquals(2.0, line.quantity, 0.0)
         assertEquals(250.0, line.lineTotal, 0.0)
         assertNull(line.productId)
+        assertEquals("website-uuid", line.productFirestoreId)
         assertEquals("Cake", BusinessDocumentCodec.webLines(json).single()["name"])
+        assertEquals("website-uuid", BusinessDocumentCodec.webLines(json).single()["productId"])
+    }
+
+    @Test fun `website document status matches Android balance filters`() {
+        assertEquals("Paid", BusinessDocumentCodec.androidStatus("paid"))
+        assertEquals("Pending", BusinessDocumentCodec.androidStatus("pending"))
+        assertEquals("Accepted", BusinessDocumentCodec.androidStatus("accepted"))
+        assertEquals("Draft", BusinessDocumentCodec.androidStatus("draft"))
+    }
+
+    @Test fun `packaging exports as its own website line and is not reimported as a product`() {
+        val products = LineItemJsonUtil.toJson(listOf(LineItem(itemName = "Cake", quantity = 1.0, unitPrice = 100.0, lineTotal = 100.0)))
+        val packaging = InvoicePackagingJsonUtil.toJson(listOf(InvoicePackagingItem(name = "Box", quantity = 1.0, unitPrice = 10.0)))
+        val web = BusinessDocumentCodec.webInvoiceLines(products, packaging)
+        assertEquals(2, web.size)
+        assertEquals("packaging", web.last()["kind"])
+        val productLines = LineItemJsonUtil.fromJson(BusinessDocumentCodec.lines(web))
+        assertEquals(1, productLines.size)
+        assertEquals("Cake", productLines.single().itemName)
+        assertNull(productLines.single().productFirestoreId)
     }
 
     @Test fun `invoice header JSON normalized rows and queue commit together`() = runBlocking {
@@ -131,6 +153,10 @@ class BusinessSyncRepairTest {
         val ingredient = repo.ingredientDao.getIngredientByIdOnce(id)!!
         assertEquals(bakery, ingredient.bakeryId)
         assertEquals(parent.firestoreId, ingredient.recipeFirestoreId)
+        val ingredientChange = repo.pendingCloudChanges.list(bakery).first { it.collection == "ingredients" }
+        assertTrue(repo.parentIsPending(ingredientChange))
+        repo.acknowledgeCloudChange(repo.pendingCloudChanges.list(bakery).first { it.collection == "recipes" }, 123)
+        assertFalse(repo.parentIsPending(ingredientChange))
         repo.syncRecipeIngredientsWithFirestore(bakery, parent.firestoreId, recipeId, emptyList())
         assertNotNull(repo.ingredientDao.getIngredientByIdOnce(id))
     }

@@ -49,9 +49,11 @@ class BusinessSyncFirestoreEmulatorTest {
                     val invoice = FirebaseService.documentToInvoice(confirmed, "fixture")!!
                     val quote = FirebaseService.documentToQuote(confirmed, "fixture")!!
                     assertEquals(250.0, invoice.amount, 0.0)
+                    assertEquals(0.0, invoice.taxRatePercent, 0.0)
                     assertEquals("Cake", invoice.items.single().itemName)
                     assertEquals("synthetic-contact", invoice.clientPhone)
                     assertEquals(250.0, quote.quotedPrice, 0.0)
+                    assertEquals(0.0, quote.taxRatePercent, 0.0)
                     assertEquals(2.0, quote.items.single().quantity, 0.0)
                     runBlocking { FirebaseService.writeBusinessDocument(ref, data, first) }
                     assertEquals(confirmed.getTimestamp("updatedAt"), Tasks.await(ref.get(Source.SERVER), 30, TimeUnit.SECONDS).getTimestamp("updatedAt"))

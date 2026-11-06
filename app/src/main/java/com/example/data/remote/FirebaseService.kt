@@ -1217,18 +1217,18 @@ object FirebaseService {
         val issueDate = doc.getString("issueDate") ?: "Today"
         val dueDate = doc.getString("dueDate") ?: ""
         val amount = extractNumber(doc, "totalDue", extractNumber(doc, "amount", extractNumber(doc, "total", 0.0)))
-        val status = doc.getString("status") ?: "Pending"
+        val status = BusinessDocumentCodec.androidStatus(doc.getString("status") ?: "Pending")
         val subtotal = extractNumber(doc, "subtotal", 0.0)
         val discountAmount = extractNumber(doc, "discount", extractNumber(doc, "discountAmount", 0.0))
-        val taxRatePercent = extractNumber(doc, "taxRate", extractNumber(doc, "taxRatePercent", 15.0))
         val taxAmount = extractNumber(doc, "taxAmount", extractNumber(doc, "vat", 0.0))
+        val taxRatePercent = extractNumber(doc, "taxRatePercent", extractNumber(doc, "taxRate", if (subtotal > discountAmount) taxAmount / (subtotal - discountAmount) * 100.0 else 0.0))
         val totalCost = extractNumber(doc, "totalCost", 0.0)
         val packagingTotal = extractNumber(doc, "packagingTotal", 0.0)
 
         val lineItemsRaw = doc.get("items") ?: doc.get("lineItems") ?: doc.get("lineItemsJson")
         val lineItemsJson = BusinessDocumentCodec.lines(lineItemsRaw)
 
-        val packagingItemsRaw = doc.get("packagingItems")
+        val packagingItemsRaw = doc.get("packagingItems") ?: (doc.get("items") as? List<*>)?.filter { (it as? Map<*, *>)?.get("kind") == "packaging" }
         val packagingItemsJson = when (packagingItemsRaw) {
             is String -> packagingItemsRaw
             is List<*> -> {
@@ -1282,12 +1282,12 @@ object FirebaseService {
         val estimatedCost = extractNumber(doc, "estimatedCost", 0.0)
         val profitMarginPercent = extractNumber(doc, "profitMarginPercent", 40.0)
         val quotedPrice = extractNumber(doc, "quotedPrice", extractNumber(doc, "total", 0.0))
-        val status = doc.getString("status") ?: "Sent"
+        val status = BusinessDocumentCodec.androidStatus(doc.getString("status") ?: "Sent")
         val docType = doc.getString("docType") ?: if (doc.getString("type") == "estimate") "Estimate" else "Quote"
         val subtotal = extractNumber(doc, "subtotal", 0.0)
         val discountAmount = extractNumber(doc, "discountAmount", extractNumber(doc, "discount", 0.0))
-        val taxRatePercent = extractNumber(doc, "taxRatePercent", 15.0)
         val taxAmount = extractNumber(doc, "taxAmount", extractNumber(doc, "vat", 0.0))
+        val taxRatePercent = extractNumber(doc, "taxRatePercent", extractNumber(doc, "taxRate", if (subtotal > discountAmount) taxAmount / (subtotal - discountAmount) * 100.0 else 0.0))
         val totalCost = extractNumber(doc, "totalCost", 0.0)
         val lineItemsRaw = doc.get("items") ?: doc.get("lineItems") ?: doc.get("lineItemsJson")
         val lineItemsJson = BusinessDocumentCodec.lines(lineItemsRaw)
@@ -1417,6 +1417,8 @@ object FirebaseService {
             val failures = mutableListOf<String>()
             for (change in repository.pendingCloudChanges.list(bakeryId)) {
                 check(currentUser?.uid == uid && currentBakeryId == bakeryId) { "Account changed during sync." }
+                try {
+                check(!repository.parentIsPending(change)) { "The recipe must sync before its ingredients. Your changes are retained." }
                 if (change.deleted) {
                     val ref = db.document("bakeries/$bakeryId/${change.path}")
                     writeBusinessDocument(ref, emptyMap(), change)
@@ -1438,7 +1440,14 @@ object FirebaseService {
                     "The record changed during confirmation. Your changes remain queued."
                 }
                 repository.acknowledgeCloudChange(change, if (confirmed.exists()) extractUpdatedAt(confirmed) else 0L)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    failures.add(error.localizedMessage ?: "Upload failed")
+                    if (error is com.google.firebase.firestore.FirebaseFirestoreException &&
+                        error.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE) break
+                }
             }
+            check(failures.isEmpty()) { "${failures.size} change(s) remain pending: ${failures.first()}" }
             Result.success(Unit)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { Result.failure(error) }
@@ -1711,7 +1720,7 @@ object FirebaseService {
                 "total" to item.amount,
                 "phone" to item.clientPhone,
                 "summary" to item.orderDescription,
-                "items" to BusinessDocumentCodec.webLines(item.lineItemsJson),
+                "items" to BusinessDocumentCodec.webInvoiceLines(item.lineItemsJson, item.packagingItemsJson),
                 "vat" to item.taxAmount,
                 "totalDue" to item.amount,
                 "status" to item.status.lowercase(),
@@ -2413,11 +2422,6 @@ object FirebaseService {
             val pendingPkg = repository.getPackagingByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
             for (p in pendingPkg) savePackagingToCloud(targetBakeryId, p).getOrThrow()
 
-            val pendingInv = repository.getInventoryByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (i in pendingInv) saveInventoryToCloud(targetBakeryId, i).getOrThrow()
-
-            val pendingRecipes = repository.getRecipesByBakeryOnce(targetBakeryId).filter { it.firestoreId.isBlank() }
-            for (r in pendingRecipes) saveRecipeToCloud(targetBakeryId, r).getOrThrow()
 
             // Recalculate affected recipes and inventory totals
             repository.recalculateRecipeIngredientCosts(targetBakeryId)

@@ -60,6 +60,9 @@ class AppRepository(private val database: AppDatabase) {
         }
     }
 
+    suspend fun parentIsPending(change: PendingCloudChange): Boolean = change.collection == "ingredients" &&
+        pendingCloudChanges.get(change.bakeryId, change.path.substringBefore("/ingredients/")) != null
+
     private suspend fun workspace(userId: Long, supplied: String): String {
         val accountBakery = userAccountDao.getUserByIdOnce(userId)?.bakeryId.orEmpty()
         require(supplied.isBlank() || accountBakery.isBlank() || supplied == accountBakery) { "The record belongs to another bakery." }
