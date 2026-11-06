@@ -1,5 +1,7 @@
 name: Baker supplier compatibility
 on:
+  push:
+    branches: ['integration/sales-partners-all-20261106']
   pull_request:
     paths:
       - 'app/**'
@@ -15,12 +17,12 @@ jobs:
   web-contract:
     runs-on: ubuntu-latest
     env:
-      VITE_FIREBASE_API_KEY: 'AIzaSyBp_aulVgP52CVzgEWteFhTkmtfFKD5v6M'
-      VITE_FIREBASE_AUTH_DOMAIN: 'batch-boss-android.firebaseapp.com'
-      VITE_FIREBASE_PROJECT_ID: 'batch-boss-android'
-      VITE_FIREBASE_STORAGE_BUCKET: 'batch-boss-android.firebasestorage.app'
-      VITE_FIREBASE_MESSAGING_SENDER_ID: '802048202389'
-      VITE_FIREBASE_APP_ID: '1:802048202389:web:e0eceeb49caf0824b7ad9c'
+      VITE_FIREBASE_API_KEY: 'emulator-fake-key'
+      VITE_FIREBASE_AUTH_DOMAIN: 'demo-batchboss-baker.firebaseapp.com'
+      VITE_FIREBASE_PROJECT_ID: 'demo-batchboss-baker'
+      VITE_FIREBASE_STORAGE_BUCKET: 'demo-batchboss-baker.appspot.com'
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '123'
+      VITE_FIREBASE_APP_ID: '1:123:web:test'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

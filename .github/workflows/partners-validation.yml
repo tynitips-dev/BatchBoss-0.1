@@ -1,16 +1,20 @@
 name: Sales Partners validation
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "partners/**"
       - ".github/workflows/partners-validation.yml"
   push:
     branches:
+      - "integration/sales-partners-all-20261106"
       - "feature/sales-partners-portal-20261029"
       - "feature/partners-request-payout-20261105"
     paths:
       - "partners/**"
       - ".github/workflows/partners-validation.yml"
+permissions:
+  contents: read
 jobs:
   policy-and-syntax:
     runs-on: ubuntu-latest
