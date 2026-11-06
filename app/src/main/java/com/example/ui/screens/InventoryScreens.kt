@@ -98,6 +98,25 @@ fun InventoryListScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
+                            onClick = { showPurchaseDialog = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(BatchPinkLight)
+                                .testTag("btn_view_purchase_list")
+                        ) {
+                            BadgedBox(badge = {
+                                if (lowStockItems.isNotEmpty()) {
+                                    Badge { Text("${lowStockItems.size}") }
+                                }
+                            }) {
+                                Icon(Icons.Outlined.ShoppingCart, contentDescription = "Purchase List", tint = BatchPink, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
                             onClick = onScanBarcode,
                             modifier = Modifier
                                 .size(36.dp)
@@ -124,50 +143,6 @@ fun InventoryListScreen(
                 }
             }
         },
-        bottomBar = {
-            if (lowStockItems.isNotEmpty()) {
-                Surface(
-                    color = Color.White,
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showPurchaseDialog = true },
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.5.dp, BatchPink),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .testTag("btn_view_purchase_list")
-                        ) {
-                            Icon(Icons.Outlined.ShoppingCart, contentDescription = null, tint = BatchPink, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Purchase List (${lowStockItems.size})", color = BatchPink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        Button(
-                            onClick = { showAddItemDialog = true },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BatchPink),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .testTag("btn_new_ingredient")
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("New Stock Item", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
