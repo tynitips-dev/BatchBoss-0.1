@@ -11,6 +11,48 @@ const event=(kind,n=1,source="supplier")=>({
  ...(["payment","reversal"].includes(kind)?{reference:"payment-123456",planId:source==="supplier"?"supplierGrowth":"bakerMonthly",amountCents:39900,currency:"ZAR",...(kind==="reversal"?{reason:"refund"}:{})}:{})
 });
 function setup(){const db=memoryDb();db.seed("partnerCodes/"+code,{partnerUid:"agent"});db.seed("partnerProfiles/agent",{status:"approved"});return db;}
+test("hosted staging receiver is project-bound, source-scoped and test-only", async () => {
+ const { PROJECT, stagingEndpoints } = require("./stagingReferral");
+ const env = { GCLOUD_PROJECT: PROJECT, BATCHBOSS_HOSTED_REFERRAL_TEST: "true" };
+ const register = (options, handler) => ({ options, handler });
+ const db = setup();
+ for (const patch of [
+  { GCLOUD_PROJECT: "batch-boss-android" },
+  { GOOGLE_CLOUD_PROJECT: "batchboss-suppliers" },
+  { BATCHBOSS_HOSTED_REFERRAL_TEST: undefined },
+  { FUNCTIONS_EMULATOR: "true" },
+  { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8087" }
+ ]) assert.deepEqual(stagingEndpoints(register, () => db, { ...env, ...patch }), {});
+ const endpoints = stagingEndpoints(register, () => db, env);
+ for (const [source, endpoint] of [
+  ["baker", endpoints.stageBakerReferralEvent],
+  ["supplier", endpoints.stageSupplierReferralEvent]
+ ]) {
+  assert.deepEqual(endpoint.options.invoker, [
+   "referral-sender@batchboss-" + source + "-stage-261106.iam.gserviceaccount.com"
+  ]);
+  assert.equal(endpoint.options.cors, false);
+  const call = async body => {
+   const res = {
+    status(code) { this.code = code; return this; },
+    sendStatus(code) { this.code = code; },
+    json(result) { this.result = result; }
+   };
+   await endpoint.handler({ method: "POST", is: () => true, body,
+    rawBody: Buffer.from(JSON.stringify(body)) }, res);
+   return res;
+  };
+  const registration = event("registration", source === "baker" ? 10 : 20, source);
+  const payment = event("payment", source === "baker" ? 11 : 21, source);
+  assert.equal((await call({ ...registration, source: source === "baker" ? "supplier" : "baker" })).code, 403);
+  assert.equal((await call({ ...registration, mode: "live" })).code, 400);
+  assert.equal((await call(registration)).code, 200);
+  assert.equal((await call(payment)).result.payable, false);
+  assert.equal((await call(payment)).result.duplicate, true);
+ }
+ assert.equal(db.entries().filter(([key]) => key.startsWith("partnerTestFirstSales/")).length, 2);
+ assert.equal(db.entries().some(([key]) => key.startsWith("partnerCommissions/")), false);
+});
 test("both segments bind registration to first test payment; never payable",async()=>{
  for(const source of ["supplier","baker"]){
   const db=setup();await ingestTestEvent(db,event("registration",1,source));

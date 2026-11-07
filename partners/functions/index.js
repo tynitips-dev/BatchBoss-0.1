@@ -428,7 +428,15 @@ exports.adminRecordCompletedPayout = onCall(async request => {
   return { status: "paid", message: "External payout recorded; no money was sent by the portal." };
 });
 
-// Test bridge is deliberately absent from every deployed Functions export.
+// Hosted test endpoints exist only in the dedicated staging project.
+const { PROJECT: REFERRAL_STAGE_PROJECT, stagingEndpoints } = require("./stagingReferral");
+Object.assign(exports, stagingEndpoints(
+  require("firebase-functions/v2/https").onRequest,
+  () => getFirestore(getApps().find(app => app.name === "referral-staging") ||
+    initializeApp({ projectId: REFERRAL_STAGE_PROJECT }, "referral-staging"))
+));
+
+// The Firebase Auth callable remains exclusive to the local emulator.
 if (process.env.FUNCTIONS_EMULATOR === "true" && /^demo-[a-z0-9-]+$/.test(process.env.GCLOUD_PROJECT || "") && process.env.BATCHBOSS_PARTNER_TEST_ENABLED === "true") {
   exports.ingestPartnerTestEvent = onCall(async request => {
     // An integration identity must NEVER be a portal administrator. Scope both

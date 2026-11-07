@@ -39,4 +39,42 @@ Keep the prior static bundle and its checksum outside the live root. On failed p
 
 ## Remaining gates
 
+### Hosted test receiver candidate
+
+Two HTTPS receivers are ready for code review. They are exported only with
+`BATCHBOSS_HOSTED_REFERRAL_TEST=true` in `batchboss-partner-stage-261106`.
+These are proposed IDs. Confirm ownership and availability before provisioning.
+An ID change requires updating the code and rerunning the isolation tests.
+
+| Component | Proposed project | Service account |
+| --- | --- | --- |
+| Receiver | `batchboss-partner-stage-261106` | `referral-receiver` |
+| Baker synthetic sender | `batchboss-baker-stage-261106` | `referral-sender` |
+| Supplier synthetic sender | `batchboss-supplier-stage-261106` | `referral-sender` |
+
+After explicit approval, provision only these isolated projects. Enable
+Firestore with the partner deny-all client rules. Give the receiver Firestore
+data access in its own project. Give each sender Cloud Run Invoker on its
+own endpoint only. Use short-lived service account impersonation and
+audience-bound ID tokens for smoke tests. Keep public and all-authenticated
+grants absent and verify the effective IAM policy. Apply the flag during
+Functions discovery and in the staging runtime. Scope the approved deploy to
+`stageBakerReferralEvent` and `stageSupplierReferralEvent` only.
+
+Before sending any fixture, verify unauthenticated access and cross-source
+invocation are denied by Cloud Run. Seed one synthetic approved partner and
+referral code in staging. For each sender submit registration, payment,
+identical retry and full reversal fixtures using the version-1 test contract.
+Confirm one nonpayable credit per source, reversal to zero effective credit,
+and empty payable commission and payout collections. Exercise wrong source,
+live mode, changed replay and partial reversal denial. Verify no test records
+contain customer identifiers. On failure, revoke invoker access on both
+services, disable their runtime flag and retain synthetic records for diagnosis.
+
+This receiver candidate supports synthetic hosted acceptance. The source apps
+still emit referral events only in their local emulator pilots. Hosted signup
+and real provider test checkout need separately reviewed source adapters.
+The local route tests verify configured identities and handler behavior.
+Actual Cloud Run IAM and hosted Firestore behavior require the approved smoke test.
+
 Production source approval at signup, provider-signed settlement/reversal events, workload-identity receiver, durable retry/dead-letter/reconciliation, attribution/refund policy and hosted/device acceptance remain open. See `SAFE_STAGING_RELEASE.md`. Xneelo account inspection can be planned; deployment/DNS is not the next engineering step.
