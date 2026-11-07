@@ -6,7 +6,7 @@ const { ingestTestEvent } = require("./referralTestIngest");
 const PROJECT = "batchboss-partner-stage-261106";
 const CALLERS = {
   baker: "referral-sender@batchboss-baker-stage-261106.iam.gserviceaccount.com",
-  supplier: "referral-sender@batchboss-supplier-stage-261106.iam.gserviceaccount.com"
+  supplier: "referral-sender@batchboss-supply-stage-261106.iam.gserviceaccount.com"
 };
 
 function stagingEnabled(env) {

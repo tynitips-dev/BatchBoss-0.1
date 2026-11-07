@@ -50,7 +50,7 @@ An ID change requires updating the code and rerunning the isolation tests.
 | --- | --- | --- |
 | Receiver | `batchboss-partner-stage-261106` | `referral-receiver` |
 | Baker synthetic sender | `batchboss-baker-stage-261106` | `referral-sender` |
-| Supplier synthetic sender | `batchboss-supplier-stage-261106` | `referral-sender` |
+| Supplier synthetic sender | `batchboss-supply-stage-261106` | `referral-sender` |
 
 After explicit approval, provision only these isolated projects. Enable
 Firestore with the partner deny-all client rules. Give the receiver Firestore

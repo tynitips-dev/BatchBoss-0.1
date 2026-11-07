@@ -29,7 +29,7 @@ test("hosted staging receiver is project-bound, source-scoped and test-only", as
   ["supplier", endpoints.stageSupplierReferralEvent]
  ]) {
   assert.deepEqual(endpoint.options.invoker, [
-   "referral-sender@batchboss-" + source + "-stage-261106.iam.gserviceaccount.com"
+   "referral-sender@batchboss-" + (source === "supplier" ? "supply" : source) + "-stage-261106.iam.gserviceaccount.com"
   ]);
   assert.equal(endpoint.options.cors, false);
   const call = async body => {
