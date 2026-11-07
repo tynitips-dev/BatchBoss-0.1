@@ -1,0 +1,80 @@
+name: Deploy BatchBoss websites to Xneelo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'website/**'
+      - '.github/workflows/deploy-batchboss-websites.yml'
+
+concurrency:
+  group: batchboss-websites-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web app dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build baker web app
+        working-directory: web
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: G-DKPHWXB2CD
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: batchboss-baker-web-dist
+          path: web/dist/
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: batchboss-baker-web-dist
+          path: web-dist
+      - name: Configure SFTP deployment
+        env:
+          XNEELO_SFTP_PASSWORD: ${{ secrets.XNEELO_SFTP_PASSWORD }}
+        run: |
+          if [ -z "$XNEELO_SFTP_PASSWORD" ]; then echo "::error::Missing XNEELO_SFTP_PASSWORD"; exit 1; fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+      - name: Deploy BatchBoss marketing site and baker portal
+        env:
+          XNEELO_SFTP_PASSWORD: ${{ secrets.XNEELO_SFTP_PASSWORD }}
+          XNEELO_SFTP_HOST: ${{ vars.XNEELO_SFTP_HOST }}
+          XNEELO_SFTP_USER: ${{ vars.XNEELO_SFTP_USER }}
+          XNEELO_MARKETING_PATH: ${{ vars.XNEELO_MARKETING_PATH }}
+          XNEELO_APP_PATH: ${{ vars.XNEELO_APP_PATH }}
+        run: |
+          for name in XNEELO_SFTP_HOST XNEELO_SFTP_USER XNEELO_MARKETING_PATH XNEELO_APP_PATH; do
+            if [ -z "${!name}" ]; then echo "::error::Missing $name"; exit 1; fi
+          done
+          # Do not mirror/delete remote files: existing marketing assets and other portals must remain.
+          # Require strict server host-key validation; GitHub secret must contain a verified known_hosts entry.
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\\n' "${{ secrets.XNEELO_SFTP_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if [ ! -s ~/.ssh/known_hosts ]; then echo "::error::Missing verified XNEELO_SFTP_KNOWN_HOSTS"; exit 1; fi
+          export LFTP_PASSWORD="$XNEELO_SFTP_PASSWORD"
+          lftp -u "$XNEELO_SFTP_USER","$LFTP_PASSWORD" "sftp://$XNEELO_SFTP_HOST:22" -e "set sftp:auto-confirm no; mirror --reverse --verbose --exclude-glob README.md website/ $XNEELO_MARKETING_PATH; mirror --reverse --verbose web-dist/ $XNEELO_APP_PATH; bye"
