@@ -224,6 +224,7 @@ export const deleteAccountAndData = onCall(
         await db.recursiveDelete(db.collection("bakeries").doc(bakeryId));
         await storage.bucket().deleteFiles({ prefix: `bakeries/${bakeryId}/` });
       }
+      await db.recursiveDelete(db.collection("listingWorkspaces").doc(uid));
       await userRef.delete();
       await auth.deleteUser(uid);
 
@@ -528,3 +529,5 @@ export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
 export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
+
+export { listListingDrafts, saveListingDraft } from "./listingDrafts";
