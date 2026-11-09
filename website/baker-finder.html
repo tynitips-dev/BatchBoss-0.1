@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102940">
+  <title>Baker Finder by BatchBoss | Find local South African bakers</title>
+  <meta name="description" content="Find home bakers and bakeries near you. Explore cakes, cupcakes, cookies and more with Baker Finder by BatchBoss.">
+  <link rel="stylesheet" href="community.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="cupcake" viewBox="0 0 120 120"><ellipse cx="60" cy="106" rx="40" ry="8" fill="#ffffff" opacity=".45"/><path d="M33 62h54l-7 40H40z" fill="#f6c6d7" stroke="#a43569" stroke-width="3"/><path d="M42 65l7 33m12-33v33m12-33-5 33" fill="none" stroke="#e284a9" stroke-width="3"/><path d="M30 64c-9-8-2-20 9-19-5-9 4-18 14-15-1-15 19-23 26-9 11-5 20 5 15 16 15 0 18 20 4 27z" fill="#fff3f9" stroke="#ba3e78" stroke-width="3"/><path d="M40 46c23 0 39-5 38-20M54 53c14-2 26-6 30-15" stroke="#f4adca" stroke-width="6" fill="none" stroke-linecap="round"/><circle cx="72" cy="19" r="5" fill="#ed2166"/></symbol>
+  <symbol id="cake" viewBox="0 0 120 120"><ellipse cx="60" cy="105" rx="48" ry="8" fill="#fff" opacity=".4"/><path d="M19 42h82v55H19z" fill="#6a3544"/><path d="M19 56h82v11H19z" fill="#f8b3cb"/><path d="M19 42c0-15 82-15 82 0v15c-5 0-7-11-12-11-6 0-4 12-12 12-7 0-7-11-13-11-8 0-6 13-14 13-7 0-8-13-13-13-6 0-8 12-18 9z" fill="#d48a95"/><ellipse cx="60" cy="42" rx="41" ry="11" fill="#ee9ab0"/><path d="M33 36c-11-11 4-24 14-12 6-15 22-16 27 0 10-12 26 2 13 13" stroke="#f9d7e1" stroke-width="10" stroke-linecap="round" fill="none"/><circle cx="38" cy="27" r="6" fill="#fc4477"/><circle cx="59" cy="18" r="7" fill="#e82b66"/><circle cx="82" cy="27" r="6" fill="#fc4477"/></symbol>
+  <symbol id="bread" viewBox="0 0 120 120"><ellipse cx="60" cy="103" rx="47" ry="8" fill="#fff" opacity=".45"/><path d="M17 67C19 33 41 26 60 31c19-5 41 2 43 36v24H17z" fill="#d99c66" stroke="#a6653e" stroke-width="3"/><path d="M25 68c10-14 25-21 35-21s25 7 35 21" stroke="#f6d69e" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M42 41c0 16-8 20-8 29m28-29c0 17-8 20-8 29m28-24c0 15-9 19-9 26" stroke="#f9e3b9" stroke-width="4" fill="none"/></symbol>
+</svg>
+<header class="topbar"><div class="container topbar-inner"><a class="brand" href="index.html" aria-label="BatchBoss home">Batch<span>Boss</span><small class="brand-tagline">SMART COSTING FOR EVERY BAKER</small></a><nav class="nav-actions" aria-label="Main navigation"><a href="index.html">Home</a><a href="baker-finder.html" class="filled" aria-current="page">Find a Baker</a><a href="marketplace.html">Marketplace</a><a class="outline" href="https://app.batchboss.co.za/">BatchBoss Login ↗</a><a class="outline" href="https://suppliers.batchboss.co.za/">Supplier Portal ↗</a></nav></div></header>
+<main id="main">
+  <section class="hero" aria-label="Discover Baker Finder">
+    <div class="container hero-grid">
+      <div>
+        <span class="eyebrow">BAKER FINDER · BY BATCHBOSS</span>
+        <h1>Find local bakers <em>near you.</em></h1>
+        <p>From birthday cakes to weekend treats, discover home bakers and bakeries in your area.</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#discover">Find a Baker <span aria-hidden="true">→</span></a>
+          <a class="btn secondary" href="#list-your-bakery">List your bakery</a>
+        </div>
+        <p class="hero-hint">Browse without an account. Log in to BatchBoss for your bakery workspace.</p>
+      </div>
+      <div class="hero-art">
+        <img src="assets/hero.webp" alt="BatchBoss baking and bakery-business artwork" width="1672" height="941">
+        <div class="floating-note"><span>♥</span> Made for South African bakers</div>
+      </div>
+    </div>
+  </section>
+  <div class="container search-wrap" id="discover">
+    <form id="search-form" class="search-card" role="search">
+      <div class="form-field"><label for="keyword">What are you looking for?</label><input id="keyword" type="search" autocomplete="off" placeholder="Cakes, cupcakes, bakers or treats"></div>
+      <div class="form-field"><label for="area">Area</label><select id="area"><option value="">All areas</option><option>Randburg</option><option>Roodepoort</option><option>Sandton</option></select></div>
+      <button class="btn primary" type="submit">Search bakers →</button>
+    </form>
+  </div>
+  <section class="container section" aria-labelledby="featured-title">
+    <div class="section-heading">
+      <div><span class="eyebrow">DISCOVER LOCAL BAKING</span><h2 id="featured-title">Find your next <em>favourite baker.</em></h2><p class="subtext">Browse by speciality, search a name or pick an area. These example profiles show how the directory will work.</p></div>
+      <span class="preview-label">Directory preview</span>
+    </div>
+    <div class="category-row" role="group" aria-label="Filter by category">
+      <button type="button" class="chip" data-category="All" aria-pressed="true">All bakers</button>
+      <button type="button" class="chip" data-category="Cakes" aria-pressed="false">🎂 Cakes</button>
+      <button type="button" class="chip" data-category="Cupcakes" aria-pressed="false">🧁 Cupcakes</button>
+      <button type="button" class="chip" data-category="Cookies" aria-pressed="false">🍪 Cookies</button>
+      <button type="button" class="chip" data-category="Breads" aria-pressed="false">🍞 Breads</button>
+      <button type="button" class="chip" data-category="Treats" aria-pressed="false">🍬 Treats</button>
+      <button type="button" class="chip" data-category="Special Occasions" aria-pressed="false">🎁 Special occasions</button>
+    </div>
+    <div class="listing-grid" id="results" aria-live="polite"></div>
+    <p class="empty" id="empty-state" hidden>No matching example profiles. Try another speciality or area.</p>
+    <p style="font-size:13px;color:#788495;margin-top:16px">Sample baker names and illustrations are for design demonstration only. No live directory listings or reviews are shown yet.</p>
+  </section>
+  <section class="light-section section" id="how-it-works">
+    <div class="container">
+      <span class="eyebrow">SIMPLE FROM START TO FINISH</span>
+      <h2 class="intro-heading">Something sweet, <em>three steps away.</em></h2>
+      <div class="how-grid">
+        <article class="how-card"><div class="how-icon">1</div><h3>Find the right baker</h3><p>Search by location, name and speciality to narrow down your choices.</p></article>
+        <article class="how-card"><div class="how-icon">2</div><h3>Explore their bakery</h3><p>Check their profile, speciality, service area and, once live, their cake gallery.</p></article>
+        <article class="how-card"><div class="how-icon">3</div><h3>Send an enquiry</h3><p>Ask about your date, theme and budget. A connected enquiry inbox is planned for the BatchBoss portal.</p></article>
+      </div>
+    </div>
+  </section>
+  <section class="container section" id="list-your-bakery">
+    <div class="list-cta">
+      <div><span class="eyebrow" style="color:#ffc6dc">FOR HOME BAKERS & BAKERIES</span><h2>More eyes on your bakes.<br>More chances to be found.</h2><p>Give your bakery a home in Baker Finder with a profile, service area, specialties, gallery and customer enquiries when listings launch.</p></div>
+      <div class="price"><strong>R49 <span>/ month</span></strong><small>Proposed listing price · not yet billed</small><a class="btn primary" href="mailto:info@batchboss.co.za?subject=Baker%20Finder%20listing%20interest">Register interest ↗</a></div>
+    </div>
+  </section>
+</main>
+<footer class="foot"><div class="container"><span>© 2026 <strong>Batch<span style="color:#fc2f74">Boss</span></strong> · Find a Baker</span><span><a href="/">BatchBoss home</a> · <a href="marketplace.html">Marketplace</a> · <a href="https://batchboss.co.za/privacy.html">Privacy</a> · <a href="mailto:info@batchboss.co.za">Contact</a></span></div></footer>
+<dialog id="profile-dialog" aria-labelledby="profile-title">
+  <button class="close" type="button" data-close aria-label="Close profile">×</button>
+  <span class="preview-label">Example bakery profile</span>
+  <h2 id="profile-title" style="margin-top:12px"></h2>
+  <p id="profile-location" class="modal-meta"></p>
+  <div id="profile-tags" class="tag-list modal-tags"></div>
+  <p id="profile-description"></p>
+  <p class="notice">This is a sample profile. When Baker Finder goes live, bakeries will manage their own profiles and customer enquiries.</p>
+  <button class="btn primary" type="button" id="enquire-button">Preview an enquiry →</button>
+</dialog>
+<dialog id="enquiry-dialog" aria-labelledby="enquiry-title">
+  <button class="close" type="button" data-close aria-label="Close enquiry">×</button>
+  <h2 id="enquiry-title">Customer enquiry</h2>
+  <p class="modal-meta" id="enquiry-target"></p>
+  <p class="notice">Preview only: this form opens an email addressed to the BatchBoss team. It does not send to a baker or save anything in the customer portal.</p>
+  <form id="enquiry-form">
+    <div class="form-field"><label for="customer-name">Your name *</label><input id="customer-name" required maxlength="80" autocomplete="name"></div>
+    <div class="form-field"><label for="customer-email">Your email *</label><input id="customer-email" type="email" required maxlength="120" autocomplete="email"></div>
+    <div class="form-field"><label for="event-date">Date needed (optional)</label><input id="event-date" type="date"></div>
+    <div class="form-field"><label for="enquiry-message">Tell us what you need *</label><textarea id="enquiry-message" required maxlength="1800" placeholder="What would you like baked, and for how many people?"></textarea></div>
+    <div class="dialog-actions"><button type="button" class="btn secondary" data-close>Cancel</button><button type="submit" class="btn primary">Open email draft ↗</button></div>
+  </form>
+</dialog>
+<script>
+(function(){
+  "use strict";
+  var listings=[
+    {id:"sweet-crumb",name:"Sweet Crumb Studio",location:"Randburg",city:"Johannesburg",specialties:["Cakes","Cupcakes","Special Occasions"],art:"cake",style:"visual-one",about:"A sample home-bakery profile showing custom celebration cakes, cupcakes and special-event orders."},
+    {id:"cake-corner",name:"The Cake Corner",location:"Roodepoort",city:"Johannesburg",specialties:["Cupcakes","Cookies","Treats"],art:"cupcake",style:"visual-two",about:"A sample bakery profile for cupcakes, cookies and sweet treats made for sharing."},
+    {id:"home-oven",name:"Home Oven Bakes",location:"Sandton",city:"Johannesburg",specialties:["Breads","Cakes","Special Occasions"],art:"bread",style:"visual-three",about:"A sample bakery profile for freshly baked breads, special cakes and family occasions."}
+  ];
+  var category="All";var selected=null;
+  var results=document.getElementById("results");
+  var empty=document.getElementById("empty-state");
+  var profileDialog=document.getElementById("profile-dialog");
+  var enquiryDialog=document.getElementById("enquiry-dialog");
+  function node(tag,className,textValue){var el=document.createElement(tag);if(className)el.className=className;if(textValue!==undefined)el.textContent=textValue;return el}
+  function tags(container,values){container.replaceChildren();values.forEach(function(value){container.appendChild(node("span","tag",value))})}
+  function makeCard(item){
+    var card=node("article","baker-card");
+    var visual=node("div","baker-visual "+item.style);
+    var art=document.createElementNS("http://www.w3.org/2000/svg","svg");
+    art.setAttribute("class","dessert-art");art.setAttribute("aria-hidden","true");
+    var use=document.createElementNS("http://www.w3.org/2000/svg","use");
+    use.setAttribute("href","#"+item.art);art.appendChild(use);visual.appendChild(art);
+    visual.appendChild(node("span","preview-label","Example profile"));
+    var body=node("div","baker-body");
+    body.appendChild(node("h3","",item.name));
+    body.appendChild(node("p","baker-location","📍 "+item.location+", "+item.city));
+    var tagDiv=node("div","tag-list");tags(tagDiv,item.specialties);body.appendChild(tagDiv);
+    var button=node("button","btn secondary","View sample profile");
+    button.type="button";button.addEventListener("click",function(){openProfile(item)});
+    body.appendChild(button);card.appendChild(visual);card.appendChild(body);
+    return card;
+  }
+  function render(){
+    var term=document.getElementById("keyword").value.toLocaleLowerCase().trim();
+    var area=document.getElementById("area").value;
+    var filtered=listings.filter(function(item){
+      var searchable=[item.name,item.location,item.city].concat(item.specialties).join(" ").toLocaleLowerCase();
+      return (category==="All"||item.specialties.includes(category))&&(!area||item.location===area)&&(!term||searchable.includes(term));
+    });
+    results.replaceChildren();
+    filtered.forEach(function(item){results.appendChild(makeCard(item))});
+    empty.hidden=filtered.length>0;
+  }
+  function openProfile(item){
+    selected=item;
+    document.getElementById("profile-title").textContent=item.name;
+    document.getElementById("profile-location").textContent="📍 "+item.location+", "+item.city;
+    document.getElementById("profile-description").textContent=item.about;
+    tags(document.getElementById("profile-tags"),item.specialties);
+    profileDialog.showModal();
+  }
+  document.querySelectorAll("[data-category]").forEach(function(button){
+    button.addEventListener("click",function(){category=button.dataset.category;document.querySelectorAll("[data-category]").forEach(function(b){b.setAttribute("aria-pressed",String(b===button))});render()});
+  });
+  document.getElementById("search-form").addEventListener("submit",function(e){e.preventDefault();render();document.getElementById("featured-title").scrollIntoView({behavior:"smooth",block:"start"})});
+  document.getElementById("enquire-button").addEventListener("click",function(){profileDialog.close();document.getElementById("enquiry-target").textContent="Example baker: "+(selected?selected.name:"");enquiryDialog.showModal()});
+  document.getElementById("enquiry-form").addEventListener("submit",function(e){
+    e.preventDefault();
+    if(!this.reportValidity())return;
+    var name=document.getElementById("customer-name").value.trim();
+    var email=document.getElementById("customer-email").value.trim();
+    var date=document.getElementById("event-date").value;
+    var message=document.getElementById("enquiry-message").value.trim();
+    var body="Baker Finder preview enquiry (not sent to bakery)\n\nSample profile: "+(selected?selected.name:"")+"\nCustomer: "+name+"\nEmail: "+email+"\nDate needed: "+(date||"Not specified")+"\n\nRequest:\n"+message;
+    var url="mailto:info@batchboss.co.za?subject="+encodeURIComponent("Baker Finder preview enquiry")+"&body="+encodeURIComponent(body);
+    window.location.href=url;
+  });
+  document.querySelectorAll("[data-close]").forEach(function(button){button.addEventListener("click",function(){button.closest("dialog").close()})});
+  [profileDialog,enquiryDialog].forEach(function(dialog){dialog.addEventListener("click",function(e){if(e.target===dialog)dialog.close()})});
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marketplace | BatchBoss</title>
+<meta name="description" content="Explore pre-owned baking equipment and supplier stock in the BatchBoss Marketplace.">
+<link rel="stylesheet" href="community.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="container topbar-inner"><a class="brand" href="index.html" aria-label="BatchBoss home">Batch<span>Boss</span><small class="brand-tagline">SMART COSTING FOR EVERY BAKER</small></a><nav class="nav-actions" aria-label="Main navigation"><a href="index.html">Home</a><a href="baker-finder.html">Find a Baker</a><a href="marketplace.html" class="filled" aria-current="page">Marketplace</a><a class="outline" href="https://app.batchboss.co.za/">BatchBoss Login ↗</a><a class="outline" href="https://suppliers.batchboss.co.za/">Supplier Portal ↗</a></nav></div></header>
+<main id="main">
+<section class="hero"><div class="container hero-grid">
+<div><span class="eyebrow">BATCHBOSS MARKETPLACE</span><h1>Give good baking gear <em>a second batch.</em></h1>
+<p>Browse pre-owned equipment from other bakers and discover new stock from baking suppliers across South Africa.</p>
+<div class="hero-actions"><a class="btn primary" href="#browse">Browse listings ↓</a><a class="btn secondary" href="#sell">Sell on Marketplace</a></div>
+<p class="hero-hint">Preview with example items and prices.</p></div>
+<div class="market-art"><svg viewBox="0 0 400 230" role="img" aria-label="Stand mixer and baking boxes">
+<rect x="1" y="1" width="398" height="228" rx="26" fill="#254862"/>
+<circle cx="147" cy="117" r="83" fill="#ef82aa"/>
+<path d="M106 184h145v13H97v-6zM199 69h20q18 0 18 22v94h-21V104h-17z" fill="#f7b4cd"/>
+<rect x="100" y="64" width="126" height="33" rx="16" fill="#fff1f6"/>
+<path d="M146 97v29m-14 0q14 26 28 0" fill="none" stroke="#fff1f6" stroke-width="5" stroke-linecap="round"/>
+<path d="M95 137h104q-7 47-52 47t-52-47" fill="#fff1f6"/>
+<path d="M264 148h92v49h-92zM276 115h68v29h-68z" fill="#ed2166"/>
+<path d="M260 144h100v13H260zM272 111h76v12h-76z" fill="#ffb9d2"/>
+<path d="M305 157h10v40h-10zM305 123h10v21h-10z" fill="#fff1f6"/>
+</svg></div></div></section>
+<section id="browse" class="container section" aria-labelledby="browse-heading">
+<div class="section-heading"><div><span class="eyebrow">BROWSE THE MARKETPLACE</span><h2 id="browse-heading">Find your next <em>baking essential.</em></h2></div><span class="preview-label">Marketplace preview</span></div>
+<form id="market-filter" class="search-card" role="search">
+<div class="form-field"><label for="market-query">Search items or areas</label><input id="market-query" type="search" placeholder="Mixer, boxes or Johannesburg"></div>
+<div class="form-field"><label for="market-type">Listing type</label><select id="market-type"><option value="">All listings</option><option>Pre-owned</option><option>Supplier stock</option></select></div>
+<button class="btn primary" type="submit">Search listings</button></form>
+<p id="market-count" role="status">4 example listings</p>
+<div class="listing-grid">
+<article class="market-card" data-type="Pre-owned"><span class="preview-label">Pre-owned</span><h3>Stand mixer</h3><strong>R1 650</strong><p>Equipment · Johannesburg South</p><p>A 5 ℓ mixer with a bowl, whisk and dough hook.</p></article>
+<article class="market-card" data-type="Pre-owned"><span class="preview-label">Pre-owned</span><h3>Cake tin bundle</h3><strong>R380</strong><p>Bakeware · Randburg</p><p>Three round tins for layered celebration cakes.</p></article>
+<article class="market-card" data-type="Supplier stock"><span class="preview-label">Supplier stock</span><h3>Cupcake boxes</h3><strong>R125</strong><p>Packaging · Centurion</p><p>A sample pack of 25 boxes with inserts.</p></article>
+<article class="market-card" data-type="Supplier stock"><span class="preview-label">Supplier stock</span><h3>Dark chocolate callets</h3><strong>R285</strong><p>Ingredients · Cape Town</p><p>An example 1 kg bag for ganache and baking.</p></article>
+</div></section>
+<section class="light-section section" id="sell"><div class="container"><span class="eyebrow">FOR BAKERS AND SUPPLIERS</span><h2>Have something to <em>sell?</em></h2><p>Marketplace posting is planned for bakers and suppliers. Use your existing portal to access your BatchBoss account.</p><div class="market-links"><a class="btn primary" href="https://app.batchboss.co.za/">Open Baker Portal ↗</a><a class="btn secondary" href="https://suppliers.batchboss.co.za/">Open Supplier Portal ↗</a><a class="btn secondary" href="baker-finder.html">Find a Baker →</a></div></div></section>
+</main>
+<footer class="foot"><div class="container"><span>© 2026 BatchBoss · Marketplace</span><span><a href="index.html">BatchBoss home</a> · <a href="baker-finder.html">Find a Baker</a> · <a href="https://batchboss.co.za/privacy.html">Privacy</a></span></div></footer>
+<script>
+const form = document.querySelector('#market-filter');
+const query = document.querySelector('#market-query');
+const type = document.querySelector('#market-type');
+const count = document.querySelector('#market-count');
+const listings = [...document.querySelectorAll('.market-card')];
+function filterListings() {
+  const search = query.value.trim().toLocaleLowerCase('en-ZA');
+  let matches = 0;
+  for (const listing of listings) {
+    const matchesType = !type.value || listing.dataset.type === type.value;
+    const matchesSearch = listing.textContent.toLocaleLowerCase('en-ZA').includes(search);
+    listing.hidden = !(matchesType && matchesSearch);
+    if (!listing.hidden) matches++;
+  }
+  count.textContent = matches === 0 ? 'No example listings match your search.' : matches + (matches === 1 ? ' example listing' : ' example listings');
+}
+form.addEventListener('submit', event => { event.preventDefault(); filterListings(); });
+query.addEventListener('input', filterListings);
+type.addEventListener('change', filterListings);
+</script>
+</body></html>
