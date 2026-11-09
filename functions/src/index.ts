@@ -224,6 +224,11 @@ export const deleteAccountAndData = onCall(
         await db.recursiveDelete(db.collection("bakeries").doc(bakeryId));
         await storage.bucket().deleteFiles({ prefix: `bakeries/${bakeryId}/` });
       }
+      for (const kind of ["directoryListing", "marketplace"]) {
+        const entries = db.collection("listingCatalogs").doc(kind).collection("entries");
+        const matches = await entries.where("ownerUid", "==", uid).get();
+        await Promise.all(matches.docs.map(entry => entry.ref.delete()));
+      }
       await db.recursiveDelete(db.collection("listingWorkspaces").doc(uid));
       await userRef.delete();
       await auth.deleteUser(uid);
@@ -530,4 +535,4 @@ export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBa
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
 
-export { listListingDrafts, saveListingDraft, publishBakerListing } from "./listingDrafts";
+export { listListingDrafts, saveListingDraft, publishBakerListing, listPublishedBakerListings } from "./listingDrafts";

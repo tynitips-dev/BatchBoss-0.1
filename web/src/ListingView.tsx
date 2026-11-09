@@ -8,6 +8,7 @@ type Draft = { id: string; title: string; area: string; description: string; pri
 const functions = getFunctions(app, 'europe-west1')
 const listDrafts = httpsCallable<{ kind: Kind }, Draft[]>(functions, 'listListingDrafts')
 const saveDraft = httpsCallable<Draft & { kind: Kind }, { id: string }>(functions, 'saveListingDraft')
+const publishListing = httpsCallable<{ kind: Kind; id: string }, { id: string }>(functions, 'publishBakerListing')
 const empty = { title: '', area: '', description: '', price: '' }
 
 function DraftEditor({ kind }: { kind: Kind }) {
@@ -50,7 +51,13 @@ function DraftEditor({ kind }: { kind: Kind }) {
       const saved = { ...draft, id: result.data.id }
       setDrafts(previous => [...previous.filter(item => item.id !== saved.id), saved])
       edit(saved)
-      setNotice('Private draft saved.')
+      if ((event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'publish') {
+        setNotice('Draft saved. Checking publication eligibility…')
+        await publishListing({ kind, id: saved.id })
+        setNotice('Listing published.')
+      } else {
+        setNotice('Private draft saved.')
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save the draft.')
     } finally {
@@ -76,6 +83,7 @@ function DraftEditor({ kind }: { kind: Kind }) {
         <label>Description<textarea required maxLength={1000} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
         {marketplace && <label>Item price (R)<input type="number" required min="0.01" max="1000000" step="0.01" value={form.price} onChange={event => setForm({ ...form, price: event.target.value })} /></label>}
         <button className="primary-button" type="submit">{saving ? 'Saving…' : 'Save private draft'}</button>
+        <button className="outline-button" type="submit" value="publish">Save and publish</button>
       </fieldset>
     </form>
     {error && <p role="alert">{error}</p>}
@@ -103,7 +111,7 @@ export function ListingView({ tab, onViewPlans }: {
       ? 'Show customers what you bake, where you’re based and how they can enquire.'
       : 'List pre-owned baking equipment and supplies for other bakers to discover.'}</p>
     <p><strong>{isDirectory ? listingPrices.directory : listingPrices.marketplace}</strong></p>
-    <p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each per month.'} Public listing submissions open when the service launches.</p>
+    <p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each per month.'}</p>
     <div className="card-actions">
       <a className="outline-button" href={publicPreview + (isDirectory ? 'baker-finder.html' : 'marketplace.html')}>
         {isDirectory ? 'Preview Find a Baker' : 'Preview Marketplace'}

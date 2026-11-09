@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 
@@ -73,6 +74,8 @@ export const publishBakerListing = onCall(options, async request => {
   const entitlement = db.collection('listingEntitlements').doc(uid!)
   const workspace = drafts.parent!
   const publication = workspace.collection('publications').doc(id)
+  const publicId = createHash('sha256').update(JSON.stringify([uid, id])).digest('hex')
+  const catalog = db.collection('listingCatalogs').doc(kind).collection('entries').doc(publicId)
   const month = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit',
   }).format(new Date())
@@ -99,10 +102,42 @@ export const publishBakerListing = onCall(options, async request => {
       transaction.set(allowance, { used: used + 1 })
     }
 
-    transaction.set(publication, {
+    const fields = {
       kind, title: details.title, area: details.area, description: details.description,
       priceCents: details.priceCents, sellerType: 'baker', updatedAt: FieldValue.serverTimestamp(),
-    })
+    }
+    transaction.set(publication, fields)
+    transaction.set(catalog, { ...fields, ownerUid: uid })
+
   })
   return { id }
+})
+
+export const listPublishedBakerListings = onCall({
+  ...options, cors: ['https://batchboss.co.za', 'https://www.batchboss.co.za'],
+}, async request => {
+  const kind = listingKind(request.data?.kind)
+  const cursor = request.data?.cursor
+  if (cursor != null && (typeof cursor !== 'string' || !/^[0-9a-f]{64}$/.test(cursor))) {
+    throw new HttpsError('invalid-argument', 'Invalid page cursor.')
+  }
+  const db = getFirestore()
+  const page = db.collection('listingCatalogs').doc(kind).collection('entries').orderBy('__name__').limit(25)
+  const snapshots = await (cursor ? page.startAfter(cursor) : page).get()
+  const owners = [...new Set(snapshots.docs.map(doc => doc.data().ownerUid as string))]
+  if (!owners.length) return { listings: [], nextCursor: null }
+  const reads = await db.getAll(...owners.flatMap(uid => [
+    db.collection('users').doc(uid), db.collection('listingEntitlements').doc(uid),
+  ]))
+  const now = Date.now()
+  const eligible = new Set(owners.filter((_, index) => {
+    const access = reads[index * 2 + 1].data()
+    return reads[index * 2].exists && ((access?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
+      || (kind === 'directoryListing' && (access?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now))
+  }))
+  const listings = snapshots.docs.flatMap(doc => {
+    const { ownerUid, title, area, description, priceCents } = doc.data()
+    return eligible.has(ownerUid) ? [{ title, area, description, priceCents }] : []
+  })
+  return { listings, nextCursor: snapshots.size === 25 ? snapshots.docs.at(-1)!.id : null }
 })
