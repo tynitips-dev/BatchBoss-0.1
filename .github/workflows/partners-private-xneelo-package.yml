@@ -1,0 +1,61 @@
+name: Build private Partners Xneelo package
+
+on:
+  push:
+    branches:
+      - feature/private-partner-xneelo-admin-20261109
+  pull_request:
+    branches:
+      - integration/sales-partners-all-20261106
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  partner-private-package:
+    name: Validate and package private pilot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript
+        run: node --check partners/web/app.js
+      - name: Partner policy and security unit tests
+        run: |
+          cd partners/functions
+          npm install --no-audit --no-fund
+          npm test
+      - name: Build main admin development UI
+        run: |
+          cd admin-web
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Build static upload ZIP (NO secrets or backends)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f partners/web/index.html
+          test -f partners/web/styles.css
+          test -f partners/web/app.js
+          test -f partners/web/config.js
+          if grep -Eq 'apiKey: "[^"]+"|authDomain: "[^"]+"|projectId: "[^"]+"|appId: "[^"]+"' partners/web/config.js; then
+            echo "::error::Public Firebase config must be reviewed and packaged separately for approved staging"
+            exit 1
+          fi
+          mkdir -p output/site
+          cp partners/web/{index.html,styles.css,app.js,config.js} output/site/
+          (cd output/site && zip -q ../BatchBoss-Partners-Xneelo-PRIVATE-STAGING.zip index.html styles.css app.js config.js)
+          cp partners/PRIVATE_XNEELO_STAGING.md output/READ-ME-FIRST.md
+          sha256sum output/BatchBoss-Partners-Xneelo-PRIVATE-STAGING.zip > output/SHA256SUMS.txt
+      - name: Upload private staging package
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatchBoss-Partners-Xneelo-Private-Staging
+          path: |
+            output/BatchBoss-Partners-Xneelo-PRIVATE-STAGING.zip
+            output/READ-ME-FIRST.md
+            output/SHA256SUMS.txt
+          retention-days: 14
