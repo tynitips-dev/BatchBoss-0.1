@@ -463,7 +463,20 @@ root.addEventListener("submit", async event => {
   }
 });
 async function boot() {
-  if (!configured) { state.loading = false; render(); return; }
+  if (!configured) {
+    // No Firebase connection must never expose the sample dashboard on a hosted site.
+    // Developers may explicitly preview LOCAL sample data via ?preview=1 only.
+    const localPreview = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) &&
+      new URLSearchParams(location.search).get("preview") === "1";
+    if (localPreview) { state.loading = false; render(); return; }
+    root.innerHTML = '<main class="auth-frame" style="display:grid;grid-template-columns:minmax(280px,520px)">' +
+      '<section class="auth-card">' + brand() +
+      '<h1>Private partner testing</h1><p>Secure sign-in is not configured yet. ' +
+      'This workspace will open only after the dedicated Sales Partners Firebase project is connected.</p>' +
+      '<p class="subtext">Contact info@batchboss.co.za if you are the test administrator.</p>' +
+      '</section></main>';
+    return;
+  }
   try {
     const [appMod, authMod, functionsMod] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js"),
