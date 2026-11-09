@@ -4,8 +4,9 @@ export function validSignature(body:Buffer,signature:string,secret:string){
  const expected=createHmac('sha512',secret).update(body).digest();
  return timingSafeEqual(expected,Buffer.from(signature,'hex'));
 }
-export function periodEnd(paidAt:string,interval:'monthly'|'annual'){
+export function periodEnd(paidAt:string,interval:'weekly'|'monthly'|'annual'){
  const paid=new Date(paidAt);if(!Number.isFinite(paid.getTime()))throw new Error('Invalid paid date');
+ if(interval==='weekly')return new Date(paid.getTime()+7*24*60*60*1000);
  const y=paid.getUTCFullYear()+(interval==='annual'?1:0),m=paid.getUTCMonth()+(interval==='monthly'?1:0);
  const day=Math.min(paid.getUTCDate(),interval==='monthly'?28:new Date(Date.UTC(y,m+1,0)).getUTCDate());
  return new Date(Date.UTC(y,m,day,paid.getUTCHours(),paid.getUTCMinutes(),paid.getUTCSeconds()));

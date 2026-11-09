@@ -12,6 +12,8 @@ const fullSuite=defineString('PAYSTACK_FULL_SUITE_PLAN_CODE',{default:'PLN_wcarn
 const directoryListing=defineString('PAYSTACK_DIRECTORY_LISTING_PLAN_CODE',{default:'PLN_o85gnfrc0qi3q3l'});
 const directoryListingEnabled=defineString('PAYSTACK_DIRECTORY_LISTING_ENABLED',{default:'false'});
 const fullSuiteEnabled=defineString('PAYSTACK_FULL_SUITE_ENABLED',{default:'false'});
+const weekly=defineString('PAYSTACK_WEEKLY_PLAN_CODE',{default:'PLN_vyhv43kg8cua0ij'});
+const weeklyEnabled=defineString('PAYSTACK_WEEKLY_ENABLED',{default:'false'});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
@@ -25,13 +27,14 @@ function uidOf(r:any){if(!r.auth)throw new HttpsError('unauthenticated','Please 
 function mode(){const key=secret.value();if(!/^sk_(test|live)_/.test(key))throw new HttpsError('failed-precondition','Paystack is not configured.');return key.startsWith('sk_live_')?'live':'test';}
 function promotionEnabled(offer:string){return offer==='monthly_launch'?monthlyLaunchEnabled.value()==='true':offer==='annual_launch'?annualLaunchEnabled.value()==='true':false;}
 function planForCode(code:string){
+ if(code===weekly.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'weekly' as const,amount:3999,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'weekly' as const};
  if(code===directoryListing.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:4900,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'directory_listing' as const};
  if(code===fullSuite.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:22000,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'full_suite' as const};
  if(code===monthlyPromo.value()&&/^PLN_/.test(code))return {interval:'monthly' as const,amount:9900,currency:'ZAR',planCode:code,domain:mode(),offer:'monthly_launch',invoiceLimit:2};
  if(code===annualPromo.value()&&/^PLN_/.test(code))return {interval:'annual' as const,amount:99000,currency:'ZAR',planCode:code,domain:mode(),offer:'annual_launch',invoiceLimit:1};
  return null;
 }
-function planFor(interval:string){if(!['monthly','annual'].includes(interval))throw new HttpsError('invalid-argument','Choose monthly or annual.');const planCode=interval==='monthly'?monthly.value():annual.value();if(!/^PLN_[a-zA-Z0-9]+$/.test(planCode))throw new HttpsError('failed-precondition','Payment plans are not configured yet.');return {interval:interval as 'monthly'|'annual',amount:interval==='monthly'?14900:119900,currency:'ZAR',planCode,domain:mode()};}
+function planFor(interval:string){if(!['monthly','annual'].includes(interval))throw new HttpsError('invalid-argument','Choose monthly or annual.');const planCode=interval==='monthly'?monthly.value():annual.value();if(!/^PLN_[a-zA-Z0-9]+$/.test(planCode))throw new HttpsError('failed-precondition','Payment plans are not configured yet.');return {interval:interval as 'monthly'|'annual',amount:interval==='monthly'?14900:119900,currency:'ZAR',planCode,domain:mode(),tier:null};}
 async function api(path:string,body?:unknown){
  // Only fixed operation labels and status codes enter logs: never keys or customer data.
  const operation=path.startsWith('/plan/')?'plan lookup':path==='/customer'?'customer setup':path==='/transaction/initialize'?'checkout initialization':path.startsWith('/transaction/verify/')?'payment verification':'subscription management';
@@ -67,15 +70,17 @@ export const createPaystackCheckout=onCall(options,async request=>{
  if(suite&&fullSuiteEnabled.value()!=='true')throw new HttpsError('failed-precondition','Full Suite checkout is not available yet.');
  const directory=requestedPlan==='directory_listing';
  if(directory&&directoryListingEnabled.value()!=='true')throw new HttpsError('failed-precondition','Directory Listing checkout is not available yet.');
- const plan=suite ? planForCode(fullSuite.value()) : directory ? planForCode(directoryListing.value()) : promotional
+ const weeklyPlan=requestedPlan==='weekly';
+ if(weeklyPlan&&weeklyEnabled.value()!=='true')throw new HttpsError('failed-precondition','Weekly Pro checkout is not available yet.');
+ const plan=weeklyPlan ? planForCode(weekly.value()) : suite ? planForCode(fullSuite.value()) : directory ? planForCode(directoryListing.value()) : promotional
    ? planForCode(requestedPlan==='monthly_launch'?monthlyPromo.value():annualPromo.value())
    : {...planFor(requestedPlan),offer:null,invoiceLimit:0};
- if(!plan || ((suite||directory) && (!('tier' in plan)||plan.tier!==requestedPlan)))throw new HttpsError('failed-precondition','The selected plan is not configured.');
+ if(!plan || ((suite||directory||weeklyPlan) && (!('tier' in plan)||plan.tier!==requestedPlan)))throw new HttpsError('failed-precondition','The selected plan is not configured.');
 
  const user=await getAuth().getUser(uid);if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
  // Backend owns pricing and validates the dashboard plan before opening checkout.
  const remotePlan=await api(`/plan/${encodeURIComponent(plan.planCode)}`);
- if(remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':'monthly')||remotePlan.domain!==plan.domain||(promotional&&Number(remotePlan.invoice_limit)!==plan.invoiceLimit))throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
+ if(remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':plan.interval)||remotePlan.domain!==plan.domain||(promotional&&Number(remotePlan.invoice_limit)!==plan.invoiceLimit))throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
  let previousEnded=false;
  const previous=(await db().doc(`users/${uid}`).get()).data();
  if(previous?.subscriptionSource==='paystack' && previous.paystackSubscriptionCode){
@@ -118,10 +123,10 @@ export const verifyPaystackPayment=onCall(options,async request=>settle(String(r
 async function syncSubscription(code:string){
  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Invalid subscription');
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
- const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||planFor(interval);
+ const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':s.plan?.interval==='weekly'?'weekly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||(interval==='weekly'?null:planFor(interval));if(!plan||plan.interval!==interval)return null;
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)>0&&s.plan?.invoice_limit!=null&&Number(s.plan.invoice_limit)!==Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)))throw new Error('Subscription mismatch');
  await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
- if(plan.domain==='live'&&(!('tier' in plan)||plan.tier!=='directory_listing'))await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
+ if(plan.domain==='live'&&plan.tier!=='directory_listing')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
  // Never overwrite a later subscription or an administrator's promotion.
  if(p.subscriptionSource!=='paystack'||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
  t.update(ref,{paystackSubscriptionCode:code,paystackSubscriptionStatus:s.status,subscriptionRenews:s.status==='active',updatedAt:now()});});
