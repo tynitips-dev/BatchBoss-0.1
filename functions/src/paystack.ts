@@ -9,6 +9,8 @@ const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const fullSuite=defineString('PAYSTACK_FULL_SUITE_PLAN_CODE',{default:'PLN_wcarn44xe2inazs'});
+const directoryListing=defineString('PAYSTACK_DIRECTORY_LISTING_PLAN_CODE',{default:'PLN_o85gnfrc0qi3q3l'});
+const directoryListingEnabled=defineString('PAYSTACK_DIRECTORY_LISTING_ENABLED',{default:'false'});
 const fullSuiteEnabled=defineString('PAYSTACK_FULL_SUITE_ENABLED',{default:'false'});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
@@ -23,6 +25,7 @@ function uidOf(r:any){if(!r.auth)throw new HttpsError('unauthenticated','Please 
 function mode(){const key=secret.value();if(!/^sk_(test|live)_/.test(key))throw new HttpsError('failed-precondition','Paystack is not configured.');return key.startsWith('sk_live_')?'live':'test';}
 function promotionEnabled(offer:string){return offer==='monthly_launch'?monthlyLaunchEnabled.value()==='true':offer==='annual_launch'?annualLaunchEnabled.value()==='true':false;}
 function planForCode(code:string){
+ if(code===directoryListing.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:4900,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'directory_listing' as const};
  if(code===fullSuite.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:22000,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'full_suite' as const};
  if(code===monthlyPromo.value()&&/^PLN_/.test(code))return {interval:'monthly' as const,amount:9900,currency:'ZAR',planCode:code,domain:mode(),offer:'monthly_launch',invoiceLimit:2};
  if(code===annualPromo.value()&&/^PLN_/.test(code))return {interval:'annual' as const,amount:99000,currency:'ZAR',planCode:code,domain:mode(),offer:'annual_launch',invoiceLimit:1};
@@ -62,10 +65,12 @@ export const createPaystackCheckout=onCall(options,async request=>{
  if(promotional && request.data?.termsAccepted!==true)throw new HttpsError('invalid-argument','Please accept the promotional payment terms.');
  const suite=requestedPlan==='full_suite';
  if(suite&&fullSuiteEnabled.value()!=='true')throw new HttpsError('failed-precondition','Full Suite checkout is not available yet.');
- const plan=suite ? planForCode(fullSuite.value()) : promotional
+ const directory=requestedPlan==='directory_listing';
+ if(directory&&directoryListingEnabled.value()!=='true')throw new HttpsError('failed-precondition','Directory Listing checkout is not available yet.');
+ const plan=suite ? planForCode(fullSuite.value()) : directory ? planForCode(directoryListing.value()) : promotional
    ? planForCode(requestedPlan==='monthly_launch'?monthlyPromo.value():annualPromo.value())
    : {...planFor(requestedPlan),offer:null,invoiceLimit:0};
- if(!plan || (suite && !('tier' in plan)))throw new HttpsError('failed-precondition','The selected plan is not configured.');
+ if(!plan || ((suite||directory) && (!('tier' in plan)||plan.tier!==requestedPlan)))throw new HttpsError('failed-precondition','The selected plan is not configured.');
 
  const user=await getAuth().getUser(uid);if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
  // Backend owns pricing and validates the dashboard plan before opening checkout.
@@ -98,14 +103,15 @@ async function settle(reference:string,expectedUid?:string,subscriptionCode?:str
  const transaction=await api(`/transaction/verify/${encodeURIComponent(reference)}`);
  if(transaction.status!=='success')return {status:String(transaction.status||'pending')};
  if(transaction.reference!==reference || !matchesPayment(transaction,expected as any))throw new HttpsError('failed-precondition','Payment details do not match the subscription.');
+ const listingExpiryField=expected.tier==='full_suite'?'fullSuiteExpiresAt':expected.tier==='directory_listing'?'directoryListingExpiresAt':null;
  const expires=periodEnd(transaction.paid_at,expected.interval);const profileRef=db().doc(`users/${expected.uid}`);
- await db().runTransaction(async t=>{const suiteRef=db().doc(`listingEntitlements/${expected!.uid}`);const [current,profile,suiteAccess]=await Promise.all([t.get(paymentRef),t.get(profileRef),...(expected!.domain==='live'&&expected!.tier==='full_suite'?[t.get(suiteRef)]:[])]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
+ await db().runTransaction(async t=>{const suiteRef=db().doc(`listingEntitlements/${expected!.uid}`);const [current,profile,suiteAccess]=await Promise.all([t.get(paymentRef),t.get(profileRef),...(expected!.domain==='live'&&listingExpiryField?[t.get(suiteRef)]:[])]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
  t.set(paymentRef,{...expected,reference,status:'success',transactionId:String(transaction.id),paidAt:transaction.paid_at,processedAt:now()},{merge:true});
- if(suiteAccess && (suiteAccess.data()?.fullSuiteExpiresAt?.toMillis?.() ?? 0)<expires.getTime()){
-  t.set(suiteRef,{fullSuiteExpiresAt:expires,verifiedReference:reference,updatedAt:now()},{merge:true});
+ if(suiteAccess && listingExpiryField && (suiteAccess.data()?.[listingExpiryField]?.toMillis?.() ?? 0)<expires.getTime()){
+  t.set(suiteRef,{[listingExpiryField]:expires,updatedAt:now()},{merge:true});
  }
  // Test mode records test payments but never grants production entitlements.
- if(expected!.domain==='live' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
+ if(expected!.domain==='live' && expected!.tier!=='directory_listing' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
  });return {status:'success',testMode:expected.domain==='test'};
 }
 export const verifyPaystackPayment=onCall(options,async request=>settle(String(request.data?.reference||''),uidOf(request)));
@@ -115,7 +121,7 @@ async function syncSubscription(code:string){
  const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||planFor(interval);
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)>0&&s.plan?.invoice_limit!=null&&Number(s.plan.invoice_limit)!==Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)))throw new Error('Subscription mismatch');
  await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
- if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
+ if(plan.domain==='live'&&(!('tier' in plan)||plan.tier!=='directory_listing'))await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
  // Never overwrite a later subscription or an administrator's promotion.
  if(p.subscriptionSource!=='paystack'||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
  t.update(ref,{paystackSubscriptionCode:code,paystackSubscriptionStatus:s.status,subscriptionRenews:s.status==='active',updatedAt:now()});});
