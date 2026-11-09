@@ -114,22 +114,53 @@ export function ListingView({ tab, onViewPlans }: {
   </section>
 }
 
+type CheckoutPlan = 'weekly' | 'directory_listing' | 'full_suite'
+
 export function UpcomingListingPlans() {
+  const [available, setAvailable] = useState<Partial<Record<CheckoutPlan, boolean>>>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let current = true
+    httpsCallable<void, { enabled: boolean; testMode?: boolean; listingPlans?: Partial<Record<CheckoutPlan, boolean>> }>(functions, 'getPaystackPlans')()
+      .then(({ data }) => { if (current && data.enabled && !data.testMode) setAvailable(data.listingPlans ?? {}) })
+      .catch(() => { if (current) setError('Could not check checkout availability.') })
+    return () => { current = false }
+  }, [])
+
+  async function checkout(plan: CheckoutPlan) {
+    setBusy(true)
+    setError('')
+    try {
+      const { data } = await httpsCallable<{ plan: CheckoutPlan }, { checkoutUrl: string }>(functions, 'createPaystackCheckout')({ plan })
+      const url = new URL(data.checkoutUrl)
+      if (url.origin !== 'https://checkout.paystack.com') throw new Error('Unexpected payment address.')
+      location.assign(url.href)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not open checkout.')
+      setBusy(false)
+    }
+  }
+
   const plans = [
-    { title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
-    { title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
+    { code: 'weekly', title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
+    { code: 'directory_listing', title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
     { title: 'Marketplace Listing', price: listingPrices.marketplace, detail: 'Monthly billing for each item listing.' },
-    { title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each per month.' },
-  ]
+    { code: 'full_suite', title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each per month.' },
+  ] as const
 
   return <section className="content-card">
     <h2>Upcoming plans and listing prices</h2>
-    <p>Preview pricing. Checkout and listing submissions are coming soon.</p>
+    <p>Paid plans renew at the interval shown. Manage renewal through BatchBoss.</p>
+    {error && <p role="alert">{error}</p>}
     <div className="plans">
       {plans.map(plan => <article key={plan.title}>
         <h3>{plan.title}</h3>
         <strong>{plan.price}</strong>
         <p>{plan.detail}</p>
+        {'code' in plan && <button className="primary-button" type="button" disabled={busy || !available[plan.code]} onClick={() => checkout(plan.code)}>
+          {available[plan.code] ? 'Continue to Paystack' : 'Checkout coming soon'}
+        </button>}
       </article>)}
     </div>
   </section>

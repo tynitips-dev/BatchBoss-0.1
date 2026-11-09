@@ -530,4 +530,4 @@ export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBa
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
 
-export { listListingDrafts, saveListingDraft } from "./listingDrafts";
+export { listListingDrafts, saveListingDraft, publishBakerListing } from "./listingDrafts";

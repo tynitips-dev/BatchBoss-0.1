@@ -59,3 +59,50 @@ export const saveListingDraft = onCall(options, async request => {
   await drafts.doc(id).set(draft)
   return { id }
 })
+
+export const publishBakerListing = onCall(options, async request => {
+  const uid = request.auth?.uid
+  const drafts = await draftCollection(uid)
+  const kind = listingKind(request.data?.kind)
+  const id = kind === 'directoryListing' ? 'directory' : request.data?.id
+  if (typeof id !== 'string' || (kind === 'marketplace' && !/^[0-9a-f-]{36}$/.test(id))) {
+    throw new HttpsError('invalid-argument', 'Invalid listing ID.')
+  }
+
+  const db = getFirestore()
+  const entitlement = db.collection('listingEntitlements').doc(uid!)
+  const workspace = drafts.parent!
+  const publication = workspace.collection('publications').doc(id)
+  const month = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit',
+  }).format(new Date())
+  const allowance = workspace.collection('allowances').doc(month)
+
+  await db.runTransaction(async transaction => {
+    const [draft, access, existing, usage] = await Promise.all([
+      transaction.get(drafts.doc(id)), transaction.get(entitlement),
+      transaction.get(publication), transaction.get(allowance),
+    ])
+    const details = draft.data()
+    if (!details || details.kind !== kind) throw new HttpsError('not-found', 'Save this draft before publishing.')
+    const paid = access.data()
+    const now = Date.now()
+    const suiteActive = (paid?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
+    const directoryActive = (paid?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now
+    if (kind === 'directoryListing' ? !suiteActive && !directoryActive : !suiteActive) {
+      throw new HttpsError('failed-precondition', 'An active listing plan is required.')
+    }
+
+    if (kind === 'marketplace' && !existing.exists) {
+      const used = usage.data()?.used ?? 0
+      if (used >= 3) throw new HttpsError('resource-exhausted', 'You have used all three included Marketplace listings for this month.')
+      transaction.set(allowance, { used: used + 1 })
+    }
+
+    transaction.set(publication, {
+      kind, title: details.title, area: details.area, description: details.description,
+      priceCents: details.priceCents, sellerType: 'baker', updatedAt: FieldValue.serverTimestamp(),
+    })
+  })
+  return { id }
+})

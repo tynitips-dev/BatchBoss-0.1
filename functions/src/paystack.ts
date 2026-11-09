@@ -59,7 +59,7 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
+export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,listingPlans:{weekly:weeklyEnabled.value()==='true',directory_listing:directoryListingEnabled.value()==='true',full_suite:fullSuiteEnabled.value()==='true'},monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const requestedPlan=String(request.data?.plan);
