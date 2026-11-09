@@ -18,7 +18,7 @@ export function ListingView({ tab, onViewPlans }: {
       ? 'Show customers what you bake, where you’re based and how they can enquire.'
       : 'List pre-owned baking equipment and supplies for other bakers to discover.'}</p>
     <p><strong>{isDirectory ? listingPrices.directory : listingPrices.marketplace}</strong></p>
-    <p>Also included with Full Suite. Listing submissions open when the service launches.</p>
+    <p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each.'} Listing submissions open when the service launches.</p>
     <div className="card-actions">
       <a className="outline-button" href={publicPreview + (isDirectory ? 'baker-finder.html' : 'marketplace.html')}>
         {isDirectory ? 'Preview Find a Baker' : 'Preview Marketplace'}
@@ -33,7 +33,7 @@ export function UpcomingListingPlans() {
     { title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
     { title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
     { title: 'Marketplace Listing', price: listingPrices.marketplace, detail: 'Pay per item listing.' },
-    { title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, Directory Listing and Marketplace listing access.' },
+    { title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each.' },
   ]
 
   return <section className="content-card">
