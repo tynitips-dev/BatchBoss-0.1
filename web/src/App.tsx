@@ -15,6 +15,7 @@ import { signupPlatform } from './accountPlatform'
 import { auth, db, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, money, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
+import { ListingView, UpcomingListingPlans } from './ListingView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
 import { subscriptionAccess } from './subscriptionAccess'
@@ -36,6 +37,8 @@ const modules: ModuleDefinition[] = [
   { key: 'ingredients', label: 'Ingredients', icon: Package, collection: 'inventory' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, collection: 'inventory' },
   { key: 'packaging', label: 'Packaging', icon: Package, collection: 'packaging' },
+  { key: 'directoryListing', label: 'Directory Listing', icon: Store },
+  { key: 'marketplace', label: 'Marketplace', icon: Store },
   { key: 'supplierDirectory', label: 'Find suppliers', icon: Store },
   { key: 'suppliers', label: 'Suppliers', icon: Store, collection: 'suppliers', pro: true },
   { key: 'invoices', label: 'Invoices', icon: ReceiptText, collection: 'invoices', pro: true },
@@ -194,7 +197,12 @@ type WorkspaceItem = { id: string; name?: string; title?: string; description?: 
 
 function Dashboard({ profile }: { profile: UserProfile }) {
   const [supplierCategory,setSupplierCategory]=useState('')
-  const [active, setActive] = useState<ModuleKey>((new URLSearchParams(location.search).has('payment') || new URLSearchParams(location.search).has('redeem')) ? 'subscription' : 'home')
+  const [active, setActive] = useState<ModuleKey>(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.has('payment') || params.has('redeem')) return 'subscription'
+    const tab = params.get('tab')
+    return tab === 'directoryListing' || tab === 'marketplace' ? tab : 'home'
+  })
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
@@ -436,7 +444,8 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       {active === 'reports' && <ReportsView items={items} />}
       {['orders','receipts'].includes(active) && (active !== 'receipts' || isPro) && <RecordsView kind={active as 'orders'|'receipts'} bakeryId={profile.bakeryId} items={selectedItems} invoices={items.invoices || []} customers={items.customers || []} />}
       {active === 'home' && <HomeView invoices={items.invoices || []} counts={counts} onOpen={setActive} />}
-      {active === 'subscription' && <SubscriptionView isPro={isPro} profile={profile} />}
+      {(active === 'directoryListing' || active === 'marketplace') && <ListingView tab={active} onViewPlans={() => setActive('subscription')} />}
+      {active === 'subscription' && <><SubscriptionView isPro={isPro} profile={profile} /><UpcomingListingPlans /></>}
       {active === 'tools' && <BakeryTools bakeryId={profile.bakeryId} recipes={items.recipes || []} />}
       {active === 'documents' && <DocumentsView onOpen={setActive} />}
       {active === 'settings' && <SettingsView profile={profile} />}
