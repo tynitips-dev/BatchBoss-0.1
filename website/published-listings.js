@@ -27,6 +27,17 @@ async function loadPublished() {
         element.textContent = value;
         card.append(element);
       }
+      const images = [item.logo, ...(item.photos ?? [])];
+      images.forEach((source, index) => {
+        if (typeof source !== 'string' || !source.startsWith('data:image/jpeg;base64,')) return;
+        const image = document.createElement('img');
+        image.src = source;
+        image.alt = index === 0 ? item.title + ' logo' : item.title + ' photo ' + index;
+        image.loading = 'lazy';
+        image.width = index === 0 ? 88 : 160;
+        image.style.maxWidth = '100%';
+        card.append(image);
+      });
       grid.append(card);
     }
     cursor = result.nextCursor;

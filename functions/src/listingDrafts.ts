@@ -17,6 +17,15 @@ function requiredText(value: unknown, label: string, limit: number) {
   return value.trim()
 }
 
+function listingImage(value: unknown): string {
+  if (value == null || value === '') return ''
+  if (typeof value !== 'string' || value.length > 65000 ||
+      !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(value)) {
+    throw new HttpsError('invalid-argument', 'Choose a valid listing photo.')
+  }
+  return value
+}
+
 async function draftCollection(uid: string | undefined) {
   if (!uid) throw new HttpsError('unauthenticated', 'Please sign in.')
   const db = getFirestore()
@@ -31,8 +40,8 @@ export const listListingDrafts = onCall(options, async request => {
   const kind = listingKind(request.data?.kind)
   const result = await drafts.where('kind', '==', kind).limit(100).get()
   return result.docs.map(doc => {
-    const { title, area, description, priceCents } = doc.data()
-    return { id: doc.id, title, area, description, priceCents: priceCents ?? null }
+    const { title, area, description, priceCents, logo, photos } = doc.data()
+    return { id: doc.id, title, area, description, priceCents: priceCents ?? null, logo: logo ?? '', photos: photos ?? [] }
   })
 })
 
@@ -48,7 +57,13 @@ export const saveListingDraft = onCall(options, async request => {
   if (kind === 'marketplace' && (!Number.isInteger(priceCents) || priceCents < 1 || priceCents > 100_000_000)) {
     throw new HttpsError('invalid-argument', 'Enter a valid Marketplace item price in rand.')
   }
+  const photos = input.photos ?? []
+  if (!Array.isArray(photos) || photos.length > 3) {
+    throw new HttpsError('invalid-argument', 'Choose up to three listing photos.')
+  }
   const draft = {
+    logo: kind === 'directoryListing' ? listingImage(input.logo) : '',
+    photos: photos.map(listingImage).filter(Boolean),
     kind,
     title: requiredText(input.title, 'Name', 100),
     area: requiredText(input.area, 'Area', 100),
@@ -104,7 +119,7 @@ export const publishBakerListing = onCall(options, async request => {
 
     const fields = {
       kind, title: details.title, area: details.area, description: details.description,
-      priceCents: details.priceCents, sellerType: 'baker', updatedAt: FieldValue.serverTimestamp(),
+      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', updatedAt: FieldValue.serverTimestamp(),
     }
     transaction.set(publication, fields)
     transaction.set(catalog, { ...fields, ownerUid: uid })
@@ -136,8 +151,8 @@ export const listPublishedBakerListings = onCall({
       || (kind === 'directoryListing' && (access?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now))
   }))
   const listings = snapshots.docs.flatMap(doc => {
-    const { ownerUid, title, area, description, priceCents } = doc.data()
-    return eligible.has(ownerUid) ? [{ title, area, description, priceCents }] : []
+    const { ownerUid, title, area, description, priceCents, logo, photos } = doc.data()
+    return eligible.has(ownerUid) ? [{ title, area, description, priceCents, logo, photos }] : []
   })
   return { listings, nextCursor: snapshots.size === 25 ? snapshots.docs.at(-1)!.id : null }
 })
