@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 import {defineSecret,defineString} from 'firebase-functions/params';
@@ -113,7 +113,9 @@ export const createMarketplaceCheckout=onCall(options,async request=>{
  const reference='BB-MKT-'+randomUUID();
  const attempt=db().doc(`marketplacePayments/${reference}`);
  const existing=await db().runTransaction(async t=>{
-  const [d,l,p,u]=await Promise.all([t.get(draft),t.get(lock),t.get(publication),t.get(db().doc(`users/${uid}`))]);
+  const month=new Intl.DateTimeFormat('sv-SE',{timeZone:'Africa/Johannesburg',year:'numeric',month:'2-digit'}).format(new Date());
+  const allowance=workspace.collection('allowances').doc(month);
+  const [d,l,p,u,access,usage]=await Promise.all([t.get(draft),t.get(lock),t.get(publication),t.get(db().doc(`users/${uid}`)),t.get(db().doc(`listingEntitlements/${uid}`)),t.get(allowance)]);
   if(!u.exists||d.data()?.kind!=='marketplace')throw new HttpsError('failed-precondition','Save your listing first.');
   if(p.exists)throw new HttpsError('failed-precondition','This listing has already been published.');
   const old=l.data();
@@ -123,6 +125,7 @@ export const createMarketplaceCheckout=onCall(options,async request=>{
    if(old.checkoutUrl)return {checkoutUrl:String(old.checkoutUrl)};
    throw new HttpsError('failed-precondition','Checkout is being prepared or needs support. Do not pay twice.');
   }
+  if((access.data()?.fullSuiteExpiresAt?.toMillis?.()??0)>Date.now()&&(usage.data()?.used??0)<3)throw new HttpsError('failed-precondition','You have an included listing. Use Save and publish instead.');
   t.create(attempt,{uid,id,reference,domain,amount:2000,currency:'ZAR',email:user.email,status:'pending',createdAt:now()});
   t.set(lock,{reference,domain,status:'pending',createdAt:now()});return null;
  });
@@ -141,11 +144,22 @@ async function settleMarketplace(reference:string,expectedUid?:string){
  if(tx.reference!==reference||tx.amount!==2000||tx.currency!=='ZAR'||tx.domain!==expected.domain||String(tx.customer?.email||'').toLowerCase()!==String(expected.email).toLowerCase()||!Number.isFinite(new Date(tx.paid_at).getTime())||tx.plan?.plan_code||tx.plan_object?.plan_code||(typeof tx.plan==='string'&&tx.plan))throw new HttpsError('failed-precondition','Listing payment details do not match.');
  const workspace=db().doc(`listingWorkspaces/${expected.uid}`), lock=workspace.collection('marketplaceCheckouts').doc(expected.id);
  await db().runTransaction(async t=>{
-  const [current,l,user]=await Promise.all([t.get(ref),t.get(lock),t.get(db().doc(`users/${expected.uid}`))]);
+  const publication=workspace.collection('publications').doc(expected.id);
+  const publicId=createHash('sha256').update(JSON.stringify([expected.uid,expected.id])).digest('hex');
+  const catalog=db().doc(`listingCatalogs/marketplace/entries/${publicId}`);
+  const [current,l,user,draft,existing]=await Promise.all([t.get(ref),t.get(lock),t.get(db().doc(`users/${expected.uid}`)),t.get(workspace.collection('drafts').doc(expected.id)),t.get(publication)]);
+  const details=draft.data();
   if(current.data()?.status==='success')return;
   if(l.data()?.reference!==reference||!user.exists)throw new HttpsError('failed-precondition','Listing payment needs support.');
   t.update(ref,{status:'success',transactionId:String(tx.id),paidAt:tx.paid_at,processedAt:now()});
   t.update(lock,{status:expected.domain==='live'?'paid':'test_paid',updatedAt:now()});
+  if(expected.domain==='live'){
+   if(details?.kind!=='marketplace')throw new HttpsError('failed-precondition','Paid listing draft is missing. Contact support.');
+   if(existing.data()?.status!=='sold'){
+    const fields={kind:'marketplace',title:details.title,area:details.area,description:details.description,priceCents:details.priceCents,logo:'',photos:details.photos??[],sellerType:'baker',standalonePaid:true,status:'published',updatedAt:now()};
+    t.set(publication,fields);t.set(catalog,{...fields,ownerUid:expected.uid});
+   }
+  }
  });
  return {status:'success',testMode:expected.domain==='test'};
 }

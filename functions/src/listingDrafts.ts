@@ -39,10 +39,13 @@ export const listListingDrafts = onCall(options, async request => {
   const drafts = await draftCollection(request.auth?.uid)
   const kind = listingKind(request.data?.kind)
   const result = await drafts.where('kind', '==', kind).limit(100).get()
-  return result.docs.map(doc => {
+  return Promise.all(result.docs.map(async doc => {
+    const publication=await drafts.parent!.collection('publications').doc(doc.id).get()
+    const checkout=kind==='marketplace'?await drafts.parent!.collection('marketplaceCheckouts').doc(doc.id).get():null
+    const status=publication.exists?(publication.data()?.status==='sold'?'sold':'published'):checkout?.data()?.status==='paid'?'paid':checkout?.data()?.status==='pending'?'pending':'draft'
     const { title, area, description, priceCents, logo, photos } = doc.data()
-    return { id: doc.id, title, area, description, priceCents: priceCents ?? null, logo: logo ?? '', photos: photos ?? [] }
-  })
+    return { id: doc.id, title, area, description, priceCents: priceCents ?? null, logo: logo ?? '', photos: photos ?? [], status }
+  }))
 })
 
 export const saveListingDraft = onCall(options, async request => {
@@ -103,6 +106,8 @@ export const publishBakerListing = onCall(options, async request => {
     ])
     const details = draft.data()
     if (!details || details.kind !== kind) throw new HttpsError('not-found', 'Save this draft before publishing.')
+    if(existing.data()?.status==='sold')throw new HttpsError('failed-precondition','Sold listings cannot be republished. Create a new listing for a different item.')
+    if(kind==='marketplace'&&checkout.data()?.status==='pending')throw new HttpsError('failed-precondition','A payment is pending. Complete or verify it before publishing.')
     const paid = access.data()
     const now = Date.now()
     const suiteActive = (paid?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
@@ -120,13 +125,28 @@ export const publishBakerListing = onCall(options, async request => {
 
     const fields = {
       kind, title: details.title, area: details.area, description: details.description,
-      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, updatedAt: FieldValue.serverTimestamp(),
+      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, status: 'published', updatedAt: FieldValue.serverTimestamp(),
     }
     transaction.set(publication, fields)
     transaction.set(catalog, { ...fields, ownerUid: uid })
 
   })
   return { id }
+})
+
+export const markMarketplaceSold=onCall(options,async request=>{
+ const uid=request.auth?.uid,drafts=await draftCollection(uid),id=request.data?.id
+ if(typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id))throw new HttpsError('invalid-argument','Invalid listing ID.')
+ const db=getFirestore(),publication=drafts.parent!.collection('publications').doc(id)
+ const publicId=createHash('sha256').update(JSON.stringify([uid,id])).digest('hex')
+ const catalog=db.doc(`listingCatalogs/marketplace/entries/${publicId}`)
+ await db.runTransaction(async t=>{
+  const existing=await t.get(publication)
+  if(existing.data()?.kind!=='marketplace')throw new HttpsError('not-found','Published listing not found.')
+  t.update(publication,{status:'sold',updatedAt:FieldValue.serverTimestamp()})
+  t.delete(catalog)
+ })
+ return {id,status:'sold'}
 })
 
 export const listPublishedBakerListings = onCall({

@@ -4,13 +4,14 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 import { app } from './firebase'
 
 type Kind = 'directoryListing' | 'marketplace'
-type Draft = { id: string; title: string; area: string; description: string; priceCents: number | null; logo: string; photos: string[] }
+type Draft = { id: string; title: string; area: string; description: string; priceCents: number | null; logo: string; photos: string[]; status?: 'draft'|'pending'|'paid'|'published'|'sold' }
 const functions = getFunctions(app, 'europe-west1')
 const listDrafts = httpsCallable<{ kind: Kind }, Draft[]>(functions, 'listListingDrafts')
 const saveDraft = httpsCallable<Draft & { kind: Kind }, { id: string }>(functions, 'saveListingDraft')
 const publishListing = httpsCallable<{ kind: Kind; id: string }, { id: string }>(functions, 'publishBakerListing')
 const createMarketplaceCheckout = httpsCallable<{id:string},{checkoutUrl:string}>(functions,'createMarketplaceCheckout')
 const verifyMarketplacePayment = httpsCallable<{reference:string},{status:string;testMode?:boolean}>(functions,'verifyMarketplacePayment')
+const markSold = httpsCallable<{id:string},{id:string;status:string}>(functions,'markMarketplaceSold')
 const empty = { title: '', area: '', description: '', price: '', logo: '', photos: [] as string[] }
 
 async function resizeListingImage(file: File) {
@@ -52,6 +53,8 @@ function DraftEditor({ kind }: { kind: Kind }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const selectedStatus = drafts.find(draft => draft.id === id)?.status
+
   function edit(draft: Draft) {
     setId(draft.id)
     setForm({ title: draft.title, area: draft.area, description: draft.description, logo: draft.logo ?? '', photos: draft.photos ?? [], price: draft.priceCents === null ? '' : (draft.priceCents / 100).toFixed(2) })
@@ -67,9 +70,17 @@ function DraftEditor({ kind }: { kind: Kind }) {
         const params = new URLSearchParams(location.search)
         const reference = params.get('reference') || params.get('trxref')
         if (params.get('payment') === 'marketplace' && reference) {
-          void verifyMarketplacePayment({reference}).then(({data:payment}) => {
+          void verifyMarketplacePayment({reference}).then(async ({data:payment}) => {
             if (!current) return
-            setNotice(payment.status === 'success' && !payment.testMode ? 'Payment verified. Select your paid draft and choose Save and publish.' : 'Payment is not confirmed for live publication.')
+            if(payment.status==='success'&&!payment.testMode){
+              const fresh=await listDrafts({kind})
+              if(!current)return
+              setDrafts(fresh.data)
+              setNotice('Payment verified. Your listing is published.')
+              const url=new URL(location.href)
+              for(const key of ['payment','reference','trxref'])url.searchParams.delete(key)
+              history.replaceState(null,'',url.href)
+            }else setNotice('Payment is not confirmed for live publication.')
           }).catch(() => { if(current) setError('Payment could not be verified. Do not pay again; contact support or retry verification.') })
         }
       }
@@ -103,12 +114,13 @@ function DraftEditor({ kind }: { kind: Kind }) {
     const draft = { id, logo: form.logo, photos: form.photos, title: form.title.trim(), area: form.area.trim(), description: form.description.trim(), priceCents: marketplace ? Math.round(Number(form.price) * 100) : null }
     try {
       const result = await saveDraft({ ...draft, kind })
-      const saved = { ...draft, id: result.data.id }
+      const saved = { ...draft, id: result.data.id, status: selectedStatus ?? 'draft' as const }
       setDrafts(previous => [...previous.filter(item => item.id !== saved.id), saved])
       edit(saved)
       if ((event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'publish') {
         setNotice('Draft saved. Checking publication eligibility…')
         await publishListing({ kind, id: saved.id })
+        setDrafts((await listDrafts({kind})).data)
         setNotice('Listing published.')
       } else if (marketplace && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'pay') {
         const {data} = await createMarketplaceCheckout({id:saved.id})
@@ -134,10 +146,10 @@ function DraftEditor({ kind }: { kind: Kind }) {
         setForm(empty)
         setNotice('')
       }}>New item draft</button>
-      {drafts.map(draft => <button key={draft.id} type="button" className="outline-button" disabled={saving || processingPhoto} onClick={() => edit(draft)}>{draft.title}</button>)}
+      {drafts.map(draft => <button key={draft.id} type="button" className="outline-button" disabled={saving || processingPhoto} onClick={() => edit(draft)}>{draft.title} ({draft.status ?? 'draft'})</button>)}
     </div>}
     <form onSubmit={submit}>
-      <fieldset disabled={loading || saving || processingPhoto}>
+      <fieldset disabled={loading || saving || processingPhoto || selectedStatus==='sold'}>
         <label>{marketplace ? 'Item name' : 'Bakery name'}<input required maxLength={100} value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} /></label>
         <label>Area<input required maxLength={100} value={form.area} onChange={event => setForm({ ...form, area: event.target.value })} /></label>
         <label>Description<textarea required maxLength={1000} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
@@ -164,9 +176,10 @@ function DraftEditor({ kind }: { kind: Kind }) {
         {processingPhoto && <p role="status">Preparing image…</p>}
         <button className="primary-button" type="submit">{saving ? 'Saving…' : 'Save private draft'}</button>
         <button className="outline-button" type="submit" value="publish">Save and publish</button>
-        {marketplace && <button className="primary-button" type="submit" value="pay">Pay R20 once-off for this listing</button>}
+        {marketplace && !['published','paid','sold'].includes(selectedStatus ?? '') && <button className="primary-button" type="submit" value="pay">{selectedStatus==='pending'?'Resume R20 checkout':'Pay R20 and publish'}</button>}
       </fieldset>
     </form>
+    {marketplace && selectedStatus==='published' && <button type="button" className="outline-button" disabled={saving} onClick={async()=>{if(!window.confirm('Mark this item as sold? It will be removed from the public Marketplace.'))return;setSaving(true);setError('');try{await markSold({id});setDrafts((await listDrafts({kind})).data);setNotice('Item marked as sold.')}catch(reason){setError(reason instanceof Error?reason.message:'Could not mark item sold.')}finally{setSaving(false)}}}>Mark as sold</button>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
   </div>
