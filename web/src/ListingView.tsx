@@ -9,6 +9,8 @@ const functions = getFunctions(app, 'europe-west1')
 const listDrafts = httpsCallable<{ kind: Kind }, Draft[]>(functions, 'listListingDrafts')
 const saveDraft = httpsCallable<Draft & { kind: Kind }, { id: string }>(functions, 'saveListingDraft')
 const publishListing = httpsCallable<{ kind: Kind; id: string }, { id: string }>(functions, 'publishBakerListing')
+const createMarketplaceCheckout = httpsCallable<{id:string},{checkoutUrl:string}>(functions,'createMarketplaceCheckout')
+const verifyMarketplacePayment = httpsCallable<{reference:string},{status:string;testMode?:boolean}>(functions,'verifyMarketplacePayment')
 const empty = { title: '', area: '', description: '', price: '', logo: '', photos: [] as string[] }
 
 async function resizeListingImage(file: File) {
@@ -61,6 +63,16 @@ function DraftEditor({ kind }: { kind: Kind }) {
     listDrafts({ kind }).then(({ data }) => {
       if (!current) return
       setDrafts(data)
+      if (kind === 'marketplace') {
+        const params = new URLSearchParams(location.search)
+        const reference = params.get('reference') || params.get('trxref')
+        if (params.get('payment') === 'marketplace' && reference) {
+          void verifyMarketplacePayment({reference}).then(({data:payment}) => {
+            if (!current) return
+            setNotice(payment.status === 'success' && !payment.testMode ? 'Payment verified. Select your paid draft and choose Save and publish.' : 'Payment is not confirmed for live publication.')
+          }).catch(() => { if(current) setError('Payment could not be verified. Do not pay again; contact support or retry verification.') })
+        }
+      }
       if (kind === 'directoryListing' && data[0]) edit(data[0])
       setLoading(false)
     }).catch(() => {
@@ -98,6 +110,11 @@ function DraftEditor({ kind }: { kind: Kind }) {
         setNotice('Draft saved. Checking publication eligibility…')
         await publishListing({ kind, id: saved.id })
         setNotice('Listing published.')
+      } else if (marketplace && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'pay') {
+        const {data} = await createMarketplaceCheckout({id:saved.id})
+        const url = new URL(data.checkoutUrl)
+        if(url.origin !== 'https://checkout.paystack.com') throw new Error('Unexpected payment address.')
+        location.assign(url.href)
       } else {
         setNotice('Private draft saved.')
       }
@@ -147,6 +164,7 @@ function DraftEditor({ kind }: { kind: Kind }) {
         {processingPhoto && <p role="status">Preparing image…</p>}
         <button className="primary-button" type="submit">{saving ? 'Saving…' : 'Save private draft'}</button>
         <button className="outline-button" type="submit" value="publish">Save and publish</button>
+        {marketplace && <button className="primary-button" type="submit" value="pay">Pay R20 once-off for this listing</button>}
       </fieldset>
     </form>
     {error && <p role="alert">{error}</p>}
@@ -157,7 +175,7 @@ function DraftEditor({ kind }: { kind: Kind }) {
 const publicPreview = 'https://www.batchboss.co.za/batchboss-preview/'
 const listingPrices = {
   directory: 'R49 per month',
-  marketplace: 'R20 per listing per month',
+  marketplace: 'R20 once-off per listing',
   weeklyPro: 'R39.99 per week',
   fullSuite: 'R220 per month',
 }
@@ -174,7 +192,7 @@ export function ListingView({ tab, onViewPlans }: {
       ? 'Show customers what you bake, where you’re based and how they can enquire.'
       : 'List pre-owned baking equipment and supplies for other bakers to discover.'}</p>
     <p><strong>{isDirectory ? listingPrices.directory : listingPrices.marketplace}</strong></p>
-    <p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each per month.'}</p>
+    <p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.'}</p>
     <div className="card-actions">
       <a className="outline-button" href={publicPreview + (isDirectory ? 'baker-finder.html' : 'marketplace.html')}>
         {isDirectory ? 'Preview Find a Baker' : 'Preview Marketplace'}
@@ -216,8 +234,8 @@ export function UpcomingListingPlans() {
   const plans = [
     { code: 'weekly', title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
     { code: 'directory_listing', title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
-    { title: 'Marketplace Listing', price: listingPrices.marketplace, detail: 'Monthly billing for each item listing.' },
-    { code: 'full_suite', title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each per month.' },
+    { title: 'Marketplace Listing', price: listingPrices.marketplace, detail: 'One payment per item listing. No recurring fee.' },
+    { code: 'full_suite', title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.' },
   ] as const
 
   return <section className="content-card">

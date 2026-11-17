@@ -19,6 +19,7 @@ const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''})
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
+const marketplaceEnabled=defineString('PAYSTACK_MARKETPLACE_ENABLED',{default:'false'});
 const APP='https://app.batchboss.co.za';
 const options={region:'europe-west1',invoker:'public' as const,secrets:[secret],cors:[APP]};
 const db=()=>getFirestore();
@@ -100,6 +101,55 @@ export const createPaystackCheckout=onCall(options,async request=>{
   await lockRef.update({checkoutUrl});return {checkoutUrl};
  }catch(e){await lockRef.delete();throw e;}
 });
+// One-off item fees use a separate ledger, with no subscription plan or Pro entitlement.
+export const createMarketplaceCheckout=onCall(options,async request=>{
+ const uid=uidOf(request),id=String(request.data?.id||'');
+ if(!/^[0-9a-f-]{36}$/.test(id))throw new HttpsError('invalid-argument','Invalid listing ID.');
+ if(enabled.value()!=='true'||marketplaceEnabled.value()!=='true')throw new HttpsError('failed-precondition','Marketplace checkout is not enabled.');
+ const domain=mode(), user=await getAuth().getUser(uid);
+ if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
+ const workspace=db().doc(`listingWorkspaces/${uid}`), lock=workspace.collection('marketplaceCheckouts').doc(id);
+ const draft=workspace.collection('drafts').doc(id), publication=workspace.collection('publications').doc(id);
+ const reference='BB-MKT-'+randomUUID();
+ const attempt=db().doc(`marketplacePayments/${reference}`);
+ const existing=await db().runTransaction(async t=>{
+  const [d,l,p,u]=await Promise.all([t.get(draft),t.get(lock),t.get(publication),t.get(db().doc(`users/${uid}`))]);
+  if(!u.exists||d.data()?.kind!=='marketplace')throw new HttpsError('failed-precondition','Save your listing first.');
+  if(p.exists)throw new HttpsError('failed-precondition','This listing has already been published.');
+  const old=l.data();
+  if(old?.status==='paid')throw new HttpsError('failed-precondition','This listing is already paid. Publish it from your draft.');
+  if(old?.reference){
+   if(old.domain!==domain)throw new HttpsError('failed-precondition','Contact support about the previous checkout.');
+   if(old.checkoutUrl)return {checkoutUrl:String(old.checkoutUrl)};
+   throw new HttpsError('failed-precondition','Checkout is being prepared or needs support. Do not pay twice.');
+  }
+  t.create(attempt,{uid,id,reference,domain,amount:2000,currency:'ZAR',email:user.email,status:'pending',createdAt:now()});
+  t.set(lock,{reference,domain,status:'pending',createdAt:now()});return null;
+ });
+ if(existing)return existing;
+ // Retain the lock on ambiguous provider errors: a second charge must not be initiated.
+ const result=await api('/transaction/initialize',{email:user.email,amount:2000,currency:'ZAR',reference,callback_url:APP+'/?tab=marketplace&payment=marketplace',metadata:{batchbossReference:reference}});
+ const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
+ await lock.set({checkoutUrl},{merge:true});return {checkoutUrl};
+});
+async function settleMarketplace(reference:string,expectedUid?:string){
+ if(!/^BB-MKT-[0-9a-f-]{36}$/.test(reference))throw new HttpsError('invalid-argument','Invalid listing payment reference.');
+ const ref=db().doc(`marketplacePayments/${reference}`), snap=await ref.get(), expected=snap.data();
+ if(!expected||(expectedUid&&expected.uid!==expectedUid))throw new HttpsError('permission-denied','Payment is not linked to your account.');
+ const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
+ if(tx.status!=='success')return {status:String(tx.status||'pending')};
+ if(tx.reference!==reference||tx.amount!==2000||tx.currency!=='ZAR'||tx.domain!==expected.domain||String(tx.customer?.email||'').toLowerCase()!==String(expected.email).toLowerCase()||!Number.isFinite(new Date(tx.paid_at).getTime())||tx.plan?.plan_code||tx.plan_object?.plan_code||(typeof tx.plan==='string'&&tx.plan))throw new HttpsError('failed-precondition','Listing payment details do not match.');
+ const workspace=db().doc(`listingWorkspaces/${expected.uid}`), lock=workspace.collection('marketplaceCheckouts').doc(expected.id);
+ await db().runTransaction(async t=>{
+  const [current,l,user]=await Promise.all([t.get(ref),t.get(lock),t.get(db().doc(`users/${expected.uid}`))]);
+  if(current.data()?.status==='success')return;
+  if(l.data()?.reference!==reference||!user.exists)throw new HttpsError('failed-precondition','Listing payment needs support.');
+  t.update(ref,{status:'success',transactionId:String(tx.id),paidAt:tx.paid_at,processedAt:now()});
+  t.update(lock,{status:expected.domain==='live'?'paid':'test_paid',updatedAt:now()});
+ });
+ return {status:'success',testMode:expected.domain==='test'};
+}
+export const verifyMarketplacePayment=onCall(options,async request=>settleMarketplace(String(request.data?.reference||''),uidOf(request)));
 async function settle(reference:string,expectedUid?:string,subscriptionCode?:string){
  if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference))throw new HttpsError('invalid-argument','Invalid payment reference.');
  const paymentRef=db().doc(`subscriptionPayments/${reference}`);const payment=await paymentRef.get();let expected=payment.data();
@@ -138,7 +188,7 @@ export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',s
  if(!validSignature(request.rawBody,String(request.headers['x-paystack-signature']||''),secret.value())){response.status(401).send('Invalid signature');return;}
  try{const event=request.body;const data=event.data||{};
  if(event.event==='charge.success'){
-  const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
+  const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}if(reference.startsWith('BB-MKT-')){await settleMarketplace(reference);response.status(200).send('OK');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
   if(known.exists){await settle(reference);const customer=known.data()?.customer;
    // subscription.create may have arrived before charge.success.
    const subs=await db().collection('paystackSubscriptions').where('customer','==',customer).get();for(const sub of subs.docs)if(sub.data().planCode===known.data()?.planCode)await syncSubscription(sub.id);

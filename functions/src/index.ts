@@ -524,7 +524,7 @@ export const payfastNotify = onRequest(
   }
 );
 
-export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
+export {createMarketplaceCheckout,verifyMarketplacePayment,getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
 
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 export { sendBatchBossGiftProEmail } from './giftProEmail';

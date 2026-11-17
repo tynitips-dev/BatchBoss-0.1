@@ -97,9 +97,9 @@ export const publishBakerListing = onCall(options, async request => {
   const allowance = workspace.collection('allowances').doc(month)
 
   await db.runTransaction(async transaction => {
-    const [draft, access, existing, usage] = await Promise.all([
+    const [draft, access, existing, usage, checkout] = await Promise.all([
       transaction.get(drafts.doc(id)), transaction.get(entitlement),
-      transaction.get(publication), transaction.get(allowance),
+      transaction.get(publication), transaction.get(allowance), transaction.get(workspace.collection('marketplaceCheckouts').doc(id)),
     ])
     const details = draft.data()
     if (!details || details.kind !== kind) throw new HttpsError('not-found', 'Save this draft before publishing.')
@@ -107,11 +107,12 @@ export const publishBakerListing = onCall(options, async request => {
     const now = Date.now()
     const suiteActive = (paid?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
     const directoryActive = (paid?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now
-    if (kind === 'directoryListing' ? !suiteActive && !directoryActive : !suiteActive) {
+    const standalonePaid = kind === 'marketplace' && (checkout.data()?.status === 'paid' && checkout.data()?.domain === 'live' || existing.data()?.standalonePaid === true)
+    if (kind === 'directoryListing' ? !suiteActive && !directoryActive : !suiteActive && !standalonePaid) {
       throw new HttpsError('failed-precondition', 'An active listing plan is required.')
     }
 
-    if (kind === 'marketplace' && !existing.exists) {
+    if (kind === 'marketplace' && !existing.exists && !standalonePaid) {
       const used = usage.data()?.used ?? 0
       if (used >= 3) throw new HttpsError('resource-exhausted', 'You have used all three included Marketplace listings for this month.')
       transaction.set(allowance, { used: used + 1 })
@@ -119,7 +120,7 @@ export const publishBakerListing = onCall(options, async request => {
 
     const fields = {
       kind, title: details.title, area: details.area, description: details.description,
-      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', updatedAt: FieldValue.serverTimestamp(),
+      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, updatedAt: FieldValue.serverTimestamp(),
     }
     transaction.set(publication, fields)
     transaction.set(catalog, { ...fields, ownerUid: uid })
@@ -152,7 +153,7 @@ export const listPublishedBakerListings = onCall({
   }))
   const listings = snapshots.docs.flatMap(doc => {
     const { ownerUid, title, area, description, priceCents, logo, photos } = doc.data()
-    return eligible.has(ownerUid) ? [{ title, area, description, priceCents, logo, photos }] : []
+    return (eligible.has(ownerUid) || (kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents, logo, photos }] : []
   })
   return { listings, nextCursor: snapshots.size === 25 ? snapshots.docs.at(-1)!.id : null }
 })

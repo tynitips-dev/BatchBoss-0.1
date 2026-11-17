@@ -199,6 +199,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
   const [supplierCategory,setSupplierCategory]=useState('')
   const [active, setActive] = useState<ModuleKey>(() => {
     const params = new URLSearchParams(location.search)
+    if (params.get('payment') === 'marketplace') return 'marketplace'
     if (params.has('payment') || params.has('redeem')) return 'subscription'
     const tab = params.get('tab')
     return tab === 'directoryListing' || tab === 'marketplace' ? tab : 'home'
