@@ -48,3 +48,36 @@ export function convertTemperature(value:number,from:'C'|'F',to:'C'|'F'):number|
  if(!Number.isFinite(value)||!['C','F'].includes(from)||!['C','F'].includes(to))return null
  return from===to?value:from==='C'?value*9/5+32:(value-32)*5/9
 }
+
+export const launchCountries: ReadonlyArray<{code:LaunchCountry;name:string}> = [
+ {code:'ZA',name:'South Africa'}, {code:'GB',name:'United Kingdom'},
+ {code:'US',name:'United States'}, {code:'CA',name:'Canada'},
+ {code:'AU',name:'Australia'}, {code:'NZ',name:'New Zealand'},
+]
+/** Registration remains gated to ZAR until every monetary record is currency-safe. */
+export function regionalRegistration(country:string) {
+ const preset=regionDefaults(country)
+ if(!preset)return null
+ return {countryCode:country,currency:preset.currency,locale:preset.locale,
+  measurementSystem:preset.measurement,temperatureUnit:preset.temperature,regionalVersion:1,
+  registrationEnabled:country==='ZA'}
+}
+export function regionalSignupFields(country:string) {
+ const settings=regionalRegistration(country)
+ if(!settings?.registrationEnabled)throw new Error('Registration for this country is not available yet.')
+ const {registrationEnabled,...fields}=settings
+ void registrationEnabled
+ return fields
+}
+/** Read-only preview of stored data; never infer a replacement currency from country. */
+export function regionalWorkspaceSummary(business:Record<string,unknown>) {
+ const countryCode=typeof business.countryCode==='string'?business.countryCode:''
+ const preset=regionDefaults(countryCode)
+ return {
+  country:launchCountries.find(c=>c.code===countryCode)?.name || 'Not recorded (legacy workspace)',
+  currency:typeof business.currency==='string'&&business.currency.trim()?business.currency:'ZAR (legacy default)',
+  measurement:business.measurementSystem==='us'?'US customary':business.measurementSystem==='metric'?'Metric':'Existing recipe units',
+  temperature:business.temperatureUnit==='F'?'Fahrenheit':business.temperatureUnit==='C'?'Celsius':'Not recorded',
+  locale:typeof business.locale==='string'?business.locale:preset?.locale||'Not recorded',
+ }
+}
