@@ -123,9 +123,9 @@ export function bakeryAccountingRegion(business:Record<string,unknown>) {
  if(!currency)return null
  const preset=Object.values(regionPresets).find(p=>p.currency===currency)
  if(!preset)return null
- const country=typeof business.countryCode==='string'?business.countryCode:''
- if(country&&regionDefaults(country)?.currency!==currency)return null
- return {currency,locale:preset.locale,defaultTaxRate:currency==='ZAR'?15:0}
+ const country=business.countryCode===undefined?(Object.keys(regionPresets) as LaunchCountry[]).find(code=>regionPresets[code].currency===currency):business.countryCode
+ if(typeof country!=='string'||regionDefaults(country)?.currency!==currency)return null
+ return {currency,countryCode:country,locale:preset.locale,defaultTaxRate:currency==='ZAR'?15:0}
 }
 
 /** Do not apply South African dialing rules to an international customer. */

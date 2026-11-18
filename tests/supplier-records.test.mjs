@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { directorySupplierDocumentId, savedSupplierRecord } from '../web/src/supplierRecord.ts'
+import { directorySupplierDocumentId, savedSupplierRecord, supplierCountryMatches } from '../web/src/supplierRecord.ts'
 const supplier = { id:'12345678-1234-4234-8234-123456789abc', businessName:'Example Packaging', category:'Packaging', city:'Cape Town', province:'Western Cape', description:'Boxes and cake boards', delivery:'Collection', uid:'private-account-id', adminNotes:'Private review' }
 test('public listing creates the same stable bakery document key on both platforms', () => {
   assert.equal(directorySupplierDocumentId(supplier.id), 'directory_12345678-1234-4234-8234-123456789abc')
@@ -24,3 +24,14 @@ test('saved record contains interoperable supplier fields and excludes private i
   assert.equal(Object.hasOwn(record,'uid'),false)
   assert.equal(Object.hasOwn(record,'adminNotes'),false)
 })
+
+test('regional lists keep legacy South African suppliers local',()=>{
+ assert.equal(supplierCountryMatches(supplier,'ZA'),true)
+ assert.equal(supplierCountryMatches(supplier,'US'),false)
+ assert.equal(supplierCountryMatches({...supplier,countryCode:'US'},'US'),true)
+ assert.equal(supplierCountryMatches({...supplier,countryCode:'US'},'ZA'),false)
+ assert.equal(supplierCountryMatches({...supplier,countryCode:null},'ZA'),false)
+ assert.equal(savedSupplierRecord({...supplier,countryCode:'GB'}).countryCode,'GB')
+ assert.equal(savedSupplierRecord(supplier).countryCode,'ZA')
+ assert.throws(()=>savedSupplierRecord({...supplier,countryCode:'invalid'}))
+});

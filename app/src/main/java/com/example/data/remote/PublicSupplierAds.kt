@@ -33,6 +33,7 @@ object PublicSupplierAds {
             require(rows.length() <= 20)
             (0 until rows.length()).mapNotNull { index ->
                 val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                if (row.has("countryCode") && row.opt("countryCode") != "ZA") return@mapNotNull null
                 if (listOf("id", "title", "description", "businessName", "artworkUrl").any { row.opt(it) !is String || row.getString(it).length > 2000 }) return@mapNotNull null
                 val id = row.getString("id")
                 if (!PublicSupplierDirectory.validId(id)) return@mapNotNull null
