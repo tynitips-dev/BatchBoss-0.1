@@ -5,6 +5,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {accountPlatform} from './accountPlatform';
 
@@ -17,6 +18,7 @@ const adminEmail = defineString("ADMIN_EMAIL");
 const payfastMerchantId = defineSecret("PAYFAST_MERCHANT_ID");
 const payfastMerchantKey = defineSecret("PAYFAST_MERCHANT_KEY");
 const payfastPassphrase = defineSecret("PAYFAST_PASSPHRASE");
+const payfastEnabled = defineString("PAYFAST_ENABLED", { default: "false" });
 const payfastSecrets = [payfastMerchantId, payfastMerchantKey, payfastPassphrase];
 
 function requireSignedIn(request: { auth?: { uid: string; token: Record<string, unknown> } }) {
@@ -127,7 +129,7 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
   }
 
   const existing = userSnapshot.data() || {};
-  if (enabled && existing.subscriptionSource === "paystack" && existing.subscriptionStatus === "active") {
+  if (enabled && ["paystack", "payfast"].includes(existing.subscriptionSource) && existing.subscriptionStatus === "active") {
     throw new HttpsError("failed-precondition", "This account already has an active paid subscription. Do not replace its billing access with a gift.");
   }
   const expiresAt = enabled ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
@@ -271,7 +273,7 @@ const PAYFAST_NOTIFY_URL =
 function payfastEncode(value: string): string {
   return encodeURIComponent(value.trim())
     .replace(/%20/g, "+")
-    .replace(/[!'()~]/g, character =>
+    .replace(/[!'()*~]/g, character =>
       `%${character.charCodeAt(0).toString(16).toUpperCase()}`
     );
 }
@@ -295,228 +297,196 @@ function createPayfastSignature(
 }
 
 function signaturesMatch(received: string, expected: string): boolean {
-  if (!received || received.length !== expected.length) return false;
+  if (!/^[a-fA-F0-9]{32}$/.test(received) || received.length !== expected.length) return false;
   return timingSafeEqual(
     Buffer.from(received.toLowerCase()),
     Buffer.from(expected.toLowerCase())
   );
 }
 
-function addBillingPeriod(date: Date, plan: "monthly" | "annual"): Date {
+type PayfastPlan = "weekly" | "monthly" | "annual";
+const PAYFAST_PLANS = {
+  weekly: { cents: 3999, frequency: "2", label: "Weekly" },
+  monthly: { cents: 14999, frequency: "3", label: "Monthly" },
+  annual: { cents: 119900, frequency: "6", label: "Annual" },
+} as const;
+function addBillingPeriod(date: Date, plan: PayfastPlan): Date {
   const result = new Date(date);
-  if (plan === "annual") result.setUTCFullYear(result.getUTCFullYear() + 1);
-  else result.setUTCMonth(result.getUTCMonth() + 1);
+  if (plan === "weekly") { result.setUTCDate(result.getUTCDate() + 7); return result; }
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + (plan === "annual" ? 12 : 1));
+  const last = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth()+1, 0)).getUTCDate();
+  result.setUTCDate(Math.min(day,last));
   return result;
+}
+function localDay(date: Date): string {
+  return new Date(date.getTime()+2*60*60*1000).toISOString().slice(0,10);
+}
+function cents(value: string): number {
+  if (!/^\d{1,9}(\.\d{1,2})?$/.test(value)) return NaN;
+  return Math.round(Number(value)*100);
+}
+function validPlan(value: unknown): value is PayfastPlan {
+  return value === "weekly" || value === "monthly" || value === "annual";
+}
+function paidThrough(value: unknown): number {
+  const v = value as { toMillis?: () => number } | undefined;
+  return v?.toMillis?.() || 0;
 }
 
 export const createPayfastCheckout = onCall(
-  {
-    region: "europe-west1",
-    invoker: "public",
-    secrets: payfastSecrets,
-    cors: [APP_URL],
-  },
+  { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL] },
   async request => {
     const current = requireSignedIn(request);
-    const plan = String(request.data?.plan || "").toLowerCase();
-
-    if (plan !== "monthly" && plan !== "annual") {
-      throw new HttpsError(
-        "invalid-argument",
-        "Choose the monthly or annual BatchBoss Pro plan."
-      );
-    }
-
+    if (payfastEnabled.value() !== "true") throw new HttpsError("failed-precondition","Payfast checkout is not enabled yet.");
+    const plan = request.data?.plan;
+    if (!validPlan(plan)) throw new HttpsError("invalid-argument","Choose a weekly, monthly or annual Pro plan.");
+    if (request.data?.termsAccepted !== true) throw new HttpsError("invalid-argument","Accept the recurring payment terms first.");
     const userRecord = await auth.getUser(current.uid);
-    const profileSnapshot = await db.collection("users").doc(current.uid).get();
-    const profile = profileSnapshot.data() || {};
-    const email = String(userRecord.email || profile.email || "").trim();
-
-    if (!email) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Your BatchBoss account needs an email address before subscribing."
-      );
-    }
-
-    const amount = plan === "annual" ? "1199.00" : "149.00";
-    const frequency = plan === "annual" ? "6" : "3";
+    const email = String(userRecord.email || "").trim();
+    if (!email) throw new HttpsError("failed-precondition","Your account requires an email address.");
+    const config = PAYFAST_PLANS[plan];
+    const amount = (config.cents/100).toFixed(2);
     const paymentId = randomUUID();
-    const firstName =
-      String(profile.firstName || userRecord.displayName || "BatchBoss")
-        .trim()
-        .split(/\s+/)[0]
-        .slice(0, 100);
-
-    await db.collection("subscriptionPayments").doc(paymentId).set({
-      uid: current.uid,
-      email,
-      plan,
-      amount: Number(amount),
-      currency: "ZAR",
-      provider: "payfast",
-      status: "pending",
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+    const paymentRef = db.doc(`subscriptionPayments/${paymentId}`);
+    const profileRef = db.doc(`users/${current.uid}`);
+    const lockRef = db.doc(`payfastCheckouts/${current.uid}`);
+    const otherLockRef = db.doc(`paystackCheckouts/${current.uid}`);
+    const nextDate = addBillingPeriod(new Date(),plan);
+    const billingDate = localDay(nextDate);
+    const profile = await db.runTransaction(async t => {
+      const [p,l,o] = await Promise.all([t.get(profileRef),t.get(lockRef),t.get(otherLockRef)]);
+      if (!p.exists) throw new HttpsError("failed-precondition","Complete your profile first.");
+      const data = p.data()!;
+      if (data.subscriptionSource === "paystack" && (data.paystackSubscriptionCode || data.subscriptionStatus === "active"))
+        throw new HttpsError("failed-precondition","Contact support before switching from Paystack.");
+      if (data.subscriptionSource === "payfast" && (data.subscriptionRenews !== false || paidThrough(data.subscriptionExpiresAt)>Date.now()))
+        throw new HttpsError("failed-precondition","Manage your existing Payfast subscription first.");
+      if (data.subscriptionSource === "admin_promotion" && paidThrough(data.subscriptionExpiresAt)>Date.now())
+        throw new HttpsError("failed-precondition","Use your remaining promotional access first.");
+      if (l.exists || (o.data()?.expiresAtMs || 0)>Date.now())
+        throw new HttpsError("failed-precondition","A checkout is already pending. Contact support if it was abandoned.");
+      t.create(lockRef,{paymentId,createdAt:FieldValue.serverTimestamp()});
+      t.create(paymentRef,{uid:current.uid,email,plan,amount:config.cents/100,amountCents:config.cents,currency:"ZAR",
+        provider:"payfast",status:"pending",billingDate,createdAt:FieldValue.serverTimestamp()});
+      return data;
     });
-
     const fields: PayfastFields = {
-      merchant_id: payfastMerchantId.value(),
-      merchant_key: payfastMerchantKey.value(),
-      return_url: `${APP_URL}/?payment=success`,
-      cancel_url: `${APP_URL}/?payment=cancelled`,
-      notify_url: PAYFAST_NOTIFY_URL,
-      name_first: firstName,
-      email_address: email,
-      m_payment_id: paymentId,
-      amount,
-      item_name:
-        plan === "annual"
-          ? "BatchBoss Pro Annual"
-          : "BatchBoss Pro Monthly",
-      subscription_type: "1",
-      billing_date: new Date().toISOString().slice(0, 10),
-      recurring_amount: amount,
-      frequency,
-      cycles: "0",
+      merchant_id: payfastMerchantId.value(), merchant_key: payfastMerchantKey.value(),
+      return_url: `${APP_URL}/?payment=success`, cancel_url: `${APP_URL}/?payment=cancelled`, notify_url: PAYFAST_NOTIFY_URL,
+      name_first: String(profile.firstName || userRecord.displayName || "Baker").trim().split(/\s+/)[0].slice(0,100),
+      email_address: email, m_payment_id: paymentId, amount, item_name: `BatchBoss Pro ${config.label}`,
+      payment_method:"cc", subscription_type:"1",billing_date:billingDate,recurring_amount:amount,frequency:config.frequency,cycles:"0",
     };
-
-    fields.signature = createPayfastSignature(
-      fields,
-      payfastPassphrase.value()
-    );
-
-    return {
-      success: true,
-      checkoutUrl: PAYFAST_URL,
-      fields,
-    };
+    fields.signature = createPayfastSignature(fields,payfastPassphrase.value());
+    return {success:true,checkoutUrl:PAYFAST_URL,fields};
   }
 );
 
 export const payfastNotify = onRequest(
-  {
-    region: "europe-west1",
-    invoker: "public",
-    secrets: payfastSecrets,
-  },
-  async (request, response) => {
+  { region: "europe-west1", invoker: "public", secrets: payfastSecrets },
+  async (request,response) => {
     try {
-      if (request.method !== "POST") {
-        response.status(405).send("Method not allowed");
-        return;
-      }
-
-      const rawBody = request.rawBody.toString("utf8");
-      const searchParams = new URLSearchParams(rawBody);
+      if(request.method!=="POST"){response.status(405).send("Method not allowed");return;}
+      const params = new URLSearchParams(request.rawBody.toString("utf8"));
       const fields: PayfastFields = {};
-      searchParams.forEach((value, key) => {
-        fields[key] = value;
+      for(const [key,value] of params){
+        if(!/^[a-zA-Z0-9_]+$/.test(key)||Object.prototype.hasOwnProperty.call(fields,key)){
+          response.status(400).send("Invalid fields");return;
+        }
+        fields[key]=value;
+      }
+      // ITNs include empty fields; preserve their transmitted order for validation.
+      const encoded = Object.entries(fields).filter(([key])=>key!=="signature").map(([key,value])=>key+"="+payfastEncode(value)).join("&");
+      const expectedSignature=createHash("md5").update(encoded+"&passphrase="+payfastEncode(payfastPassphrase.value())).digest("hex");
+      if(!signaturesMatch(fields.signature||"",expectedSignature)||fields.merchant_id!==payfastMerchantId.value()){
+        response.status(400).send("Invalid signature or merchant");return;
+      }
+      const validation=await fetch(PAYFAST_VALIDATE_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:encoded,signal:AbortSignal.timeout(15000)});
+      if(!validation.ok){response.status(503).send("Validation unavailable");return;}
+      if((await validation.text()).trim()!=="VALID"){response.status(400).send("Invalid notification");return;}
+      const token=String(fields.token||"");
+      const paymentId=String(fields.m_payment_id||"");
+      const transactionId=String(fields.pf_payment_id||"");
+      const status=String(fields.payment_status||"").toUpperCase();
+      if(!["COMPLETE","CANCELLED","FAILED"].includes(status)){response.status(200).send("Ignored");return;}
+      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(transactionId)||!/^[-a-fA-F0-9]{36}$/.test(token)){
+        response.status(400).send("Missing transaction or subscription token");return;
+      }
+      const tokenRef=db.doc(`payfastSubscriptions/${token}`);
+      const tokenSnapshot=await tokenRef.get();
+      const mapped=tokenSnapshot.data();
+      const reference=String(mapped?.paymentId||paymentId);
+      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(reference)){response.status(400).send("Unknown reference");return;}
+      const paymentRef=db.doc(`subscriptionPayments/${reference}`);
+      const initial=(await paymentRef.get()).data();
+      if(!initial||initial.provider!=="payfast"||!validPlan(initial.plan)){response.status(404).send("Unknown payment");return;}
+      const plan:PayfastPlan=initial.plan;
+      const expectedCents=Number(initial.amountCents||Math.round(Number(initial.amount)*100));
+      if(status==="COMPLETE"&&cents(fields.amount_gross||"")!==expectedCents){response.status(400).send("Amount mismatch");return;}
+      const uid=String(initial.uid||"");
+      if(!uid||uid.includes("/")){response.status(400).send("Invalid account");return;}
+      const profileRef=db.doc(`users/${uid}`);
+      const lockRef=db.doc(`payfastCheckouts/${uid}`);
+      const txRef=db.doc(`payfastTransactions/${transactionId}`);
+      const eventRef=db.doc(`payfastBillingEvents/${transactionId}_${status}`);
+      await db.runTransaction(async t=>{
+        const [p,sub,tx,event,payment,lock]=await Promise.all([t.get(profileRef),t.get(tokenRef),t.get(txRef),t.get(eventRef),t.get(paymentRef),t.get(lockRef)]);
+        if(event.exists)return;
+        if(!p.exists||!payment.exists)throw Error("Missing account or payment");
+        const profile=p.data()!, linked=sub.data(), original=payment.data()!;
+        if(linked && (linked.uid!==uid||linked.paymentId!==reference))throw Error("Subscription token mismatch");
+        if(original.payfastToken&&original.payfastToken!==token)throw Error("Payment token mismatch");
+        if(tx.exists&&tx.data()?.uid!==uid)throw Error("Transaction ownership mismatch");
+        // Recognise an already-processed payment from the previous implementation.
+        const legacyDuplicate=original.payfastPaymentId===transactionId&&original.status==="complete"&&!tx.exists;
+        t.create(eventRef,{uid,reference,transactionId,status,provider:"payfast",createdAt:FieldValue.serverTimestamp()});
+        if(status!=="COMPLETE"){
+          // Failure/cancellation ITNs are audit events, not proof that the whole agreement ended.
+          if(linked&&linked.uid===uid)t.set(tokenRef,{lastPaymentEvent:status,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+          return;
+        }
+        if(tx.exists)return;
+        const conflicting=profile.subscriptionSource==="paystack"&&(profile.paystackSubscriptionCode||profile.subscriptionStatus==="active")||
+          profile.subscriptionSource==="payfast"&&profile.payfastToken&&profile.payfastToken!==token;
+        const existingExpiry=paidThrough(profile.subscriptionExpiresAt);
+        const nextDate=addBillingPeriod(new Date(),plan);
+        // The provider's next billing date is preferred only if it is a valid future date.
+        const remoteDate=/^\d{4}-\d{2}-\d{2}$/.test(fields.billing_date||"")?new Date(fields.billing_date+"T00:00:00+02:00"):null;
+        const expires=remoteDate&&Number.isFinite(remoteDate.getTime())&&remoteDate.getTime()>Date.now()&&remoteDate.getTime()<=nextDate.getTime()+86400000?remoteDate:nextDate;
+        const expiry=new Date(Math.max(expires.getTime(),existingExpiry));
+        t.create(txRef,{uid,reference,transactionId,provider:"payfast",plan,amountCents:expectedCents,currency:"ZAR",status:"success",
+          paidAt:FieldValue.serverTimestamp(),legacyDuplicate,requiresReview:!!conflicting});
+        t.set(tokenRef,{uid,paymentId:reference,plan,amountCents:expectedCents,currency:"ZAR",status:conflicting?"review":"active",
+          lastTransactionId:transactionId,nextPaymentAt:expires,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+        t.set(paymentRef,{status:"complete",payfastPaymentId:transactionId,payfastToken:token,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+        if(lock.data()?.paymentId===reference)t.delete(lockRef);
+        if(!conflicting&&!legacyDuplicate)t.set(profileRef,{subscriptionPlan:"pro",subscriptionStatus:"active",subscriptionSource:"payfast",
+          subscriptionBillingInterval:plan,subscriptionRenews:true,subscriptionExpiresAt:expiry,
+          subscriptionStartedAt:profile.subscriptionSource==="payfast"&&profile.subscriptionStartedAt?profile.subscriptionStartedAt:FieldValue.serverTimestamp(),
+          payfastPaymentId:reference,payfastToken:token,updatedAt:FieldValue.serverTimestamp()},{merge:true});
       });
-
-      const receivedSignature = String(fields.signature || "");
-      const expectedSignature = createPayfastSignature(
-        fields,
-        payfastPassphrase.value()
-      );
-
-      if (!signaturesMatch(receivedSignature, expectedSignature)) {
-        console.error("Rejected PayFast ITN with an invalid signature.");
-        response.status(400).send("Invalid signature");
-        return;
-      }
-
-      const validationResponse = await fetch(PAYFAST_VALIDATE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: rawBody,
-      });
-      const validationResult = (await validationResponse.text()).trim();
-
-      if (validationResult !== "VALID") {
-        console.error("PayFast server validation failed:", validationResult);
-        response.status(400).send("Invalid payment notification");
-        return;
-      }
-
-      const paymentId = String(fields.m_payment_id || "");
-      const paymentRef = db.collection("subscriptionPayments").doc(paymentId);
-      const paymentSnapshot = await paymentRef.get();
-
-      if (!paymentSnapshot.exists) {
-        response.status(404).send("Unknown payment");
-        return;
-      }
-
-      const payment = paymentSnapshot.data() || {};
-      const expectedAmount = Number(payment.amount || 0);
-      const receivedAmount = Number(fields.amount_gross || 0);
-
-      if (
-        !Number.isFinite(receivedAmount) ||
-        Math.abs(receivedAmount - expectedAmount) > 0.01
-      ) {
-        response.status(400).send("Payment amount does not match");
-        return;
-      }
-
-      const paymentStatus = String(fields.payment_status || "").toUpperCase();
-      const uid = String(payment.uid || "");
-      const plan = payment.plan === "annual" ? "annual" : "monthly";
-
-      if (paymentStatus === "COMPLETE" && uid) {
-        const userRef = db.collection("users").doc(uid);
-        const userSnapshot = await userRef.get();
-        const currentExpiry = userSnapshot.data()?.subscriptionExpiresAt;
-        const currentExpiryDate =
-          typeof currentExpiry?.toDate === "function"
-            ? currentExpiry.toDate()
-            : null;
-
-        const periodStart =
-          currentExpiryDate && currentExpiryDate.getTime() > Date.now()
-            ? currentExpiryDate
-            : new Date();
-
-        const expiresAt = addBillingPeriod(periodStart, plan);
-
-        await userRef.set(
-          {
-            subscriptionPlan: "pro",
-            subscriptionStatus: "active",
-            subscriptionSource: "payfast",
-            subscriptionBillingInterval: plan,
-            subscriptionStartedAt: FieldValue.serverTimestamp(),
-            subscriptionExpiresAt: expiresAt,
-            payfastPaymentId: paymentId,
-            payfastToken: String(fields.token || ""),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-
-      await paymentRef.set(
-        {
-          status: paymentStatus.toLowerCase(),
-          payfastPaymentStatus: paymentStatus,
-          payfastPaymentId: String(fields.pf_payment_id || ""),
-          payfastToken: String(fields.token || ""),
-          processedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
       response.status(200).send("OK");
-    } catch (error) {
-      console.error("payfastNotify failed", error);
-      response.status(500).send("Payment processing failed");
-    }
+    }catch(error){console.error("Payfast notification processing failed",error instanceof Error?error.message:"unknown");response.status(500).send("Retry later");}
   }
 );
+
+export const expirePayfastAccess=onSchedule({region:"europe-west1",schedule:"every 60 minutes"},async()=>{
+  const users=await db.collection("users").where("subscriptionSource","==","payfast").get();
+  for(const user of users.docs)await db.runTransaction(async t=>{
+    const current=await t.get(user.ref), p=current.data();
+    if(p?.subscriptionSource==="payfast"&&p.subscriptionStatus==="active"&&paidThrough(p.subscriptionExpiresAt)<=Date.now())
+      t.update(user.ref,{subscriptionStatus:"expired",updatedAt:FieldValue.serverTimestamp()});
+  });
+});
+
+export const listPayfastPayments=onCall({region:"europe-west1",invoker:"public"},async request=>{
+  requireAdmin(request);
+  const result=await db.collection("payfastTransactions").orderBy("paidAt","desc").limit(100).get();
+  return {payments:result.docs.map(doc=>{const p=doc.data();return {id:doc.id,uid:p.uid,reference:p.reference,plan:p.plan,
+    amountCents:p.amountCents,currency:p.currency,status:p.status,paidAt:p.paidAt?.toDate?.().toISOString()||null,requiresReview:!!p.requiresReview};})};
+});
 
 export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
 
