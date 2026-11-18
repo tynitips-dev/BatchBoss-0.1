@@ -17,7 +17,8 @@
     "react-dom": "latest",
     "vite": "latest",
     "xlsx": "^0.18.5",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "jspdf": "4.2.1"
   },
   "devDependencies": {
     "@eslint/js": "latest",
