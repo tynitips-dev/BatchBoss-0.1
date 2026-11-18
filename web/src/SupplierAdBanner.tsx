@@ -25,7 +25,7 @@ export default function SupplierAdBanner({countryCode='ZA'}:{countryCode?:string
   }
   void refresh();const interval=setInterval(()=>void refresh(),60000)
   return()=>{active=false;current?.abort();clearInterval(interval)}
- },[countryCode]
+ },[countryCode])
  const localAds=ads.filter(ad=>supplierCountryMatches(ad,countryCode))
  if(!localAds.length)return null
  return <section className="supplier-ad-banner" aria-label="Supplier offers">{localAds.map(ad=><article key={ad.id}>
