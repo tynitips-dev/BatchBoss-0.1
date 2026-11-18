@@ -116,3 +116,14 @@ export function formatRecordTotals(records:ReadonlyArray<Record<string,unknown>>
 }
 /** These web writers are still ZAR-only until non-ZAR workspace rollout is ready. */
 export const stagedCurrencyFields={currency:'ZAR'} as const
+
+/** Accounting currency comes from the bakery document, never a browser locale or user preference. */
+export function bakeryAccountingRegion(business:Record<string,unknown>) {
+ const currency=recordCurrency(business)
+ if(!currency)return null
+ const preset=Object.values(regionPresets).find(p=>p.currency===currency)
+ if(!preset)return null
+ const country=typeof business.countryCode==='string'?business.countryCode:''
+ if(country&&regionDefaults(country)?.currency!==currency)return null
+ return {currency,locale:preset.locale,defaultTaxRate:currency==='ZAR'?15:0}
+}

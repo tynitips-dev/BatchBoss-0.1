@@ -53,6 +53,10 @@ function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol
 export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
+ const profile=(await db().doc(`users/${uid}`).get()).data();
+ if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId)throw new HttpsError('failed-precondition','Complete your bakery profile first.');
+ const bakery=(await db().doc(`bakeries/${profile.bakeryId}`).get()).data();
+ if(!bakery||(bakery.currency!==undefined&&bakery.currency!=='ZAR')||(bakery.countryCode!==undefined&&bakery.countryCode!=='ZA'))throw new HttpsError('failed-precondition','Regional subscription billing is not available yet.');
  const requestedPlan=String(request.data?.plan);
  const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
  if(promotional && !promotionEnabled(requestedPlan))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');

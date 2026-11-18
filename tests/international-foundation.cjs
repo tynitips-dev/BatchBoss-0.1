@@ -98,3 +98,11 @@ test('costing does not mix differently denominated stock',()=>{
  assert.equal(c.calculateIngredientUsageCost(row,[stock],'USD'),10);
  assert.equal(c.calculateIngredientUsageCost(row,[{...stock,currency:undefined}]),10);
 });
+
+test('bakery currency is resolved from persisted metadata, never relabelled from country',()=>{
+ assert.deepEqual(u.bakeryAccountingRegion({}),{currency:'ZAR',locale:'en-ZA',defaultTaxRate:15});
+ assert.deepEqual(u.bakeryAccountingRegion({currency:'USD',countryCode:'US'}),{currency:'USD',locale:'en-US',defaultTaxRate:0});
+ assert.equal(u.bakeryAccountingRegion({currency:'ZAR',countryCode:'US'}),null);
+ assert.equal(u.bakeryAccountingRegion({currency:null}),null);
+ assert.equal(u.bakeryAccountingRegion({currency:'XYZ'}),null);
+});
