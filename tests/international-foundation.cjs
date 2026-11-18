@@ -44,3 +44,27 @@ test('ingredient costing respects explicit units and does not guess density',()=
  assert.equal(calc(1,'cup',milk),25);
  assert.equal(calc(1,'tbsp_au',milk),2);
 });
+
+test('regional signup is gated before account creation and writes explicit South African defaults',()=>{
+ assert.equal(u.launchCountries.length,6);
+ assert.deepEqual(u.regionalSignupFields('ZA'),{
+ countryCode:'ZA',currency:'ZAR',locale:'en-ZA',measurementSystem:'metric',temperatureUnit:'C',regionalVersion:1
+ });
+ for(const country of ['GB','US','CA','AU','NZ']){
+  assert.equal(u.regionalRegistration(country).registrationEnabled,false);
+  assert.throws(()=>u.regionalSignupFields(country),/not available/);
+ }
+ assert.equal(u.regionalRegistration('XX'),null);
+ assert.throws(()=>u.regionalSignupFields('XX'));
+});
+test('workspace summary never relabels legacy account balances from a country selection',()=>{
+ const legacy=u.regionalWorkspaceSummary({});
+ assert.equal(legacy.currency,'ZAR (legacy default)');
+ assert.equal(legacy.measurement,'Existing recipe units');
+ const mismatched=u.regionalWorkspaceSummary({countryCode:'US',currency:'ZAR'});
+ assert.equal(mismatched.currency,'ZAR');
+ const created=u.regionalWorkspaceSummary(u.regionalSignupFields('ZA'));
+ assert.equal(created.country,'South Africa');
+ assert.equal(created.currency,'ZAR');
+ assert.equal(created.temperature,'Celsius');
+});
