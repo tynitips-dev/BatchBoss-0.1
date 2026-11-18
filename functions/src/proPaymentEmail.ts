@@ -1,7 +1,7 @@
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
 const db = getFirestore();
@@ -110,3 +110,26 @@ export const sendBatchBossProPaymentEmail = onDocumentUpdated(
     }
   }
 );
+
+export const sendBatchBossPayfastReceipt = onDocumentCreated({
+  document:"payfastTransactions/{reference}",region:"europe-west1",secrets:[resendApiKey],retry:true,
+},async event=>{
+  const p=event.data?.data();
+  if(!p||p.status!=="success"||p.provider!=="payfast"||p.legacyDuplicate)return;
+  const reference=event.params.reference;
+  const uid=String(p.uid||"");
+  if(!uid||!Number.isInteger(p.amountCents)||p.amountCents<=0)return;
+  const recipient=(await getAuth().getUser(uid)).email;
+  if(!recipient)return;
+  const delivery=db.doc(`emailDeliveries/payfast_${reference}`);
+  if((await delivery.get()).data()?.status==="sent")return;
+  const amount="R"+(p.amountCents/100).toFixed(2);
+  const label=escapeHtml(String(p.plan||"Pro"));
+  const date=p.paidAt?.toDate?.()?.toISOString?.()||"";
+  const body=`<h1>BatchBoss payment confirmation</h1><p>Thank you for your payment.</p><p>Plan: ${label}<br>Amount: ${amount}<br>Reference: ${escapeHtml(reference)}<br>Recorded at: ${escapeHtml(date)}</p><p>${p.requiresReview?"Your account requires a billing review. Contact info@batchboss.co.za.":"Manage your account at app.batchboss.co.za."}</p><p>This is a payment confirmation, not a tax invoice.</p>`;
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{
+    Authorization:`Bearer ${resendApiKey.value()}`,"Content-Type":"application/json","Idempotency-Key":`batchboss-payfast-${reference}`
+  },body:JSON.stringify({from:"BatchBoss <welcome@batchboss.co.za>",to:[recipient],subject:"Your BatchBoss payment confirmation",html:body}),signal:AbortSignal.timeout(15000)});
+  if(!response.ok){await delivery.set({status:"failed",httpStatus:response.status,updatedAt:FieldValue.serverTimestamp()},{merge:true});throw Error("Payfast receipt delivery failed");}
+  await delivery.set({status:"sent",uid,reference,sentAt:FieldValue.serverTimestamp()},{merge:true});
+});
