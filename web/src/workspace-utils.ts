@@ -89,3 +89,30 @@ export function normalizeDecimalDraft(raw:string):string {
 export function isDecimalDraft(value:string):boolean {
  return /^-?\d+(?:\.\d*)?$/.test(value)
 }
+
+/** Missing currency denotes a legacy South African record; malformed explicit metadata is not ZAR. */
+export function recordCurrency(record:Record<string,unknown>):string|null {
+ const code=record.currency
+ return code===undefined?'ZAR':typeof code==='string'&&/^[A-Z]{3}$/.test(code)?code:null
+}
+export function formatRecordMoney(value:number,record:Record<string,unknown>):string {
+ const currency=recordCurrency(record)
+ if(!currency||!Number.isFinite(value))return 'Amount or currency unavailable'
+ const locale=Object.values(regionPresets).find(p=>p.currency===currency)?.locale||'en-US'
+ return formatRegionalMoney(value,currency,locale)
+}
+/** Never add different currencies together or apply an implicit exchange rate. */
+export function formatRecordTotals(records:ReadonlyArray<Record<string,unknown>>,key:string):string {
+ const totals=new Map<string,number>()
+ let unavailable=false
+ for(const record of records){
+  const currency=recordCurrency(record),value=Number(record[key]??0)
+  if(!currency||!Number.isFinite(value)){unavailable=true;continue}
+  totals.set(currency,(totals.get(currency)||0)+value)
+ }
+ const amounts=[...totals.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([currency,value])=>formatRecordMoney(value,{currency}))
+ if(unavailable)amounts.push('Some amounts unavailable')
+ return amounts.join(' / ')||money.format(0)
+}
+/** These web writers are still ZAR-only until non-ZAR workspace rollout is ready. */
+export const stagedCurrencyFields={currency:'ZAR'} as const

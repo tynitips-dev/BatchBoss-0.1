@@ -1,11 +1,11 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'), ts=require('../web/node_modules/typescript');
-function load(path){
+function load(path,dependencies={}){
  const source=ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
- const mod={exports:{}}; new Function('exports','module',source)(mod.exports,mod); return mod.exports;
+ const mod={exports:{}}; new Function('require','exports','module',source)(name=>{if(!(name in dependencies))throw Error(name);return dependencies[name]},mod.exports,mod); return mod.exports;
 }
-const u=load('web/src/workspace-utils.ts'), c=load('web/src/costing.ts');
+const u=load('web/src/workspace-utils.ts'), c=load('web/src/costing.ts',{'./workspace-utils':u});
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-9, a+' != '+b);
 test('regional defaults and currency formatting preserve South African legacy',()=>{
  assert.equal(u.regionDefaults('ZA').currency,'ZAR');
@@ -77,4 +77,24 @@ test('decimal keyboard input keeps fractional zeros and removes redundant leadin
  for(const raw of ['1.2.3','-','abc','1e3','1 234'])assert.equal(u.isDecimalDraft(raw),false)
  assert.match(u.formatRegionalMoney(4.99,'EUR','de-DE'),/4\.99/)
  assert.match(u.formatRegionalMoney(1234.59,'EUR','de-DE'),/1 234\.59/)
+});
+
+test('record currency is explicit and legacy ZAR is not relabelled',()=>{
+ assert.equal(u.recordCurrency({}), 'ZAR');
+ assert.equal(u.recordCurrency({currency:'USD'}), 'USD');
+ assert.equal(u.recordCurrency({currency:null}), null);
+ assert.equal(u.recordCurrency({currency:'oops'}), null);
+ assert.equal(u.formatRecordMoney(4.99,{}),'R 4.99');
+ assert.match(u.formatRecordMoney(4.99,{currency:'USD'}),/USD.*4\.99/);
+ assert.equal(u.formatRecordMoney(4.99,{currency:null}),'Amount or currency unavailable');
+ const totals=u.formatRecordTotals([{total:5},{total:10,currency:'ZAR'},{total:2,currency:'USD'}],'total');
+ assert.match(totals,/R 15\.00/);assert.match(totals,/USD.*2\.00/);
+ assert.match(u.formatRecordTotals([{total:1,currency:null}],'total'),/unavailable/);
+});
+test('costing does not mix differently denominated stock',()=>{
+ const row={name:'Flour',quantity:500,unit:'g',cost:0};
+ const stock={name:'Flour',unit:'kg',packageQuantity:1,packagePrice:20,currency:'USD'};
+ assert.equal(c.calculateIngredientUsageCost(row,[stock]),null);
+ assert.equal(c.calculateIngredientUsageCost(row,[stock],'USD'),10);
+ assert.equal(c.calculateIngredientUsageCost(row,[{...stock,currency:undefined}]),10);
 });

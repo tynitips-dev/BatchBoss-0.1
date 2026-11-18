@@ -8,7 +8,8 @@ function load(path, dependencies={}) {
  new Function('require','exports','module',source)(name=>dependencies[name],mod.exports,mod);
  return mod.exports;
 }
-const costing=load('web/src/costing.ts');
+const workspace=load('web/src/workspace-utils.ts');
+const costing=load('web/src/costing.ts',{'./workspace-utils':workspace});
 const flour={name:'Flour',unit:'kg',packageQuantity:1,packagePrice:30};
 test('cake flour matches flour, with exact names preferred and ambiguous stock rejected',()=>{
  assert.equal(costing.findMatchingStock('Cake flour',[flour]),flour);

@@ -1,3 +1,4 @@
+import { recordCurrency } from './workspace-utils'
 export type IngredientUsage={name:string;quantity:number;unit:string;cost:number}
 type StockItem=Record<string,unknown>
 const norm=(s:unknown)=>String(s??'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')
@@ -41,9 +42,9 @@ const toBase=(quantity:number,unit:string)=>quantity*(({kg:1000,L:1000,tsp:5,tbs
  * Returns null for missing prices or incompatible measures. No guessed
  * conversions from volume to mass (e.g. flour cups to grams).
  */
-export function calculateIngredientUsageCost(row:IngredientUsage,inventory:StockItem[]):number|null{
+export function calculateIngredientUsageCost(row:IngredientUsage,inventory:StockItem[],expectedCurrency='ZAR'):number|null{
  const stock=findMatchingStock(row.name,inventory)
- if(!stock||qty(row.quantity)===0)return null
+ if(!stock||recordCurrency(stock)!==expectedCurrency||qty(row.quantity)===0)return null
  const stockUnit=normalizeIngredientUnit(stock.unit||'unit'),recipeUnit=normalizeIngredientUnit(row.unit)
  if(dimension(stockUnit)!==dimension(recipeUnit)||dimension(stockUnit)==='unknown')return null
  const packPrice=qty(stock.packagePrice)
