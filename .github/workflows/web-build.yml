@@ -25,6 +25,10 @@ jobs:
       - name: Compile Firebase functions
         working-directory: functions
         run: npm run build
+      - name: Test regional listing and existing fee invariants
+        run: node --test tests/listing-region.cjs
+      - name: Validate published listing browser script
+        run: node --check website/published-listings.js
 
   build-customer-portal:
     runs-on: ubuntu-latest

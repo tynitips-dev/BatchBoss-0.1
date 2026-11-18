@@ -5,6 +5,7 @@ import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {validSignature,periodEnd,matchesPayment} from './paystack-core';
+import {listingRegion, sameListingRegion, marketplaceBillingAvailable} from './listingRegion';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
@@ -117,6 +118,10 @@ export const createMarketplaceCheckout=onCall(options,async request=>{
   const allowance=workspace.collection('allowances').doc(month);
   const [d,l,p,u,access,usage]=await Promise.all([t.get(draft),t.get(lock),t.get(publication),t.get(db().doc(`users/${uid}`)),t.get(db().doc(`listingEntitlements/${uid}`)),t.get(allowance)]);
   if(!u.exists||d.data()?.kind!=='marketplace')throw new HttpsError('failed-precondition','Save your listing first.');
+  const bakeryId=u.data()?.bakeryId;
+  if(typeof bakeryId!=='string'||!bakeryId||bakeryId.includes('/'))throw new HttpsError('failed-precondition','Verify your bakery workspace.');
+  const region=listingRegion((await t.get(db().doc(`bakeries/${bakeryId}`))).data());
+  if(!marketplaceBillingAvailable(region)||!sameListingRegion(region??undefined,d.data()))throw new HttpsError('failed-precondition','Regional Marketplace billing is not available yet.');
   if(p.exists)throw new HttpsError('failed-precondition','This listing has already been published.');
   const old=l.data();
   if(old?.status==='paid')throw new HttpsError('failed-precondition','This listing is already paid. Publish it from your draft.');
@@ -126,7 +131,7 @@ export const createMarketplaceCheckout=onCall(options,async request=>{
    throw new HttpsError('failed-precondition','Checkout is being prepared or needs support. Do not pay twice.');
   }
   if((access.data()?.fullSuiteExpiresAt?.toMillis?.()??0)>Date.now()&&(usage.data()?.used??0)<3)throw new HttpsError('failed-precondition','You have an included listing. Use Save and publish instead.');
-  t.create(attempt,{uid,id,reference,domain,amount:2000,currency:'ZAR',email:user.email,status:'pending',createdAt:now()});
+  t.create(attempt,{uid,id,reference,domain,amount:2000,currency:'ZAR',listingCountryCode:region!.countryCode,listingCurrency:region!.currency,email:user.email,status:'pending',createdAt:now()});
   t.set(lock,{reference,domain,status:'pending',createdAt:now()});return null;
  });
  if(existing)return existing;
@@ -155,8 +160,10 @@ async function settleMarketplace(reference:string,expectedUid?:string){
   t.update(lock,{status:expected.domain==='live'?'paid':'test_paid',updatedAt:now()});
   if(expected.domain==='live'){
    if(details?.kind!=='marketplace')throw new HttpsError('failed-precondition','Paid listing draft is missing. Contact support.');
+   const paidRegion=listingRegion({countryCode:expected.listingCountryCode,currency:expected.listingCurrency});
+   if(!marketplaceBillingAvailable(paidRegion)||!sameListingRegion(paidRegion??undefined,details)||existing.exists&&!sameListingRegion(existing.data(),details))throw new HttpsError('failed-precondition','Paid listing currency could not be verified. Contact support; do not pay again.');
    if(existing.data()?.status!=='sold'){
-    const fields={kind:'marketplace',title:details.title,area:details.area,description:details.description,priceCents:details.priceCents,logo:'',photos:details.photos??[],sellerType:'baker',standalonePaid:true,status:'published',updatedAt:now()};
+    const fields={kind:'marketplace',countryCode:paidRegion!.countryCode,currency:paidRegion!.currency,title:details.title,area:details.area,description:details.description,priceCents:details.priceCents,logo:'',photos:details.photos??[],sellerType:'baker',standalonePaid:true,status:'published',updatedAt:now()};
     t.set(publication,fields);t.set(catalog,{...fields,ownerUid:expected.uid});
    }
   }

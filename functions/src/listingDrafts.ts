@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
+import {listingCountry, listingRegion, listingBelongsToCountry, sameListingRegion, marketplaceBillingAvailable} from './listingRegion'
 
 const options = { region: 'europe-west1', invoker: 'public' }
 type Kind = 'directoryListing' | 'marketplace'
@@ -29,27 +30,37 @@ function listingImage(value: unknown): string {
 async function draftCollection(uid: string | undefined) {
   if (!uid) throw new HttpsError('unauthenticated', 'Please sign in.')
   const db = getFirestore()
-  if (!(await db.collection('users').doc(uid).get()).exists) {
-    throw new HttpsError('failed-precondition', 'Set up your Baker Portal account first.')
+  const profile=(await db.collection('users').doc(uid).get()).data()
+  if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId||profile.bakeryId.includes('/')){
+    throw new HttpsError('failed-precondition','Set up your Baker Portal account first.')
   }
-  return db.collection('listingWorkspaces').doc(uid).collection('drafts')
+  const bakery=(await db.collection('bakeries').doc(profile.bakeryId).get()).data()
+  const region=listingRegion(bakery)
+  if(!region)throw new HttpsError('failed-precondition','Verify your bakery country and accounting currency before editing listings.')
+  return { drafts:db.collection('listingWorkspaces').doc(uid).collection('drafts'),region }
 }
 
+export const getListingRegion=onCall(options,async request=>{
+ const {region}=await draftCollection(request.auth?.uid)
+ return {...region,publicationEnabled:marketplaceBillingAvailable(region)}
+})
+
 export const listListingDrafts = onCall(options, async request => {
-  const drafts = await draftCollection(request.auth?.uid)
+  const {drafts,region} = await draftCollection(request.auth?.uid)
   const kind = listingKind(request.data?.kind)
   const result = await drafts.where('kind', '==', kind).limit(100).get()
   return Promise.all(result.docs.map(async doc => {
     const publication=await drafts.parent!.collection('publications').doc(doc.id).get()
     const checkout=kind==='marketplace'?await drafts.parent!.collection('marketplaceCheckouts').doc(doc.id).get():null
     const status=publication.exists?(publication.data()?.status==='sold'?'sold':'published'):checkout?.data()?.status==='paid'?'paid':checkout?.data()?.status==='pending'?'pending':'draft'
-    const { title, area, description, priceCents, logo, photos } = doc.data()
-    return { id: doc.id, title, area, description, priceCents: priceCents ?? null, logo: logo ?? '', photos: photos ?? [], status }
+    const details=doc.data(),storedRegion=listingRegion(details)
+    const { title, area, description, priceCents, logo, photos } = details
+    return { id: doc.id, title, area, description, priceCents: priceCents ?? null, logo: logo ?? '', photos: photos ?? [], status, countryCode:storedRegion?.countryCode??null,currency:storedRegion?.currency??null,regionMismatch:!sameListingRegion(details,region) }
   }))
 })
 
 export const saveListingDraft = onCall(options, async request => {
-  const drafts = await draftCollection(request.auth?.uid)
+  const {drafts,region} = await draftCollection(request.auth?.uid)
   const input = request.data
   const kind = listingKind(input?.kind)
   const id = kind === 'directoryListing' ? 'directory' : input?.id
@@ -58,13 +69,14 @@ export const saveListingDraft = onCall(options, async request => {
   }
   const priceCents = kind === 'marketplace' ? input?.priceCents : null
   if (kind === 'marketplace' && (!Number.isInteger(priceCents) || priceCents < 1 || priceCents > 100_000_000)) {
-    throw new HttpsError('invalid-argument', 'Enter a valid Marketplace item price in rand.')
+    throw new HttpsError('invalid-argument', 'Enter a valid Marketplace item price in your bakery currency.')
   }
   const photos = input.photos ?? []
   if (!Array.isArray(photos) || photos.length > 3) {
     throw new HttpsError('invalid-argument', 'Choose up to three listing photos.')
   }
   const draft = {
+    countryCode:region.countryCode,currency:region.currency,
     logo: kind === 'directoryListing' ? listingImage(input.logo) : '',
     photos: photos.map(listingImage).filter(Boolean),
     kind,
@@ -75,19 +87,31 @@ export const saveListingDraft = onCall(options, async request => {
     updatedAt: FieldValue.serverTimestamp(),
   }
 
-  await drafts.doc(id).set(draft)
+  const db=getFirestore()
+  await db.runTransaction(async t=>{
+    const existing=await t.get(drafts.doc(id))
+    const published=await t.get(drafts.parent!.collection('publications').doc(id))
+    const checkout=await t.get(drafts.parent!.collection('marketplaceCheckouts').doc(id))
+    for(const row of [existing,published]){
+      if(row.exists&&!sameListingRegion(row.data(),region))throw new HttpsError('failed-precondition','The listing uses a different country or currency. Create a new listing; existing amounts cannot be relabelled.')
+    }
+    if(published.data()?.status==='sold')throw new HttpsError('failed-precondition','This item has already been sold.')
+    if(checkout.data()?.status==='pending')throw new HttpsError('failed-precondition','A listing payment is pending. Resume its checkout or verify payment before editing.')
+    t.set(drafts.doc(id),draft)
+  })
   return { id }
 })
 
 export const publishBakerListing = onCall(options, async request => {
   const uid = request.auth?.uid
-  const drafts = await draftCollection(uid)
+  const {drafts,region} = await draftCollection(uid)
   const kind = listingKind(request.data?.kind)
   const id = kind === 'directoryListing' ? 'directory' : request.data?.id
   if (typeof id !== 'string' || (kind === 'marketplace' && !/^[0-9a-f-]{36}$/.test(id))) {
     throw new HttpsError('invalid-argument', 'Invalid listing ID.')
   }
 
+  if(!marketplaceBillingAvailable(region))throw new HttpsError('failed-precondition','Publication in your region is not enabled yet. You can save private drafts.')
   const db = getFirestore()
   const entitlement = db.collection('listingEntitlements').doc(uid!)
   const workspace = drafts.parent!
@@ -106,6 +130,7 @@ export const publishBakerListing = onCall(options, async request => {
     ])
     const details = draft.data()
     if (!details || details.kind !== kind) throw new HttpsError('not-found', 'Save this draft before publishing.')
+    if(!sameListingRegion(details,region)||existing.exists&&!sameListingRegion(existing.data(),region))throw new HttpsError('failed-precondition','Listing currency differs from your bakery. Do not relabel existing prices.')
     if(existing.data()?.status==='sold')throw new HttpsError('failed-precondition','Sold listings cannot be republished. Create a new listing for a different item.')
     if(kind==='marketplace'&&checkout.data()?.status==='pending')throw new HttpsError('failed-precondition','A payment is pending. Complete or verify it before publishing.')
     const paid = access.data()
@@ -124,7 +149,7 @@ export const publishBakerListing = onCall(options, async request => {
     }
 
     const fields = {
-      kind, title: details.title, area: details.area, description: details.description,
+      kind, countryCode:region.countryCode,currency:region.currency,title: details.title, area: details.area, description: details.description,
       priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, status: 'published', updatedAt: FieldValue.serverTimestamp(),
     }
     transaction.set(publication, fields)
@@ -135,7 +160,7 @@ export const publishBakerListing = onCall(options, async request => {
 })
 
 export const markMarketplaceSold=onCall(options,async request=>{
- const uid=request.auth?.uid,drafts=await draftCollection(uid),id=request.data?.id
+ const uid=request.auth?.uid,{drafts}=await draftCollection(uid),id=request.data?.id
  if(typeof id!=='string'||!/^[0-9a-f-]{36}$/.test(id))throw new HttpsError('invalid-argument','Invalid listing ID.')
  const db=getFirestore(),publication=drafts.parent!.collection('publications').doc(id)
  const publicId=createHash('sha256').update(JSON.stringify([uid,id])).digest('hex')
@@ -153,6 +178,8 @@ export const listPublishedBakerListings = onCall({
   ...options, cors: ['https://batchboss.co.za', 'https://www.batchboss.co.za'],
 }, async request => {
   const kind = listingKind(request.data?.kind)
+  const country=listingCountry(request.data?.countryCode===undefined?'ZA':request.data.countryCode)
+  if(!country)throw new HttpsError('invalid-argument','Choose a supported country.')
   const cursor = request.data?.cursor
   if (cursor != null && (typeof cursor !== 'string' || !/^[0-9a-f]{64}$/.test(cursor))) {
     throw new HttpsError('invalid-argument', 'Invalid page cursor.')
@@ -160,8 +187,10 @@ export const listPublishedBakerListings = onCall({
   const db = getFirestore()
   const page = db.collection('listingCatalogs').doc(kind).collection('entries').orderBy('__name__').limit(25)
   const snapshots = await (cursor ? page.startAfter(cursor) : page).get()
-  const owners = [...new Set(snapshots.docs.map(doc => doc.data().ownerUid as string))]
-  if (!owners.length) return { listings: [], nextCursor: null }
+  const nextCursor=snapshots.size===25?snapshots.docs.at(-1)!.id:null
+  const rows=snapshots.docs.filter(doc=>{const row=doc.data();return listingBelongsToCountry(row,country)&&(!row.status||row.status==='published')&&typeof row.ownerUid==='string'&&!!row.ownerUid&&!row.ownerUid.includes('/')})
+  const owners = [...new Set(rows.map(doc => doc.data().ownerUid as string))]
+  if (!owners.length) return { listings: [], nextCursor }
   const reads = await db.getAll(...owners.flatMap(uid => [
     db.collection('users').doc(uid), db.collection('listingEntitlements').doc(uid),
   ]))
@@ -171,9 +200,11 @@ export const listPublishedBakerListings = onCall({
     return reads[index * 2].exists && ((access?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
       || (kind === 'directoryListing' && (access?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now))
   }))
-  const listings = snapshots.docs.flatMap(doc => {
+  const listings = rows.flatMap(doc => {
     const { ownerUid, title, area, description, priceCents, logo, photos } = doc.data()
-    return (eligible.has(ownerUid) || (kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents, logo, photos }] : []
+    const region=listingRegion(doc.data())!
+    if(kind==='marketplace'&&(!Number.isSafeInteger(priceCents)||priceCents<1||priceCents>100_000_000))return []
+    return (eligible.has(ownerUid) || (kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents:kind==='marketplace'?priceCents:null, logo, photos,countryCode:region.countryCode,currency:region.currency }] : []
   })
-  return { listings, nextCursor: snapshots.size === 25 ? snapshots.docs.at(-1)!.id : null }
+  return { listings, nextCursor }
 })
