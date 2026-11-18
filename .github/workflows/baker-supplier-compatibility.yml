@@ -11,6 +11,9 @@ on:
       - 'tests/supplier-records.test.mjs'
       - 'tests/subscription-access.test.mjs'
       - 'tests/auth-flow.cjs'
+      - 'tests/listing-region.cjs'
+      - 'tests/listing-region-emulator.cjs'
+      - 'website/published-listings.js'
       - 'tests/account-platform-emulator.cjs'
       - 'tests/supplier-emulator/**'
       - '.github/workflows/baker-supplier-compatibility.yml'
@@ -87,7 +90,8 @@ jobs:
         working-directory: functions
       - run: npm run build
         working-directory: functions
-      - run: node --test tests/auth-flow.cjs
+      - run: node --test tests/auth-flow.cjs tests/listing-region.cjs
+      - run: node --check website/published-listings.js
       - name: Stage the exact application rules inside the isolated test project
         run: cp web/firestore.rules tests/pro-codes-emulator/firestore.rules
       - name: Test actual redemption transactions and private rules in isolated Firestore
@@ -96,7 +100,7 @@ jobs:
           --project demo-batchboss-pro-codes
           --config tests/pro-codes-emulator/firebase.json
           --only firestore,auth
-          "node --test tests/pro-codes-emulator.cjs tests/account-platform-emulator.cjs"
+          "node --test tests/pro-codes-emulator.cjs tests/account-platform-emulator.cjs tests/listing-region-emulator.cjs"
       - run: npm install --no-audit --no-fund
         working-directory: admin-web
       - run: npx tsc -b
