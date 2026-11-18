@@ -356,7 +356,7 @@ export const checkPayfastConnection = onCall(
         method: "GET", headers: {...headers,signature}, redirect: "error", signal: AbortSignal.timeout(15000),
       });
       const raw = (await result.text()).trim();
-      const connected = result.ok && (raw === "Payfast API" || raw === '"Payfast API"');
+      const connected = result.ok && /^"?payfast api"?$/i.test(raw);
       // Never return credentials or untrusted provider response content.
       return { connected, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: payfastEnabled.value() === "true",
         status: connected ? "connected" : "provider_rejected", httpStatus: result.status };
