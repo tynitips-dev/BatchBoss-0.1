@@ -335,6 +335,37 @@ function paidThrough(value: unknown): number {
   return v?.toMillis?.() || 0;
 }
 
+// This read-only check is independent of the live checkout switch.
+export const checkPayfastConnection = onCall(
+  { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL, "https://admin.batchboss.co.za"] },
+  async request => {
+    requireAdmin(request);
+    const merchantId = payfastMerchantId.value().trim();
+    const passphrase = payfastPassphrase.value().trim();
+    const merchantKeyPresent = !!payfastMerchantKey.value().trim();
+    if (!merchantId || !passphrase || !merchantKeyPresent) {
+      return { connected: false, merchantKeyPresent, checkoutEnabled: payfastEnabled.value() === "true", status: "configuration_missing" };
+    }
+    const timestamp = new Date().toISOString().slice(0,19) + "+00:00";
+    const headers = { "merchant-id": merchantId, version: "v1", timestamp };
+    const values: Record<string,string> = {...headers, passphrase};
+    const canonical = Object.keys(values).sort().map(key => key + "=" + payfastEncode(values[key])).join("&");
+    const signature = createHash("md5").update(canonical).digest("hex");
+    try {
+      const result = await fetch("https://api.payfast.co.za/ping", {
+        method: "GET", headers: {...headers,signature}, redirect: "error", signal: AbortSignal.timeout(15000),
+      });
+      const raw = (await result.text()).trim();
+      const connected = result.ok && (raw === "Payfast API" || raw === '"Payfast API"');
+      // Never return credentials or untrusted provider response content.
+      return { connected, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: payfastEnabled.value() === "true",
+        status: connected ? "connected" : "provider_rejected", httpStatus: result.status };
+    } catch {
+      return { connected: false, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: payfastEnabled.value() === "true", status: "provider_unreachable" };
+    }
+  }
+);
+
 export const createPayfastCheckout = onCall(
   { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL] },
   async request => {
