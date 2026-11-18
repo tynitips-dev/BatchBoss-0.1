@@ -24,6 +24,9 @@ export const normalizeIngredientUnit=(s:unknown)=>{
  const x=String(s??'').trim().toLowerCase()
  if(['g','gram','grams'].includes(x))return 'g'
  if(['kg','kilogram','kilograms'].includes(x))return 'kg'
+ if(['oz','ounce','ounces'].includes(x))return 'oz'
+ if(['lb','lbs','pound','pounds'].includes(x))return 'lb'
+ if(['cup_us','cup_metric','fl_oz_us','fl_oz_uk','tsp_us','tbsp_us','tbsp_au'].includes(x))return x
  if(['ml','millilitre','milliliter','millilitres','milliliters'].includes(x))return 'ml'
  if(['l','litre','liter','litres','liters'].includes(x))return 'L'
  if(['tsp','teaspoon','teaspoons'].includes(x))return 'tsp'
@@ -32,8 +35,8 @@ export const normalizeIngredientUnit=(s:unknown)=>{
  if(['unit','units','pcs','pieces','piece','each','egg','eggs'].includes(x))return 'unit'
  return x
 }
-const dimension=(u:string)=>['g','kg'].includes(u)?'mass':['ml','L','tsp','tbsp','cup'].includes(u)?'volume':u==='unit'?'count':'unknown'
-const toBase=(quantity:number,unit:string)=>quantity*({kg:1000,L:1000,tsp:5,tbsp:15,cup:250}[unit]??1)
+const dimension=(u:string)=>['g','kg','oz','lb'].includes(u)?'mass':['ml','L','tsp','tbsp','cup','cup_us','cup_metric','fl_oz_us','fl_oz_uk','tsp_us','tbsp_us','tbsp_au'].includes(u)?'volume':u==='unit'?'count':'unknown'
+const toBase=(quantity:number,unit:string)=>quantity*(({kg:1000,L:1000,tsp:5,tbsp:15,cup:250,oz:28.349523125,lb:453.59237,cup_us:236.5882365,cup_metric:250,fl_oz_us:29.5735295625,fl_oz_uk:28.4130625,tsp_us:4.92892159375,tbsp_us:14.78676478125,tbsp_au:20} as Record<string,number>)[unit]??1)
 /**
  * Returns null for missing prices or incompatible measures. No guessed
  * conversions from volume to mass (e.g. flour cups to grams).
