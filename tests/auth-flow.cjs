@@ -66,7 +66,7 @@ function authScreenHarness(search,metadataFailure=false){
  const react={useState(initial){const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],value=>{states[i]=typeof value==='function'?value(states[i]):value;}];},useEffect(){}};
  const module={exports:{}},platformModule={exports:{}},workspaceModule={exports:{}};
  const workspaceSource=fs.readFileSync(path.join(__dirname,'../web/src/workspace-utils.ts'),'utf8');
- vm.runInNewContext(ts.transpileModule(workspaceSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:workspaceModule,exports:workspaceModule.exports,Intl});
+ vm.runInNewContext(ts.transpileModule(workspaceSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:workspaceModule,exports:workspaceModule.exports,Intl,Error});
  const platformSource=fs.readFileSync(path.join(__dirname,'../web/src/accountPlatform.ts'),'utf8');
  vm.runInNewContext(ts.transpileModule(platformSource,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{module:platformModule,exports:platformModule.exports,URLSearchParams});
  const fallback=new Proxy(function(){},{get:()=>fallback});
@@ -88,7 +88,7 @@ function authScreenHarness(search,metadataFailure=false){
  const source=fs.readFileSync(path.join(__dirname,'../web/src/App.tsx'),'utf8')+'\nexport { AuthScreen as __AuthScreen };';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  class TestFormData{constructor(values){this.values=values}get(key){return this.values[key]??null}}
- vm.runInNewContext(code,{require:requireFake,module,exports:module.exports,console,Intl,Date,URLSearchParams,location:{search},FormData:TestFormData});
+ vm.runInNewContext(code,{require:requireFake,module,exports:module.exports,console,Intl,Date,URLSearchParams,location:{search},FormData:TestFormData,Error});
  const render=()=>{cursor=0;return module.exports.__AuthScreen({onBusyChange:value=>busy.push(value)})}
  function find(node,predicate){if(!node||typeof node!=='object')return null;if(predicate(node))return node;const children=node.props?.children;for(const child of Array.isArray(children)?children:[children]){const result=find(child,predicate);if(result)return result}return null}
  const form=()=>find(render(),node=>node.type==='form');
