@@ -1,7 +1,7 @@
 package com.example.util
 
 object UnitUtils {
-    val RECIPE_UNITS = listOf("g", "kg", "ml", "tsp", "tbsp", "cup", "l", "unit")
+    val RECIPE_UNITS = listOf("g", "kg", "ml", "tsp", "tbsp", "cup", "l", "unit", "oz", "lb", "cup_us", "cup_metric", "fl_oz_us", "fl_oz_uk", "tsp_us", "tbsp_us", "tbsp_au")
 
     /**
      * Normalises ingredient package quantities to base units:
@@ -24,6 +24,15 @@ object UnitUtils {
             "tsp", "teaspoon", "teaspoons" -> quantity * 5.0
             "tbsp", "tble", "tablespoon", "tablespoons" -> quantity * 15.0
             "cup", "cups" -> quantity * 240.0
+            "oz", "ounce", "ounces" -> quantity * 28.349523125
+            "lb", "lbs", "pound", "pounds" -> quantity * 453.59237
+            "cup_us" -> quantity * 236.5882365
+            "cup_metric" -> quantity * 250.0
+            "fl_oz_us" -> quantity * 29.5735295625
+            "fl_oz_uk" -> quantity * 28.4130625
+            "tsp_us" -> quantity * 4.92892159375
+            "tbsp_us" -> quantity * 14.78676478125
+            "tbsp_au" -> quantity * 20.0
             "pinch" -> quantity * 0.5
             else -> quantity // unit, egg, eggs, bottle, pcs
         }
@@ -123,7 +132,7 @@ object UnitUtils {
         val qtyStr = if (quantity == quantity.toInt().toDouble()) {
             quantity.toInt().toString()
         } else {
-            String.format("%.2f", quantity).trimEnd('0').trimEnd('.')
+            String.format(java.util.Locale.US, "%.2f", quantity).trimEnd('0').trimEnd('.')
         }
         return "$qtyStr $unit"
     }

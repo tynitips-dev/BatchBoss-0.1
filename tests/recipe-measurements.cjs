@@ -38,3 +38,15 @@ test('PDF ingredient extraction preserves plural measurements and matches flour 
  assert.deepEqual(recipe.ingredients.map(row=>row.unit),['g','kg','ml','L','tsp','tbsp','tsp','tbsp','ml']);
  assert.equal(costing.calculateIngredientUsageCost(recipe.ingredients[0],[flour]),15);
 });
+
+test('PDF import uses explicitly selected regional spoon and cup sizes',async()=>{
+ const lines=['Cake','Ingredients','1 cup milk','2 tablespoons milk','8 oz flour','1 lb flour','3 UK fluid ounces milk','Method','Mix.'];
+ const parser=load('web/src/recipePdfImport.ts',{
+  './costing':costing,
+  'pdfjs-dist/build/pdf.worker.min.mjs?url':{default:'worker'},
+  'pdfjs-dist':{GlobalWorkerOptions:{},getDocument:()=>({promise:Promise.resolve({numPages:1,getPage:async()=>({getTextContent:async()=>({items:lines.map(str=>({str,hasEOL:true}))})})})})}
+ });
+ const file={type:'application/pdf',name:'cake.pdf',size:10,arrayBuffer:async()=>new ArrayBuffer(0)};
+ assert.deepEqual((await parser.extractRecipePdf(file,'us')).ingredients.map(row=>row.unit),['cup_us','tbsp_us','oz','lb','fl_oz_uk']);
+ assert.deepEqual((await parser.extractRecipePdf(file,'au')).ingredients.map(row=>row.unit),['cup_metric','tbsp_au','oz','lb','fl_oz_uk']);
+});

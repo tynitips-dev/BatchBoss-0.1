@@ -26,6 +26,11 @@ export const normalizeIngredientUnit=(s:unknown)=>{
  if(['g','gram','grams'].includes(x))return 'g'
  if(['kg','kilogram','kilograms'].includes(x))return 'kg'
  if(['oz','ounce','ounces'].includes(x))return 'oz'
+ if(['us cup','us cups'].includes(x))return 'cup_us'
+ if(['metric cup','metric cups'].includes(x))return 'cup_metric'
+ if(['us fluid oz','us fl oz','us fluid ounce','us fluid ounces'].includes(x))return 'fl_oz_us'
+ if(['uk fluid oz','uk fl oz','uk fluid ounce','uk fluid ounces'].includes(x))return 'fl_oz_uk'
+ if(['australian tbsp','australian tablespoon','australian tablespoons'].includes(x))return 'tbsp_au'
  if(['lb','lbs','pound','pounds'].includes(x))return 'lb'
  if(['cup_us','cup_metric','fl_oz_us','fl_oz_uk','tsp_us','tbsp_us','tbsp_au'].includes(x))return x
  if(['ml','millilitre','milliliter','millilitres','milliliters'].includes(x))return 'ml'
@@ -51,7 +56,33 @@ export function calculateIngredientUsageCost(row:IngredientUsage,inventory:Stock
  const packQuantity=qty(stock.packageQuantity)
  const savedUnitPrice=qty(stock.unitPrice)
  // Inventory's unitPrice is stored per base unit (g, ml or item).
- const pricePerBase=savedUnitPrice|| (packPrice&&packQuantity?packPrice/toBase(packQuantity,stockUnit):0)
+ const explicit=['oz','lb','cup_us','cup_metric','fl_oz_us','fl_oz_uk','tsp_us','tbsp_us','tbsp_au'].includes(stockUnit)
+ const packDerived=packPrice&&packQuantity?packPrice/toBase(packQuantity,stockUnit):0
+ const pricePerBase=explicit?(packDerived||(stock.unitPriceBasis==='base-v1'?savedUnitPrice:0)):(savedUnitPrice||packDerived)
  if(!pricePerBase)return null
  return Number((toBase(row.quantity,recipeUnit)*pricePerBase).toFixed(2))
+}
+
+// Explicit identifiers are shared with the Android regional converter.
+export const regionalRecipeUnits:Record<string,string>={
+ g:'g',kg:'kg',oz:'oz (weight)',lb:'lb',ml:'ml',L:'L',unit:'Each',
+ cup_us:'US cup (236.588 ml)',cup_metric:'Metric cup (250 ml)',
+ fl_oz_us:'US fluid oz',fl_oz_uk:'UK fluid oz',tsp:'Metric tsp (5 ml)',
+ tbsp:'Metric tbsp (15 ml)',tsp_us:'US tsp',tbsp_us:'US tbsp',tbsp_au:'Australian tbsp (20 ml)'
+}
+export type RecipeMeasureStandard='legacy'|'metric'|'us'|'au'
+export function resolveRecipeUnit(unit:unknown,standard:RecipeMeasureStandard):string{
+ const normalized=normalizeIngredientUnit(unit)
+ if(normalized==='cup'&&standard!=='legacy')return standard==='us'?'cup_us':'cup_metric'
+ if(normalized==='tsp'&&standard==='us')return 'tsp_us'
+ if(normalized==='tbsp')return standard==='us'?'tbsp_us':standard==='au'?'tbsp_au':normalized
+ return normalized
+}
+export function stockBaseQuantity(quantity:number,unit:string):number {
+ if(!Number.isFinite(quantity)||quantity<0)return 0
+ return toBase(quantity,normalizeIngredientUnit(unit))
+}
+export function stockBaseUnit(unit:unknown):string{
+ const normalized=normalizeIngredientUnit(unit),d=dimension(normalized)
+ return d==='mass'?'g':d==='volume'?'ml':normalized||'unit'
 }

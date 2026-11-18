@@ -115,3 +115,16 @@ test('WhatsApp links require an explicit international number outside South Afri
  assert.equal(u.invoiceWhatsAppNumber('07700 900123','GB','GBP'),null);
  assert.equal(u.invoiceWhatsAppNumber('082 invalid 4567','ZA','ZAR'),null);
 });
+
+test('regional package cost uses grams or milliliters rather than pounds or fluid ounces',()=>{
+ assert.equal(c.stockBaseQuantity(1,'lb'),453.59237);
+ assert.equal(c.stockBaseQuantity(2,'fl_oz_us'),59.147059125);
+ assert.equal(c.stockBaseUnit('oz'),'g');
+ assert.equal(c.stockBaseUnit('fl_oz_uk'),'ml');
+ assert.equal(c.resolveRecipeUnit('cup','us'),'cup_us');
+ assert.equal(c.resolveRecipeUnit('tbsp','au'),'tbsp_au');
+ assert.equal(c.resolveRecipeUnit('cup','metric'),'cup_metric');
+ assert.equal(c.resolveRecipeUnit('cup','legacy'),'cup');
+ const row={name:'Flour',quantity:8,unit:'oz',cost:0};
+ assert.equal(c.calculateIngredientUsageCost(row,[{name:'Flour',unit:'lb',packageQuantity:1,packagePrice:32,unitPrice:32}]),16);
+});
