@@ -14,3 +14,14 @@ export function matchesPayment(tx:any,expected:{amount:number;currency:string;cu
  const code=typeof tx.plan==='string'?tx.plan:tx.plan?.plan_code||tx.plan_object?.plan_code;
  return tx.status==='success'&&tx.amount===expected.amount&&tx.currency===expected.currency&&tx.domain===expected.domain&&tx.customer?.customer_code===expected.customer&&code===expected.planCode&&typeof tx.reference==='string'&&/^[a-zA-Z0-9_.-]{1,100}$/.test(tx.reference)&&Number.isFinite(new Date(tx.paid_at).getTime());
 }
+
+/** Paystack South Africa charges ZAR even for a foreign card. Local bakery accounting is separate. */
+export function billingRoute(bakery:Record<string,unknown>|undefined,internationalEnabled:boolean){
+ if(!bakery)return null
+ const currency=bakery.currency===undefined?'ZAR':bakery.currency
+ const country=bakery.countryCode===undefined?'ZA':bakery.countryCode
+ const allowed:Record<string,string>={ZA:'ZAR',US:'USD',GB:'GBP',CA:'CAD',AU:'AUD',NZ:'NZD'}
+ if(typeof country!=='string'||!Object.prototype.hasOwnProperty.call(allowed,country)||allowed[country]!==currency)return null
+ const international=country!=='ZA'
+ return {enabled:!international||internationalEnabled,billingCurrency:'ZAR' as const,accountingCurrency:currency,international}
+}

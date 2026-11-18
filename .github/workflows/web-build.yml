@@ -25,6 +25,8 @@ jobs:
       - name: Compile Firebase functions
         working-directory: functions
         run: npm run build
+      - name: Test payment verification and regional checkout
+        run: node --test tests/payment-core.cjs tests/paystack-flow.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest

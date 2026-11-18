@@ -4,11 +4,12 @@ import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
-import {validSignature,periodEnd,matchesPayment} from './paystack-core';
+import {validSignature,periodEnd,matchesPayment,billingRoute} from './paystack-core';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
+const internationalZar=defineString('PAYSTACK_INTERNATIONAL_ZAR_ENABLED',{default:'false'});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
@@ -50,16 +51,25 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
+async function checkoutRoute(uid:string){
+ const profile=(await db().doc(`users/${uid}`).get()).data();
+ if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId)return null;
+ const bakery=(await db().doc(`bakeries/${profile.bakeryId}`).get()).data();
+ return billingRoute(bakery,internationalZar.value()==='true');
+}
+export const getPaystackPlans=onCall(options,async request=>{
+ const route=await checkoutRoute(uidOf(request));
+ if(enabled.value()!=='true'||!route?.enabled)return {enabled:false,billingCurrency:'ZAR',international:route?.international||false};
+ return {enabled:true,billingCurrency:'ZAR',international:route.international,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:!route.international&&promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:!route.international&&promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};
+});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
- const profile=(await db().doc(`users/${uid}`).get()).data();
- if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId)throw new HttpsError('failed-precondition','Complete your bakery profile first.');
- const bakery=(await db().doc(`bakeries/${profile.bakeryId}`).get()).data();
- if(!bakery||(bakery.currency!==undefined&&bakery.currency!=='ZAR')||(bakery.countryCode!==undefined&&bakery.countryCode!=='ZA'))throw new HttpsError('failed-precondition','Regional subscription billing is not available yet.');
+ const route=await checkoutRoute(uid);
+ if(!route?.enabled)throw new HttpsError('failed-precondition','Regional subscription billing is not available yet.');
+ if(route.international&&request.data?.billingCurrencyAccepted!=='ZAR')throw new HttpsError('invalid-argument','Please confirm that your subscription will be billed in South African rand (ZAR).');
  const requestedPlan=String(request.data?.plan);
  const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
- if(promotional && !promotionEnabled(requestedPlan))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');
+ if(promotional && (route.international||!promotionEnabled(requestedPlan)))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');
  if(promotional && request.data?.termsAccepted!==true)throw new HttpsError('invalid-argument','Please accept the promotional payment terms.');
  const plan=promotional
    ? planForCode(requestedPlan==='monthly_launch'?monthlyPromo.value():annualPromo.value())
@@ -83,7 +93,7 @@ export const createPaystackCheckout=onCall(options,async request=>{
   const customer=await api('/customer',{email:user.email});const customerCode=String(customer.customer_code);if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new Error('Invalid customer');
   const customerRef=db().doc(`paystackCustomers/${customerCode}`);
   await db().runTransaction(async t=>{const mapped=await t.get(customerRef);if(mapped.exists&&mapped.data()?.uid!==uid)throw new HttpsError('failed-precondition','This payment customer is linked to another account. Contact support.');t.set(customerRef,{uid,domain:plan.domain,updatedAt:now()},{merge:true});});
-  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',createdAt:now()});
+  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',accountingCurrency:route.accountingCurrency,international:route.international,createdAt:now()});
   const result=await api('/transaction/initialize',{email:user.email,amount:plan.amount,currency:'ZAR',plan:plan.planCode,reference,channels:['card'],callback_url:`${APP}/?payment=paystack`,metadata:{batchbossReference:reference}});
   const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
   await lockRef.update({checkoutUrl});return {checkoutUrl};
