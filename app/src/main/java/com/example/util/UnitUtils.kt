@@ -3,6 +3,41 @@ package com.example.util
 object UnitUtils {
     val RECIPE_UNITS = listOf("g", "kg", "ml", "tsp", "tbsp", "cup", "l", "unit", "oz", "lb", "cup_us", "cup_metric", "fl_oz_us", "fl_oz_uk", "tsp_us", "tbsp_us", "tbsp_au")
 
+    // Legacy cup stays 240 ml on Android. New recipes can choose explicit standards.
+    fun unitLabel(unit: String): String = when(unit.lowercase()) {
+        "cup" -> "Legacy cup (240 ml)"
+        "cup_us" -> "US cup"
+        "cup_metric" -> "Metric cup (250 ml)"
+        "oz" -> "oz (weight)"
+        "fl_oz_us" -> "US fluid oz"
+        "fl_oz_uk" -> "UK fluid oz"
+        "tsp_us" -> "US tsp"
+        "tbsp_us" -> "US tbsp"
+        "tbsp_au" -> "AU tbsp (20 ml)"
+        else -> unit
+    }
+
+    fun baseDimension(unit: String): String? = when(unit.trim().lowercase()) {
+        "g","gram","grams","kg","kilogram","kilograms","oz","ounce","ounces","lb","lbs","pound","pounds" -> "g"
+        "ml","milliliter","milliliters","millilitre","l","liter","liters","litre","litres",
+        "cup","cups","cup_us","cup_metric","tsp","teaspoon","teaspoons","tsp_us","tbsp","tble","tablespoon","tablespoons","tbsp_us","tbsp_au","fl_oz_us","fl_oz_uk" -> "ml"
+        "unit","units","egg","eggs","each","pcs","piece","pieces" -> "unit"
+        "bottle","bottles" -> "bottle"
+        else -> null
+    }
+
+    /** Exact costing only. Mass and volume need a known ingredient density, not a guessed ratio. */
+    fun exactIngredientCost(recipeQuantity: Double, recipeUnit: String, packagePrice: Double, packageQuantity: Double, packageUnit: String): Double? {
+        val dimension=baseDimension(recipeUnit) ?: return null
+        if(dimension!=baseDimension(packageUnit)) return null
+        if(listOf(recipeQuantity,packagePrice,packageQuantity).any { !it.isFinite() } ||
+            recipeQuantity<=0.0 || packagePrice<0.0 || packageQuantity<=0.0) return null
+        val basePackage=toBaseUnits(packageQuantity,packageUnit)
+        val baseRecipe=toBaseUnits(recipeQuantity,recipeUnit)
+        if(basePackage<=0.0 || !basePackage.isFinite() || !baseRecipe.isFinite()) return null
+        return (baseRecipe * (packagePrice/basePackage)).takeIf { it.isFinite() }
+    }
+
     /**
      * Normalises ingredient package quantities to base units:
      * - 1 kg = 1000 g

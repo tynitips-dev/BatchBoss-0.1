@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -838,12 +840,12 @@ fun RecipeDetailScreen(
                             ) {
                                 Column {
                                     Text(text = "Cost per item", fontSize = 12.sp, color = LightText)
-                                    Text(text = "R${String.format("%.2f", costPerItem)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                                    Text(text = "${RegionalCurrency.format(costPerItem, recipe.currency)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DarkText)
                                 }
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(text = "Selling price", fontSize = 12.sp, color = LightText)
-                                    Text(text = "R${String.format("%.2f", sellingPricePerItem)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                                    Text(text = "${RegionalCurrency.format(sellingPricePerItem, recipe.currency)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = BatchPink)
                                 }
                             }
 
@@ -1085,7 +1087,7 @@ fun RecipeIngredientsScreen(
                                 color = DarkText
                             )
                             Text(
-                                text = "R${String.format("%.2f", totalCost * selectedBatches)}",
+                                text = "${RegionalCurrency.format(totalCost * selectedBatches, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = BatchPink
@@ -1230,7 +1232,7 @@ fun RecipeIngredientsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "R${String.format("%.2f", scaledCost)}",
+                                        text = "${RegionalCurrency.format(scaledCost, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = DarkText
@@ -1524,35 +1526,35 @@ fun RecipeCostingScreen(
             CostingRow(
                 icon = Icons.Outlined.Receipt,
                 label = "Ingredients Cost",
-                value = "R${String.format("%.2f", ingCost)}",
+                value = "${RegionalCurrency.format(ingCost, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                 onClick = { showEditPricingDialog = true }
             )
             CostingRow(
                 icon = Icons.Outlined.Person,
                 label = "Operations & Labor",
                 value = if (recipe != null && recipe.laborHours > 0) {
-                    "R${String.format("%.2f", labour)} (${recipe.laborHours}h @ R${String.format("%.2f", recipe.laborRatePerHour)}/h)"
+                    "${RegionalCurrency.format(labour, recipe?.currency ?: RegionalCurrency.LEGACY)} (${recipe.laborHours}h @ ${RegionalCurrency.format(recipe.laborRatePerHour, recipe?.currency ?: RegionalCurrency.LEGACY)}/h)"
                 } else {
-                    "R${String.format("%.2f", labour)} (Per Hour)"
+                    "${RegionalCurrency.format(labour, recipe?.currency ?: RegionalCurrency.LEGACY)} (Per Hour)"
                 },
                 onClick = { showEditPricingDialog = true }
             )
             CostingRow(
                 icon = Icons.Outlined.Store,
                 label = "Overheads",
-                value = "R${String.format("%.2f", overheads)}",
+                value = "${RegionalCurrency.format(overheads, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                 onClick = { showEditPricingDialog = true }
             )
             CostingRow(
                 icon = Icons.Outlined.Inventory2,
                 label = "Packaging",
-                value = "R${String.format("%.2f", packaging)}",
+                value = "${RegionalCurrency.format(packaging, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                 onClick = { showEditPricingDialog = true }
             )
             CostingRow(
                 icon = Icons.Outlined.Bolt,
                 label = "Utilities",
-                value = "R${String.format("%.2f", utilities)}",
+                value = "${RegionalCurrency.format(utilities, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                 onClick = { showEditPricingDialog = true }
             )
 
@@ -1569,7 +1571,7 @@ fun RecipeCostingScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "Total Cost", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
-                        Text(text = "R${String.format("%.2f", totalCost)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = BatchPink)
+                        Text(text = "${RegionalCurrency.format(totalCost, recipe?.currency ?: RegionalCurrency.LEGACY)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = BatchPink)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -1577,7 +1579,7 @@ fun RecipeCostingScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(text = "Cost per item", fontSize = 13.sp, color = MediumText)
-                        Text(text = "R${String.format("%.2f", costPerItem)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Text(text = "${RegionalCurrency.format(costPerItem, recipe?.currency ?: RegionalCurrency.LEGACY)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
                     }
                 }
             }
@@ -1833,7 +1835,7 @@ fun PricingCalculatorScreen(
                         )
                     }
                     Text(
-                        text = if (isPerItem) "R${String.format("%.2f", totalCostPerItem)}" else "R${String.format("%.2f", totalCostBatch)}",
+                        text = if (isPerItem) "${RegionalCurrency.format(totalCostPerItem, recipe?.currency ?: RegionalCurrency.LEGACY)}" else "${RegionalCurrency.format(totalCostBatch, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkText
@@ -1956,12 +1958,12 @@ fun PricingCalculatorScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Selling Price per item", fontSize = 13.sp, color = MediumText)
-                        Text("R${String.format("%.2f", sellingPricePerItem)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Text("${RegionalCurrency.format(sellingPricePerItem, recipe?.currency ?: RegionalCurrency.LEGACY)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Profit per item", fontSize = 13.sp, color = MediumText)
                         Text(
-                            "R${String.format("%.2f", profitPerItem)}",
+                            "${RegionalCurrency.format(profitPerItem, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (profitPerItem >= 0) MintGreen else Color.Red
@@ -1970,12 +1972,12 @@ fun PricingCalculatorScreen(
                     Divider(color = DividerColor)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Selling Price per batch ($batchSize)", fontSize = 13.sp, color = MediumText)
-                        Text("R${String.format("%.2f", sellingPriceBatch)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                        Text("${RegionalCurrency.format(sellingPriceBatch, recipe?.currency ?: RegionalCurrency.LEGACY)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DarkText)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Total Profit per batch", fontSize = 13.sp, color = MediumText)
                         Text(
-                            "R${String.format("%.2f", totalProfitBatch)}",
+                            "${RegionalCurrency.format(totalProfitBatch, recipe?.currency ?: RegionalCurrency.LEGACY)}",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (totalProfitBatch >= 0) BatchPink else Color.Red
@@ -2799,7 +2801,6 @@ fun AddRecipeIngredientDialog(
     var packageQtyText by remember { mutableStateOf("1") }
     var packageUnit by remember { mutableStateOf("kg") }
     var costText by remember { mutableStateOf("") }
-    var unitPricePerBaseUnit by remember { mutableDoubleStateOf(0.0) }
     var isManualCostOverride by remember { mutableStateOf(false) }
     var isEstimatingPrice by remember { mutableStateOf(false) }
     var priceNote by remember { mutableStateOf<String?>(null) }
@@ -2816,43 +2817,28 @@ fun AddRecipeIngredientDialog(
         Triple("Eggs", "unit", 68.00 to 30.0)
     )
 
-    val supportedUnits = listOf("g", "kg", "ml", "l", "tsp", "tbsp", "cup", "unit")
-    val packageUnits = listOf("kg", "g", "l", "ml", "unit")
+    val supportedUnits = UnitUtils.RECIPE_UNITS + "bottle"
+    val packageUnits = (UnitUtils.RECIPE_UNITS + "bottle").distinct()
 
     fun recalculateCost() {
-        val q = quantityText.replace(",", ".").toDoubleOrNull() ?: 0.0
-        val pPrice = packagePriceText.replace("R", "", ignoreCase = true).replace(" ", "").replace(",", ".").toDoubleOrNull() ?: 0.0
-        val pQty = packageQtyText.replace(",", ".").toDoubleOrNull() ?: 1.0
-
-        if (pPrice > 0.0 && pQty > 0.0) {
-            val costPerBase = UnitUtils.calculateCostPerBaseUnit(pPrice, pQty, packageUnit)
-            unitPricePerBaseUnit = costPerBase
-            val cost = UnitUtils.calculateIngredientCost(q, selectedUnit, pPrice, pQty, packageUnit)
-            if (!isManualCostOverride || q > 0.0) {
-                costText = UnitUtils.formatDecimal(cost)
-            }
-            val baseUnits = UnitUtils.toBaseUnits(pQty, packageUnit)
-            val baseUnitName = if (packageUnit.lowercase().trim() in listOf("kg", "g")) "g" else if (packageUnit.lowercase().trim() in listOf("l", "ml", "liter", "litre")) "ml" else packageUnit
-            val recipeBase = UnitUtils.toBaseUnits(q, selectedUnit)
-            priceNote = if (q > 0.0) {
-                "Package: R${UnitUtils.formatDecimal(pPrice)} for $pQty $packageUnit (= ${String.format(java.util.Locale.US, "%.0f", baseUnits)} $baseUnitName) • Rate: R${String.format(java.util.Locale.US, "%.4f", costPerBase)}/$baseUnitName • Used: $q $selectedUnit (= ${String.format(java.util.Locale.US, "%.0f", recipeBase)} $baseUnitName) = R${UnitUtils.formatDecimal(cost)}"
-            } else {
-                "Package: R${UnitUtils.formatDecimal(pPrice)} for $pQty $packageUnit • Rate: R${String.format(java.util.Locale.US, "%.4f", costPerBase)}/$baseUnitName"
-            }
-        } else if (unitPricePerBaseUnit > 0.0 && q > 0.0) {
-            val baseUnits = UnitUtils.toBaseUnits(q, selectedUnit)
-            val cost = baseUnits * unitPricePerBaseUnit
-            if (!isManualCostOverride) {
-                costText = UnitUtils.formatDecimal(cost)
-            }
-        } else if (name.isNotBlank() && q > 0.0) {
-            val estRate = UnitUtils.getEstimatedRatePerGram(name)
-            val baseUnits = UnitUtils.toBaseUnits(q, selectedUnit)
-            val cost = baseUnits * estRate
-            if (!isManualCostOverride) {
-                costText = UnitUtils.formatDecimal(cost)
-            }
+        val q=quantityText.replace(',', '.').toDoubleOrNull()
+        val price=packagePriceText.replace("R","",ignoreCase=true).replace(" ","").replace(',', '.').toDoubleOrNull()
+        val qty=packageQtyText.replace(',', '.').toDoubleOrNull()
+        if(isManualCostOverride) return
+        costText=""
+        if(q==null || q<=0.0 || price==null || qty==null || qty<=0.0) {
+            priceNote="Enter the package price, size and recipe quantity, or enter an ingredient cost manually."
+            return
         }
+        val cost=UnitUtils.exactIngredientCost(q,selectedUnit,price,qty,packageUnit)
+        if(cost==null){
+            priceNote="These measurements are incompatible. Choose matching weight or volume units, or enter a measured ingredient cost manually."
+            return
+        }
+        costText=UnitUtils.formatDecimal(cost)
+        val baseUnit=UnitUtils.baseDimension(packageUnit) ?: packageUnit
+        val rate=UnitUtils.calculateCostPerBaseUnit(price,qty,packageUnit)
+        priceNote="Package: R${UnitUtils.formatDecimal(price)} for $qty ${UnitUtils.unitLabel(packageUnit)} · Rate: ${RegionalCurrency.format(rate,decimals=4)}/$baseUnit"
     }
 
     AlertDialog(
@@ -2884,7 +2870,7 @@ fun AddRecipeIngredientDialog(
                         color = DarkText
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(inventoryItems) { item ->
+                        items(inventoryItems.filter { it.currency == RegionalCurrency.LEGACY }) { item ->
                             val isSelected = name.equals(item.name, ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
@@ -2895,8 +2881,7 @@ fun AddRecipeIngredientDialog(
                                     val pQty = if (item.packageQuantity > 0) item.packageQuantity else 1.0
                                     packageQtyText = if (pQty == pQty.toInt().toDouble()) pQty.toInt().toString() else pQty.toString()
                                     packageUnit = item.unit.ifBlank { "kg" }
-                                    selectedUnit = if (item.unit.equals("kg", true)) "g" else if (item.unit.equals("l", true)) "ml" else item.unit
-                                    unitPricePerBaseUnit = if (item.unitPrice > 0) item.unitPrice else UnitUtils.calculateCostPerBaseUnit(pPrice, pQty, packageUnit)
+                                    selectedUnit = UnitUtils.baseDimension(item.unit) ?: item.unit
                                     isManualCostOverride = false
                                     recalculateCost()
                                 },
@@ -3087,7 +3072,7 @@ fun AddRecipeIngredientDialog(
                                 isManualCostOverride = false
                                 recalculateCost()
                             },
-                            label = { Text(u, fontSize = 11.sp, fontWeight = if (selectedUnit == u) FontWeight.Bold else FontWeight.Normal) }
+                            label = { Text(UnitUtils.unitLabel(u), fontSize = 11.sp, fontWeight = if (selectedUnit == u) FontWeight.Bold else FontWeight.Normal) }
                         )
                     }
                 }
@@ -3159,8 +3144,8 @@ fun AddRecipeIngredientDialog(
                     val c = costText.replace(",", ".").toDoubleOrNull()
                     when {
                         name.isBlank() -> errorMessage = "Please enter an ingredient name"
-                        q == null || q <= 0 -> errorMessage = "Please enter a valid quantity"
-                        c == null || c < 0 -> errorMessage = "Please enter or calculate ingredient cost"
+                        q == null || !q.isFinite() || q <= 0 -> errorMessage = "Please enter a valid quantity"
+                        c == null || !c.isFinite() || c < 0 -> errorMessage = "Please enter or calculate ingredient cost"
                         else -> onAdd(name.trim(), q, selectedUnit, c)
                     }
                 },
@@ -3281,7 +3266,7 @@ fun EditRecipePricingDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Calculated Labor Cost:", fontSize = 12.sp, color = DarkText)
-                    Text("R${String.format("%.2f", calculatedLabour)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BatchPink)
+                    Text("${RegionalCurrency.format(calculatedLabour, recipe.currency)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BatchPink)
                 }
 
                 // Overheads & Utilities (Fully Editable)
@@ -3381,40 +3366,40 @@ fun EditRecipePricingDialog(
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Ingredients Cost:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", ingredientsCost)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(ingredientsCost, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Labor ($parsedHours hrs @ R$parsedRate/hr):", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", calculatedLabour)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(calculatedLabour, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Overheads:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", parsedOverheads)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(parsedOverheads, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Utilities:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", parsedUtilities)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(parsedUtilities, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Packaging:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", parsedPackaging)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(parsedPackaging, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Total Batch Cost:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", totalCost)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(totalCost, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Cost Per Item:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", costPerItem)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
+                            Text("${RegionalCurrency.format(costPerItem, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DarkText)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Selling Price / Item:", fontSize = 12.sp, color = DarkText)
-                            Text("R${String.format("%.2f", parsedSellingPrice)}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = BatchPink)
+                            Text("${RegionalCurrency.format(parsedSellingPrice, recipe.currency)}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = BatchPink)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Profit Per Item:", fontSize = 12.sp, color = DarkText)
                             Text(
-                                "R${String.format("%.2f", profitPerItem)}",
+                                "${RegionalCurrency.format(profitPerItem, recipe.currency)}",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (profitPerItem >= 0) MintGreen else Color.Red

@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -483,7 +485,7 @@ fun ProductItemCard(
                 // Selling Price Display (The Single Source of Truth)
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = formatZar(product.sellingPrice),
+                        text = RegionalCurrency.format(product.sellingPrice,product.currency),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = BatchPink
@@ -516,7 +518,7 @@ fun ProductItemCard(
                             color = MediumText
                         )
                         Text(
-                            text = formatZar(product.costPrice),
+                            text = RegionalCurrency.format(product.costPrice,product.currency),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = DarkText
@@ -530,7 +532,7 @@ fun ProductItemCard(
                             color = MediumText
                         )
                         Text(
-                            text = "${formatZar(estimatedProfit)} (${String.format(Locale.US, "%.0f%%", marginPercent)})",
+                            text = "${RegionalCurrency.format(estimatedProfit,product.currency)} (${String.format(Locale.US, "%.0f%%", marginPercent)})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (estimatedProfit > 0) MintGreen else MediumText
@@ -966,7 +968,7 @@ fun PriceHistoryDialog(
                     ) {
                         Text("Current Master Price", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DarkText)
                         Text(
-                            text = "${formatZar(product.sellingPrice)} / ${product.unit}",
+                            text = "${RegionalCurrency.format(product.sellingPrice,product.currency)} / ${product.unit}",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = BatchPink
@@ -1267,7 +1269,7 @@ fun ProductLineItemSelectorDialog(
 
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = formatZar(prod.sellingPrice),
+                                                text = RegionalCurrency.format(prod.sellingPrice,prod.currency),
                                                 fontSize = 15.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = BatchPink

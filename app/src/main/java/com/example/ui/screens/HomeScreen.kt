@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,25 +68,20 @@ fun HomeScreen(
 
     // Dynamic metrics calculated purely from actual data
     val userName = userAccount?.firstName?.ifBlank { userAccount?.fullName }?.takeIf { it.isNotBlank() } ?: "Baker"
-    val totalRevenue = invoices.sumOf { it.amount }
-    val paidInvoices = invoices.filter { it.status.equals("Paid", ignoreCase = true) }
-    val paidRevenue = paidInvoices.sumOf { it.amount }
-    val totalOrdersCount = invoices.size
-    val avgOrder = if (totalOrdersCount > 0) totalRevenue / totalOrdersCount else 0.0
-
-    val averageRecipeMargin = if (recipes.isNotEmpty()) {
-        recipes.map { it.profitMarginPercent }.average()
-    } else 0.0
-
-    val estimatedProfit = if (totalRevenue > 0.0 && averageRecipeMargin > 0.0) {
-        totalRevenue * (averageRecipeMargin / 100.0)
-    } else if (totalRevenue > 0.0) {
-        totalRevenue * 0.30
-    } else 0.0
-
-    val profitDisplay = if (estimatedProfit > 0.0) "R${String.format("%.2f", estimatedProfit)}" else "R0.00"
-    val revenueDisplay = if (totalRevenue > 0.0) "R${String.format("%.2f", totalRevenue)}" else "R0.00"
-    val avgOrderDisplay = if (avgOrder > 0.0) "R${String.format("%.2f", avgOrder)}" else "R0.00"
+    val paidInvoices = invoices.filter { it.status.equals("Paid",ignoreCase=true) }
+    val paidRevenue = RegionalCurrency.formatTotals(paidInvoices.map { it.currency to it.amount })
+    val totalOrdersCount=invoices.size
+    val invoiceGroups=invoices.groupBy { it.currency }
+    val estimatedProfits=invoiceGroups.map { (currency,records) ->
+        val margins=recipes.filter { it.currency==currency }.map { it.profitMarginPercent }.filter { it.isFinite() }
+        val rate=if(margins.isNotEmpty()&&margins.average()>0.0)margins.average()/100.0 else 0.30
+        currency to (records.sumOf { it.amount } * rate)
+    }
+    val hasPositiveRevenue=invoiceGroups.values.any { rows -> rows.sumOf { it.amount }>0 }
+    val hasPositiveProfit=estimatedProfits.any { it.second>0 }
+    val profitDisplay=RegionalCurrency.formatTotals(estimatedProfits)
+    val revenueDisplay=RegionalCurrency.formatTotals(invoices.map { it.currency to it.amount })
+    val avgOrderDisplay=RegionalCurrency.formatAverages(invoices.map { it.currency to it.amount })
 
     LazyColumn(
         modifier = Modifier
@@ -341,14 +338,14 @@ fun HomeScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        if (estimatedProfit > 0) Icons.Filled.TrendingUp else Icons.Filled.Info,
+                                        if (hasPositiveProfit) Icons.Filled.TrendingUp else Icons.Filled.Info,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (estimatedProfit > 0) "${paidInvoices.size} paid invoices" else "Based on active orders & margins",
+                                        text = if (hasPositiveProfit) "${paidInvoices.size} paid invoices" else "Based on active orders & margins",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White
@@ -544,15 +541,15 @@ fun HomeScreen(
                     MetricCard(
                         title = "Revenue",
                         value = revenueDisplay,
-                        trend = if (totalRevenue > 0) "${invoices.size} recorded" else "R0.00 base",
-                        isPositive = totalRevenue > 0,
+                        trend = if (hasPositiveRevenue) "${invoices.size} recorded" else "No recorded revenue",
+                        isPositive = hasPositiveRevenue,
                         modifier = Modifier.weight(1f)
                     )
                     MetricCard(
                         title = "Est. Profit",
                         value = profitDisplay,
-                        trend = if (estimatedProfit > 0) "Dynamic margin" else "R0.00 base",
-                        isPositive = estimatedProfit > 0,
+                        trend = if (hasPositiveProfit) "Dynamic margin" else "No recorded revenue",
+                        isPositive = hasPositiveProfit,
                         modifier = Modifier.weight(1f)
                     )
                 }

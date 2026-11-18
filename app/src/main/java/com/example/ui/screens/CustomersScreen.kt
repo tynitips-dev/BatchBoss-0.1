@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -159,9 +161,9 @@ fun CustomersScreen(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(text = "Total Spend", fontSize = 11.sp, color = LightText, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(4.dp))
-                        val totalSpend = customers.sumOf { it.totalSpend }
+                        val totalSpend = RegionalCurrency.formatTotals(customers.map { it.currency to it.totalSpend })
                         Text(
-                            text = AppFormatters.formatCurrencyCompact(totalSpend),
+                            text = totalSpend,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = BatchPink

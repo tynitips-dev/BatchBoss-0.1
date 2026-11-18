@@ -19,10 +19,10 @@ object RegionalCurrency {
         return (data["currency"] as? String)?.takeIf { codePattern.matches(it) } ?: UNKNOWN
     }
 
-    fun format(amount: Double, currency: String = LEGACY): String {
+    fun format(amount: Double, currency: String = LEGACY, decimals: Int = 2): String {
         if (!amount.isFinite() || !codePattern.matches(currency)) return "Amount unavailable"
         val prefix = if (currency == LEGACY) "R" else "$currency "
-        val number = DecimalFormat("#,##0.00", symbols).format(kotlin.math.abs(amount))
+        val number = DecimalFormat("#,##0."+ "0".repeat(decimals.coerceIn(1,6)), symbols).format(kotlin.math.abs(amount))
         return (if (amount < 0) "-" else "") + prefix + number
     }
 
@@ -32,6 +32,15 @@ object RegionalCurrency {
         val totals = groups.toSortedMap().map { (currency, amounts) -> format(amounts.sum(), currency) }.toMutableList()
         if (entries.any { !codePattern.matches(it.first) || !it.second.isFinite() }) totals.add("Some amounts unavailable")
         return totals.joinToString(" / ").ifBlank { format(0.0) }
+    }
+
+    /** Average only within a currency, never across denominations. */
+    fun formatAverages(entries: List<Pair<String, Double>>): String {
+        val groups=entries.groupBy({it.first},{it.second})
+        val averages=groups.map { (currency,amounts) ->
+            currency to if(amounts.any { !it.isFinite() }) Double.NaN else amounts.average()
+        }
+        return formatTotals(averages)
     }
 
     // Non-ZAR Android sign-in stays closed until the rest of the native pricing screens are migrated.
