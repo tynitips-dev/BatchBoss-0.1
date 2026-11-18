@@ -1073,7 +1073,7 @@ fun CreateAccountScreen(
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("ZAR (R)", "USD ($)").forEach { curr ->
+                    listOf("ZAR (R)").forEach { curr ->
                         val isSelected = currency == curr
                         Surface(
                             shape = RoundedCornerShape(10.dp),
