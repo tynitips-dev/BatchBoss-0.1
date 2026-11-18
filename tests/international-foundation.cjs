@@ -68,3 +68,13 @@ test('workspace summary never relabels legacy account balances from a country se
  assert.equal(created.currency,'ZAR');
  assert.equal(created.temperature,'Celsius');
 });
+
+test('decimal keyboard input keeps fractional zeros and removes redundant leading zeros',()=>{
+ for(const [raw,expected] of [['04','4'],['00049','49'],['0.59','0.59'],['00.59','0.59'],['.59','0.59'],['4,99','4.99'],['0,59','0.59'],['4.','4.'],['',''],['-0.59','-0.59'],['4.990','4.990']]){
+  assert.equal(u.normalizeDecimalDraft(raw),expected,raw)
+ }
+ for(const raw of ['4.99','0.59','4.','-4.99'])assert.equal(u.isDecimalDraft(raw),true)
+ for(const raw of ['1.2.3','-','abc','1e3','1 234'])assert.equal(u.isDecimalDraft(raw),false)
+ assert.match(u.formatRegionalMoney(4.99,'EUR','de-DE'),/4\.99/)
+ assert.match(u.formatRegionalMoney(1234.59,'EUR','de-DE'),/1 234\.59/)
+});

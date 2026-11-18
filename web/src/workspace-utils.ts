@@ -42,7 +42,7 @@ export function formatRegionalMoney(value:number,currency:string,locale:string):
  if(!Number.isFinite(value)) throw new RangeError('Invalid amount')
  if(!/^[A-Z]{3}$/.test(currency)) throw new RangeError('Invalid currency code')
  if(currency==='ZAR'&&locale==='en-ZA') return money.format(value)
- return new Intl.NumberFormat(locale,{style:'currency',currency,currencyDisplay:'code'}).format(value)
+ return new Intl.NumberFormat(locale,{style:'currency',currency,currencyDisplay:'code',numberingSystem:'latn'}).formatToParts(value).map(part=>part.type==='decimal'?'.':part.type==='group'?' ':part.value).join('')
 }
 export function convertTemperature(value:number,from:'C'|'F',to:'C'|'F'):number|null {
  if(!Number.isFinite(value)||!['C','F'].includes(from)||!['C','F'].includes(to))return null
@@ -80,4 +80,12 @@ export function regionalWorkspaceSummary(business:Record<string,unknown>) {
   temperature:business.temperatureUnit==='F'?'Fahrenheit':business.temperatureUnit==='C'?'Celsius':'Not recorded',
   locale:typeof business.locale==='string'?business.locale:preset?.locale||'Not recorded',
  }
+}
+
+/** Accept decimal-keyboard commas, keep fractional zeros and remove redundant leading zeros. */
+export function normalizeDecimalDraft(raw:string):string {
+ return raw.replace(/,/g,'.').replace(/^(-?)\./,(_match,sign:string)=>sign+'0.').replace(/^(-?)0+(?=\d)/,'$1')
+}
+export function isDecimalDraft(value:string):boolean {
+ return /^-?\d+(?:\.\d*)?$/.test(value)
 }
