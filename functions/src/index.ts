@@ -366,6 +366,67 @@ export const checkPayfastConnection = onCall(
   }
 );
 
+async function payfastSubscriptionApi(token:string, operation:"fetch"|"cancel") {
+  const timestamp=new Date().toISOString().slice(0,19)+"+00:00";
+  const headers={"merchant-id":payfastMerchantId.value().trim(),version:"v1",timestamp};
+  const fields:Record<string,string>={...headers,passphrase:payfastPassphrase.value().trim()};
+  const canonical=Object.keys(fields).sort().map(key=>key+"="+payfastEncode(fields[key])).join("&");
+  const signature=createHash("md5").update(canonical).digest("hex");
+  const response=await fetch("https://api.payfast.co.za/subscriptions/"+encodeURIComponent(token)+"/"+operation,{
+    method:operation==="fetch"?"GET":"PUT",headers:{...headers,signature},redirect:"error",signal:AbortSignal.timeout(15000)
+  });
+  if(!response.ok)throw new HttpsError("unavailable","Payfast could not confirm the subscription status. Please try again or contact support.");
+  const raw=await response.json() as Record<string,any>;
+  if(raw.status==="error"||raw.success===false||raw.response===false)throw new HttpsError("failed-precondition","Payfast rejected the subscription request.");
+  return raw.data?.response??raw.data??raw;
+}
+function remotePayfastStatus(data:Record<string,any>):string {
+  return String(data.status_text|| (typeof data.status==="string"?data.status:"")).trim().toLowerCase();
+}
+async function ownPayfastSubscription(uid:string) {
+  const profileRef=db.doc(`users/${uid}`);
+  const profile=(await profileRef.get()).data();
+  const token=String(profile?.payfastToken||"");
+  if(profile?.subscriptionSource!=="payfast"||!/^([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$/.test(token))
+    throw new HttpsError("failed-precondition","No Payfast subscription is linked to your account.");
+  const subRef=db.doc(`payfastSubscriptions/${token}`);
+  const sub=(await subRef.get()).data();
+  if(sub?.uid!==uid)throw new HttpsError("failed-precondition","Contact support to reconcile your subscription.");
+  return {profileRef,profile,token,subRef};
+}
+export const getPayfastSubscriptionStatus=onCall({region:"europe-west1",invoker:"public",secrets:payfastSecrets,cors:[APP_URL]},async request=>{
+  const current=requireSignedIn(request);
+  const {profile,token}=await ownPayfastSubscription(current.uid);
+  const remote=await payfastSubscriptionApi(token,"fetch");
+  if(remote.token&&remote.token!==token)throw new HttpsError("failed-precondition","Subscription reference mismatch.");
+  const status=remotePayfastStatus(remote);
+  const next=String(remote.run_date||"");
+  return {status:status||"unknown",nextPaymentDate:/^\d{4}-\d{2}-\d{2}$/.test(next)?next:null,
+    accessUntil:profile.subscriptionExpiresAt?.toDate?.().toISOString()||null,renews:profile.subscriptionRenews===true};
+});
+export const cancelPayfastSubscription=onCall({region:"europe-west1",invoker:"public",secrets:payfastSecrets,cors:[APP_URL]},async request=>{
+  const current=requireSignedIn(request);
+  if(request.data?.confirm!==true)throw new HttpsError("invalid-argument","Confirm that you want to stop recurring payments.");
+  const {profileRef,token,subRef}=await ownPayfastSubscription(current.uid);
+  const existing=await payfastSubscriptionApi(token,"fetch");
+  if(existing.token&&existing.token!==token)throw new HttpsError("failed-precondition","Subscription reference mismatch.");
+  if(!["cancelled","canceled"].includes(remotePayfastStatus(existing)))await payfastSubscriptionApi(token,"cancel");
+  // A successful HTTP response alone is not enough. Confirm from a fresh provider read.
+  const verified=await payfastSubscriptionApi(token,"fetch");
+  if(verified.token&&verified.token!==token)throw new HttpsError("failed-precondition","Subscription reference mismatch.");
+  if(!["cancelled","canceled"].includes(remotePayfastStatus(verified)))throw new HttpsError("unavailable","Cancellation is not confirmed yet. Refresh your subscription or contact support.");
+  const expiry=await db.runTransaction(async t=>{
+    const [p,s]=await Promise.all([t.get(profileRef),t.get(subRef)]);
+    const data=p.data();
+    if(s.data()?.uid!==current.uid||data?.subscriptionSource!=="payfast"||data.payfastToken!==token)
+      throw new HttpsError("failed-precondition","Subscription changed. Contact support.");
+    t.update(subRef,{status:"cancelled",nextPaymentAt:null,updatedAt:FieldValue.serverTimestamp()});
+    t.update(profileRef,{subscriptionRenews:false,updatedAt:FieldValue.serverTimestamp()});
+    return data.subscriptionExpiresAt?.toDate?.().toISOString()||null;
+  });
+  return {cancelled:true,accessUntil:expiry};
+});
+
 export const createPayfastCheckout = onCall(
   { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL] },
   async request => {
