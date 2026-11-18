@@ -106,3 +106,12 @@ test('bakery currency is resolved from persisted metadata, never relabelled from
  assert.equal(u.bakeryAccountingRegion({currency:null}),null);
  assert.equal(u.bakeryAccountingRegion({currency:'XYZ'}),null);
 });
+
+test('WhatsApp links require an explicit international number outside South Africa',()=>{
+ assert.equal(u.invoiceWhatsAppNumber('082 123 4567','ZA','ZAR'),'27821234567');
+ assert.equal(u.invoiceWhatsAppNumber('082 123 4567',undefined,'ZAR'),'27821234567');
+ assert.equal(u.invoiceWhatsAppNumber('+44 7700 900123','GB','GBP'),'447700900123');
+ assert.equal(u.invoiceWhatsAppNumber('0044 7700 900123','GB','GBP'),'447700900123');
+ assert.equal(u.invoiceWhatsAppNumber('07700 900123','GB','GBP'),null);
+ assert.equal(u.invoiceWhatsAppNumber('082 invalid 4567','ZA','ZAR'),null);
+});

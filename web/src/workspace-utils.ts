@@ -127,3 +127,15 @@ export function bakeryAccountingRegion(business:Record<string,unknown>) {
  if(country&&regionDefaults(country)?.currency!==currency)return null
  return {currency,locale:preset.locale,defaultTaxRate:currency==='ZAR'?15:0}
 }
+
+/** Do not apply South African dialing rules to an international customer. */
+export function invoiceWhatsAppNumber(raw:unknown,countryCode:unknown,currency:unknown):string|null {
+ const value=String(raw??'').trim()
+ if(!value||!/^[+\d().\s-]+$/.test(value))return null
+ let digits=value.replace(/\D/g,'')
+ if(value.startsWith('+'))return /^[1-9]\d{6,14}$/.test(digits)?digits:null
+ if(value.startsWith('00')){digits=digits.slice(2);return /^[1-9]\d{6,14}$/.test(digits)?digits:null}
+ if((countryCode==='ZA'||!countryCode&&currency==='ZAR')&&/^0\d{9}$/.test(digits))return '27'+digits.slice(1)
+ if((countryCode==='ZA'||!countryCode&&currency==='ZAR')&&/^27\d{9}$/.test(digits))return digits
+ return null
+}

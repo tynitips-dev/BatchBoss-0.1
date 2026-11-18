@@ -60,7 +60,7 @@ jobs:
             npm install --no-audit --no-fund
           fi
       - name: Test recipe costing and regional measurements
-        run: node --test tests/workspace-utils.cjs tests/recipe-measurements.cjs tests/international-foundation.cjs
+        run: node --test tests/workspace-utils.cjs tests/recipe-measurements.cjs tests/international-foundation.cjs tests/invoice-pdf.cjs
       - name: Build customer portal
         working-directory: web
         run: npm run build
