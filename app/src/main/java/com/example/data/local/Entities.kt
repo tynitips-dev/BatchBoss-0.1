@@ -59,7 +59,8 @@ data class CustomerEntity(
     val totalOrders: Int = 0,
     val totalSpend: Double = 0.0,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 }
@@ -88,7 +89,8 @@ data class OrderEntity(
     val recipeOrItemName: String = "",
     val quantity: Int = 1,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 }
@@ -127,7 +129,8 @@ data class RecipeEntity(
     val instructions: String = "",
     val photoUri: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 }
@@ -154,7 +157,8 @@ data class RecipeIngredientEntity(
     val unit: String,
     val cost: Double,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 }
@@ -240,7 +244,8 @@ data class InventoryItemEntity(
     val category: String = "Baking Staples",
     val barcode: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
     val packageQuantity: Double
@@ -382,7 +387,8 @@ data class ProductServiceEntity(
     val isService: Boolean = false,
     val linkedRecipeId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 }
@@ -525,7 +531,8 @@ data class InvoiceEntity(
     val packagingTotal: Double = 0.0,
     val packagingItemsJson: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 
@@ -567,7 +574,8 @@ data class QuoteEntity(
     val lineItemsJson: String = "",
     val totalCost: Double = 0.0,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "\'ZAR\'") val currency: String = "ZAR"
 ) {
     val firestoreDocumentId: String get() = firestoreId
 

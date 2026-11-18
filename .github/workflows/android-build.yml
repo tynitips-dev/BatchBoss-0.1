@@ -53,6 +53,9 @@ jobs:
           -keyalg RSA -keysize 2048 -validity 30
           -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Test regional currency, measurements and existing database migration
+        run: gradle testDebugUnitTest --tests 'com.example.RegionalCurrencyTest' --tests 'com.example.RegionalMeasurementsTest' --tests 'com.example.Version22MigrationTest' --stacktrace
+
       - name: Build debug APK and release bundle
         run: gradle assembleDebug bundleRelease --stacktrace
 

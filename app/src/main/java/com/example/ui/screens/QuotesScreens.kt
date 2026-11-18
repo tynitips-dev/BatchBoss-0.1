@@ -36,13 +36,10 @@ import com.example.data.local.ProductServiceEntity
 import com.example.data.local.QuoteEntity
 import com.example.data.local.UserProfileEntity
 import com.example.ui.theme.*
-import java.text.NumberFormat
+import com.example.util.RegionalCurrency
 import java.util.Locale
 
-private fun formatZar(amount: Double): String {
-    val format = NumberFormat.getCurrencyInstance(Locale("en", "ZA"))
-    return format.format(amount).replace("ZAR", "R").trim()
-}
+private fun formatZar(amount: Double): String = RegionalCurrency.format(amount)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,8 +97,8 @@ fun QuotesListScreen(
         }
     }
 
-    val totalPipeline = remember(quotes) { quotes.sumOf { it.quotedPrice } }
-    val totalAccepted = remember(quotes) { quotes.filter { it.status == "Accepted" }.sumOf { it.quotedPrice } }
+    val totalPipeline = remember(quotes) { RegionalCurrency.formatTotals(quotes.map { it.currency to it.quotedPrice }) }
+    val totalAccepted = remember(quotes) { RegionalCurrency.formatTotals(quotes.filter { it.status == "Accepted" }.map { it.currency to it.quotedPrice }) }
     val activeCount = remember(quotes) { quotes.count { it.status == "Sent" || it.status == "Draft" } }
 
     Scaffold(
@@ -241,7 +238,7 @@ fun QuotesListScreen(
                 QuoteStatCard(
                     modifier = Modifier.weight(1f),
                     title = "Pipeline",
-                    amount = "R${String.format("%,.0f", totalPipeline)}",
+                    amount = totalPipeline,
                     accentColor = SoftBlue
                 )
                 QuoteStatCard(
@@ -253,7 +250,7 @@ fun QuotesListScreen(
                 QuoteStatCard(
                     modifier = Modifier.weight(1f),
                     title = "Won",
-                    amount = "R${String.format("%,.0f", totalAccepted)}",
+                    amount = totalAccepted,
                     accentColor = MintGreen
                 )
             }
@@ -567,7 +564,7 @@ private fun QuoteItemCard(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = formatZar(item.lineTotal),
+                                text = RegionalCurrency.format(item.lineTotal, quote.currency),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = DarkText
@@ -588,7 +585,7 @@ private fun QuoteItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Est. Cost: R${String.format("%,.0f", quote.estimatedCost)}",
+                    text = "Est. Cost: ${RegionalCurrency.format(quote.estimatedCost, quote.currency)}",
                     fontSize = 12.sp,
                     color = LightText
                 )
@@ -621,7 +618,7 @@ private fun QuoteItemCard(
                         color = LightText
                     )
                     Text(
-                        text = "R${String.format("%,.2f", quote.quotedPrice)}",
+                        text = "${RegionalCurrency.format(quote.quotedPrice, quote.currency)}",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkText

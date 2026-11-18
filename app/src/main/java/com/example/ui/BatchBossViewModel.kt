@@ -1425,6 +1425,7 @@ class BatchBossViewModel(application: Application) : AndroidViewModel(applicatio
                     issueDate = "Today",
                     dueDate = quote.eventDate,
                     amount = quote.quotedPrice,
+                    currency = quote.currency,
                     status = "Pending",
                     subtotal = quote.subtotal,
                     discountAmount = quote.discountAmount,

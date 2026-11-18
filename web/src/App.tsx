@@ -296,7 +296,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
         batch.set(ingredientRef, {
           id: ingredientId, recipeId: recipeRecordId, name: name.trim(),
           quantity: ingredientQuantities[index] || 0, unit: ingredientUnits[index] || 'g',
-          cost: ingredientCosts[index] || 0,
+          cost: ingredientCosts[index] || 0, currency: region.currency,
         })
       })
       await batch.commit()

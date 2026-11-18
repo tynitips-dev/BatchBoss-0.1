@@ -19,7 +19,7 @@ import com.example.data.local.QuoteEntity
 import com.example.data.local.UserProfileEntity
 import java.io.File
 import java.io.FileOutputStream
-import java.text.NumberFormat
+import com.example.util.RegionalCurrency
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -131,6 +131,7 @@ object PdfGenerator {
     }
 
     private fun drawInvoiceContent(context: Context, canvas: Canvas, invoice: InvoiceEntity, biz: UserProfileEntity) {
+        fun formatInvoice(amount: Double) = RegionalCurrency.format(amount, invoice.currency)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // Top Accent Bar
@@ -273,13 +274,13 @@ object PdfGenerator {
                 // Unit Price
                 paint.textAlign = Paint.Align.RIGHT
                 paint.color = COLOR_MUTED
-                canvas.drawText(formatZar(item.unitPrice), MARGIN_RIGHT - 110f, currentY + 18f, paint)
+                canvas.drawText(formatInvoice(item.unitPrice), MARGIN_RIGHT - 110f, currentY + 18f, paint)
 
                 // Line Total
                 paint.color = COLOR_PRIMARY
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 paint.textSize = 11f
-                canvas.drawText(formatZar(item.lineTotal), MARGIN_RIGHT - 12f, currentY + 18f, paint)
+                canvas.drawText(formatInvoice(item.lineTotal), MARGIN_RIGHT - 12f, currentY + 18f, paint)
                 paint.textAlign = Paint.Align.LEFT
 
                 currentY += rowHeight + 4f
@@ -302,7 +303,7 @@ object PdfGenerator {
             paint.textSize = 10f
             canvas.drawText("Artisan Baked Goods & Catering Service", MARGIN_LEFT + 12f, currentY + 38f, paint)
 
-            val priceStr = formatZar(invoice.amount)
+            val priceStr = formatInvoice(invoice.amount)
             paint.color = COLOR_PRIMARY
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             paint.textSize = 13f
@@ -330,7 +331,7 @@ object PdfGenerator {
             paint.textSize = 10f
             canvas.drawText("Subtotal:", MARGIN_RIGHT - 226f, sumLineY, paint)
             paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(formatZar(invoice.subtotal.takeIf { it > 0 } ?: invoice.amount), MARGIN_RIGHT - 14f, sumLineY, paint)
+            canvas.drawText(formatInvoice(invoice.subtotal.takeIf { it > 0 } ?: invoice.amount), MARGIN_RIGHT - 14f, sumLineY, paint)
             paint.textAlign = Paint.Align.LEFT
             sumLineY += 16f
 
@@ -338,7 +339,7 @@ object PdfGenerator {
                 paint.color = COLOR_MUTED
                 canvas.drawText("Discount:", MARGIN_RIGHT - 226f, sumLineY, paint)
                 paint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("-${formatZar(invoice.discountAmount)}", MARGIN_RIGHT - 14f, sumLineY, paint)
+                canvas.drawText("-${formatInvoice(invoice.discountAmount)}", MARGIN_RIGHT - 14f, sumLineY, paint)
                 paint.textAlign = Paint.Align.LEFT
                 sumLineY += 16f
             }
@@ -347,7 +348,7 @@ object PdfGenerator {
                 paint.color = COLOR_MUTED
                 canvas.drawText("VAT (${invoice.taxRatePercent.toInt()}%):", MARGIN_RIGHT - 226f, sumLineY, paint)
                 paint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(formatZar(invoice.taxAmount), MARGIN_RIGHT - 14f, sumLineY, paint)
+                canvas.drawText(formatInvoice(invoice.taxAmount), MARGIN_RIGHT - 14f, sumLineY, paint)
                 paint.textAlign = Paint.Align.LEFT
                 sumLineY += 16f
             }
@@ -362,7 +363,7 @@ object PdfGenerator {
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textSize = 15f
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(formatZar(invoice.amount), MARGIN_RIGHT - 14f, sumLineY + 2f, paint)
+        canvas.drawText(formatInvoice(invoice.amount), MARGIN_RIGHT - 14f, sumLineY + 2f, paint)
         paint.textAlign = Paint.Align.LEFT
 
         // Banking Details Box
@@ -385,8 +386,8 @@ object PdfGenerator {
         paint.color = COLOR_MUTED
         paint.textSize = 10f
         canvas.drawText("Bank: ${biz.bankName.ifBlank { "Standard Bank / FNB" }}", MARGIN_LEFT + 14f, bankTop + 44f, paint)
-        canvas.drawText("Account Number: ${biz.accountNumber.ifBlank { "10192837465" }}", MARGIN_LEFT + 14f, bankTop + 60f, paint)
-        canvas.drawText("Branch Code: ${biz.branchCode.ifBlank { "250655" }}", MARGIN_LEFT + 14f, bankTop + 76f, paint)
+        canvas.drawText("Account Number: ${biz.accountNumber.ifBlank { "Not provided" }}", MARGIN_LEFT + 14f, bankTop + 60f, paint)
+        canvas.drawText("Branch Code: ${biz.branchCode.ifBlank { "Not provided" }}", MARGIN_LEFT + 14f, bankTop + 76f, paint)
         canvas.drawText("Reference: INV-${invoice.id.toString().padStart(4, '0')} (${invoice.clientName})", MARGIN_LEFT + 14f, bankTop + 92f, paint)
 
         // Footer Note
@@ -400,6 +401,7 @@ object PdfGenerator {
     }
 
     private fun drawQuoteContent(context: Context, canvas: Canvas, quote: QuoteEntity, biz: UserProfileEntity) {
+        fun formatQuote(amount: Double) = RegionalCurrency.format(amount, quote.currency)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // Top Accent Bar
@@ -541,13 +543,13 @@ object PdfGenerator {
                 // Unit Price
                 paint.textAlign = Paint.Align.RIGHT
                 paint.color = COLOR_MUTED
-                canvas.drawText(formatZar(item.unitPrice), MARGIN_RIGHT - 110f, currentQuoteY + 18f, paint)
+                canvas.drawText(formatQuote(item.unitPrice), MARGIN_RIGHT - 110f, currentQuoteY + 18f, paint)
 
                 // Line Total
                 paint.color = COLOR_AMBER
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 paint.textSize = 11f
-                canvas.drawText(formatZar(item.lineTotal), MARGIN_RIGHT - 12f, currentQuoteY + 18f, paint)
+                canvas.drawText(formatQuote(item.lineTotal), MARGIN_RIGHT - 12f, currentQuoteY + 18f, paint)
                 paint.textAlign = Paint.Align.LEFT
 
                 currentQuoteY += rowHeight + 4f
@@ -570,7 +572,7 @@ object PdfGenerator {
             paint.textSize = 10f
             canvas.drawText("Includes custom ingredient preparation, baking & decoration labor", MARGIN_LEFT + 12f, currentQuoteY + 40f, paint)
 
-            val priceStr = formatZar(quote.quotedPrice)
+            val priceStr = formatQuote(quote.quotedPrice)
             paint.color = COLOR_AMBER
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             paint.textSize = 13f
@@ -598,7 +600,7 @@ object PdfGenerator {
             paint.textSize = 10f
             canvas.drawText("Subtotal:", MARGIN_RIGHT - 226f, qSumY, paint)
             paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(formatZar(quote.subtotal.takeIf { it > 0 } ?: quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
+            canvas.drawText(formatQuote(quote.subtotal.takeIf { it > 0 } ?: quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
             paint.textAlign = Paint.Align.LEFT
             qSumY += 15f
 
@@ -606,7 +608,7 @@ object PdfGenerator {
                 paint.color = COLOR_MUTED
                 canvas.drawText("Discount:", MARGIN_RIGHT - 226f, qSumY, paint)
                 paint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("-${formatZar(quote.discountAmount)}", MARGIN_RIGHT - 14f, qSumY, paint)
+                canvas.drawText("-${formatQuote(quote.discountAmount)}", MARGIN_RIGHT - 14f, qSumY, paint)
                 paint.textAlign = Paint.Align.LEFT
                 qSumY += 15f
             }
@@ -615,7 +617,7 @@ object PdfGenerator {
                 paint.color = COLOR_MUTED
                 canvas.drawText("VAT (${quote.taxRatePercent.toInt()}%):", MARGIN_RIGHT - 226f, qSumY, paint)
                 paint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(formatZar(quote.taxAmount), MARGIN_RIGHT - 14f, qSumY, paint)
+                canvas.drawText(formatQuote(quote.taxAmount), MARGIN_RIGHT - 14f, qSumY, paint)
                 paint.textAlign = Paint.Align.LEFT
                 qSumY += 15f
             }
@@ -631,7 +633,7 @@ object PdfGenerator {
         paint.color = COLOR_AMBER
         paint.textSize = 14f
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(formatZar(quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
+        canvas.drawText(formatQuote(quote.quotedPrice), MARGIN_RIGHT - 14f, qSumY, paint)
 
         paint.color = COLOR_MUTED
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
@@ -642,7 +644,7 @@ object PdfGenerator {
         paint.color = COLOR_DARK
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(formatZar(deposit50), MARGIN_RIGHT - 14f, qSumY + 20f, paint)
+        canvas.drawText(formatQuote(deposit50), MARGIN_RIGHT - 14f, qSumY + 20f, paint)
         paint.textAlign = Paint.Align.LEFT
 
         // Terms & Banking Box
@@ -666,7 +668,7 @@ object PdfGenerator {
         paint.textSize = 9.5f
         canvas.drawText("• Quote valid for 14 days from issue date. 50% deposit secures the date.", MARGIN_LEFT + 14f, termsTop + 40f, paint)
         canvas.drawText("• Bank: ${biz.bankName.ifBlank { "Standard Bank / FNB" }}", MARGIN_LEFT + 14f, termsTop + 58f, paint)
-        canvas.drawText("• Account: ${biz.accountNumber.ifBlank { "10192837465" }}  |  Branch: ${biz.branchCode.ifBlank { "250655" }}", MARGIN_LEFT + 14f, termsTop + 74f, paint)
+        canvas.drawText("• Account: ${biz.accountNumber.ifBlank { "Not provided" }}  |  Branch: ${biz.branchCode.ifBlank { "Not provided" }}", MARGIN_LEFT + 14f, termsTop + 74f, paint)
         canvas.drawText("• Reference: QUO-${quote.id.toString().padStart(4, '0')} (${quote.clientName})", MARGIN_LEFT + 14f, termsTop + 90f, paint)
         canvas.drawText("• Please send proof of deposit to confirm order scheduling.", MARGIN_LEFT + 14f, termsTop + 104f, paint)
 
@@ -680,10 +682,6 @@ object PdfGenerator {
         canvas.drawText("Powered by BatchBoss Bakery Suite  •  Smart Costing for Every Baker", PAGE_WIDTH / 2f, 806f, paint)
     }
 
-    private fun formatZar(amount: Double): String {
-        val format = NumberFormat.getCurrencyInstance(Locale("en", "ZA"))
-        return format.format(amount).replace("ZAR", "R")
-    }
 
     fun openPdf(context: Context, file: File) {
         try {
