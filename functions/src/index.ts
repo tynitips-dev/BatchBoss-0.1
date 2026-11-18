@@ -502,7 +502,7 @@ export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePays
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 export { sendBatchBossGiftProEmail } from './giftProEmail';
 
-export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
+export { sendBatchBossProPaymentEmail, sendBatchBossPayfastReceipt } from './proPaymentEmail';
 
 export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
 
