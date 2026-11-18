@@ -411,7 +411,7 @@ export const payfastNotify = onRequest(
       const transactionId=String(fields.pf_payment_id||"");
       const status=String(fields.payment_status||"").toUpperCase();
       if(!["COMPLETE","CANCELLED","FAILED"].includes(status)){response.status(200).send("Ignored");return;}
-      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(transactionId)||!/^[-a-fA-F0-9]{36}$/.test(token)){
+      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(transactionId)||!/^([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$/.test(token)){
         response.status(400).send("Missing transaction or subscription token");return;
       }
       const tokenRef=db.doc(`payfastSubscriptions/${token}`);
@@ -443,8 +443,11 @@ export const payfastNotify = onRequest(
         const legacyDuplicate=original.payfastPaymentId===transactionId&&original.status==="complete"&&!tx.exists;
         t.create(eventRef,{uid,reference,transactionId,status,provider:"payfast",createdAt:FieldValue.serverTimestamp()});
         if(status!=="COMPLETE"){
-          // Failure/cancellation ITNs are audit events, not proof that the whole agreement ended.
-          if(linked&&linked.uid===uid)t.set(tokenRef,{lastPaymentEvent:status,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+          if(linked&&linked.uid===uid){
+            t.set(tokenRef,{lastPaymentEvent:status,...(status==="CANCELLED"?{status:"cancelled",nextPaymentAt:null}:{}),updatedAt:FieldValue.serverTimestamp()},{merge:true});
+            if(profile.subscriptionSource==="payfast"&&profile.payfastToken===token&&status==="CANCELLED")
+              t.update(profileRef,{subscriptionRenews:false,updatedAt:FieldValue.serverTimestamp()});
+          }
           return;
         }
         if(tx.exists)return;
@@ -458,12 +461,12 @@ export const payfastNotify = onRequest(
         const expiry=new Date(Math.max(expires.getTime(),existingExpiry));
         t.create(txRef,{uid,reference,transactionId,provider:"payfast",plan,amountCents:expectedCents,currency:"ZAR",status:"success",
           paidAt:FieldValue.serverTimestamp(),legacyDuplicate,requiresReview:!!conflicting});
-        t.set(tokenRef,{uid,paymentId:reference,plan,amountCents:expectedCents,currency:"ZAR",status:conflicting?"review":"active",
-          lastTransactionId:transactionId,nextPaymentAt:expires,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+        t.set(tokenRef,{uid,paymentId:reference,plan,amountCents:expectedCents,currency:"ZAR",status:conflicting?"review":linked?.status==="cancelled"?"cancelled":"active",
+          lastTransactionId:transactionId,nextPaymentAt:linked?.status==="cancelled"?null:expires,updatedAt:FieldValue.serverTimestamp()},{merge:true});
         t.set(paymentRef,{status:"complete",payfastPaymentId:transactionId,payfastToken:token,updatedAt:FieldValue.serverTimestamp()},{merge:true});
         if(lock.data()?.paymentId===reference)t.delete(lockRef);
         if(!conflicting&&!legacyDuplicate)t.set(profileRef,{subscriptionPlan:"pro",subscriptionStatus:"active",subscriptionSource:"payfast",
-          subscriptionBillingInterval:plan,subscriptionRenews:true,subscriptionExpiresAt:expiry,
+          subscriptionBillingInterval:plan,subscriptionRenews:linked?.status!=="cancelled",subscriptionExpiresAt:expiry,
           subscriptionStartedAt:profile.subscriptionSource==="payfast"&&profile.subscriptionStartedAt?profile.subscriptionStartedAt:FieldValue.serverTimestamp(),
           payfastPaymentId:reference,payfastToken:token,updatedAt:FieldValue.serverTimestamp()},{merge:true});
       });
@@ -486,6 +489,12 @@ export const listPayfastPayments=onCall({region:"europe-west1",invoker:"public"}
   const result=await db.collection("payfastTransactions").orderBy("paidAt","desc").limit(100).get();
   return {payments:result.docs.map(doc=>{const p=doc.data();return {id:doc.id,uid:p.uid,reference:p.reference,plan:p.plan,
     amountCents:p.amountCents,currency:p.currency,status:p.status,paidAt:p.paidAt?.toDate?.().toISOString()||null,requiresReview:!!p.requiresReview};})};
+});
+
+export const getMyPayfastPayments=onCall({region:"europe-west1",invoker:"public"},async request=>{
+  const current=requireSignedIn(request);
+  const items=await db.collection("payfastTransactions").where("uid","==",current.uid).limit(200).get();
+  return {payments:items.docs.map(doc=>{const p=doc.data();return {reference:doc.id,plan:p.plan,amountCents:p.amountCents,currency:p.currency,status:p.status,paidAt:p.paidAt?.toDate?.().toISOString()||null};}).sort((a,b)=>String(b.paidAt).localeCompare(String(a.paidAt)))};
 });
 
 export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
