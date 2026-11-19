@@ -599,3 +599,5 @@ export { sendBatchBossProPaymentEmail, sendBatchBossPayfastReceipt } from './pro
 export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
+
+export {createPayfastSandboxCheckout,payfastSandboxNotify,getPayfastSandboxResult} from './payfastSandbox';
