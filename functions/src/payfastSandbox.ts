@@ -28,16 +28,24 @@ export const createPayfastSandboxCheckout=onCall({region:"europe-west1",invoker:
   if(req.data?.confirmTest!==true)throw new HttpsError("invalid-argument","Confirm sandbox testing.");
   const plan=req.data?.plan as Plan;
   if(!Object.prototype.hasOwnProperty.call(plans,plan))throw new HttpsError("invalid-argument","Unknown plan.");
+  const idValue = merchantId.value().trim();
+  const keyValue = merchantKey.value().trim();
+  if (!/^\d+$/.test(idValue) || !keyValue || /\s/.test(keyValue)) {
+    throw new HttpsError("failed-precondition", "Check the sandbox merchant ID and key in Firebase Secret Manager.");
+  }
+  if (!passphrase.value().trim()) {
+    throw new HttpsError("failed-precondition", "Set the recurring-payment passphrase from your PayFast sandbox account.");
+  }
   const p=plans[plan];
   const id=randomUUID(), next=billingDate(plan);
-  const fields:Record<string,string>={merchant_id:merchantId.value().trim(),merchant_key:merchantKey.value().trim(),
+  const fields:Record<string,string>={merchant_id:idValue,merchant_key:keyValue,
     return_url:origin+"/?payfastSandbox=returned",cancel_url:origin+"/?payfastSandbox=cancelled",
     notify_url:"https://europe-west1-batch-boss-android.cloudfunctions.net/payfastSandboxNotify",
     m_payment_id:id,amount:p.amount,item_name:"BatchBoss Sandbox "+plan,
     subscription_type:"1",billing_date:next,recurring_amount:p.amount,frequency:p.frequency,cycles:"0"};
   fields.signature=hash(canonical(Object.entries(fields).filter(([,v])=>v!=="")));
   await db().doc("payfastSandboxSessions/"+id).create({uid:req.auth.uid,plan,amount:p.amount,frequency:p.frequency,billingDate:next,status:"pending",environment:"sandbox",createdAt:FieldValue.serverTimestamp()});
-  return {environment:"sandbox",reference:id,checkoutUrl:host+"/eng/process",fields};
+  return {environment:"sandbox",reference:id,checkoutUrl:host+"/eng/process",fieldOrder:Object.keys(fields),fields};
 });
 export const payfastSandboxNotify=onRequest({region:"europe-west1",invoker:"public",secrets},async(req,res)=>{
   try{

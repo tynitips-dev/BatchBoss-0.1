@@ -7,7 +7,7 @@ type Payment = { id: string; uid: string; reference: string; plan: string; amoun
 const check = httpsCallable<undefined, Connection>(functions, 'checkPayfastConnection')
 const list = httpsCallable<undefined, { payments: Payment[] }>(functions, 'listPayfastPayments')
 type SandboxResult = {reference:string;environment:string;plan:string;amount:string;billingDate:string;status:string;signatureVerified:boolean;serverValidated:boolean;subscriptionTokenReceived:boolean}
-const sandboxCheckout=httpsCallable<{plan:string;confirmTest:boolean},{environment:string;reference:string;checkoutUrl:string;fields:Record<string,string>}>(functions,'createPayfastSandboxCheckout')
+const sandboxCheckout=httpsCallable<{plan:string;confirmTest:boolean},{environment:string;reference:string;checkoutUrl:string;fieldOrder?:string[];fields:Record<string,string>}>(functions,'createPayfastSandboxCheckout')
 const sandboxResult=httpsCallable<{reference:string},SandboxResult>(functions,'getPayfastSandboxResult')
 const money = (cents: number, currency: string) => currency + ' ' + (cents/100).toFixed(2)
 
@@ -26,7 +26,14 @@ export default function PayfastAdmin() {
       if(data.environment!=='sandbox'||data.checkoutUrl!=='https://sandbox.payfast.co.za/eng/process')throw Error('Unexpected checkout destination.')
       setReference(data.reference);sessionStorage.setItem('batchboss:payfastSandboxReference',data.reference)
       const form=document.createElement('form');form.action=data.checkoutUrl;form.method='POST'
-      for(const [name,value] of Object.entries(data.fields)){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.appendChild(input)}
+      const fieldOrder = data.fieldOrder ?? Object.keys(data.fields)
+      for (const name of fieldOrder) {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = name
+        input.value = data.fields[name]
+        form.appendChild(input)
+      }
       document.body.appendChild(form);form.submit()
     }catch(e){setError(e instanceof Error?e.message:'Sandbox checkout failed.')}
     finally{setBusy('')}
@@ -47,15 +54,15 @@ export default function PayfastAdmin() {
   }
   return <section className="panel">
     <h2>Payfast payments</h2>
-    <p>Check the connection without charging a customer. Your Payfast credentials remain in Firebase Secret Manager.</p>
-    <button disabled={!!busy} onClick={()=>refresh('connection')}>{busy==='connection'?'Checking…':'Check Payfast connection'}</button>
+    <p>Check the live PayFast API connection without charging a customer. Your Payfast credentials remain in Firebase Secret Manager.</p>
+    <button disabled={!!busy} onClick={()=>refresh('connection')}>{busy==='connection'?'Checking…':'Check live PayFast connection'}</button>
     {connection&&<div role="status">
       <p>API: <strong>{connection.connected?'Connected':'Not confirmed'}</strong> · {connection.status}{connection.httpStatus?' (HTTP '+connection.httpStatus+')':''}</p>
       <p>Merchant key: {connection.merchantKeyPresent?'Present; checkout validation still required':'Missing'}</p>
       <p>Checkout: {connection.checkoutEnabled?'Enabled in backend':'Disabled in backend'}</p>
     </div>}
     <h3>Subscription checkout test (sandbox only)</h3>
-    <p>No real money or customer entitlement changes. A completed test must be confirmed by a validated provider notification.</p>
+    <p>Use the merchant ID, key and passphrase from the same PayFast sandbox account. A test uses no real money. A completed test must be confirmed by a validated provider notification.</p>
     <label>Test plan <select value={testPlan} onChange={e=>setTestPlan(e.target.value)} disabled={!!busy}><option value="weekly">Weekly R39.99</option><option value="monthly">Monthly R149.99</option><option value="annual">Annual R1199.00</option></select></label>
     <button disabled={!!busy} onClick={startSandbox}>Start sandbox checkout</button>
     {reference&&<div><p>Test reference: {reference}</p><button disabled={!!busy} onClick={checkSandbox}>Check test result</button></div>}
