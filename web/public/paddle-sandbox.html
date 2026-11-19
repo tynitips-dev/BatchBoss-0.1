@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Batch Boss Pro | Sandbox checkout</title>
+  <style>
+    body { font: 1rem/1.5 system-ui,sans-serif; background: #fff6f8; color: #30222a; margin: 0; }
+    main { max-width: 32rem; margin: 8vh auto; background: white; padding: 2rem; border-radius: 1rem; }
+    label, select, button { display: block; margin-top: .8rem; }
+    select, button { font: inherit; padding: .65rem; width: 100%; }
+    button { background: #962549; color: white; border: 0; border-radius: .4rem; cursor: pointer; }
+    button:disabled { opacity: .6; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Batch Boss Pro</h1>
+    <p>Sandbox checkout. Use test payment details. This page does not activate a paid subscription in the Baker Portal.</p>
+    <label for="plan">Subscription</label>
+    <select id="plan">
+      <option value="pri_01m7snz195sdhtb9n9m7jc4vgc">Weekly Pro · R39.99 per week</option>
+      <option value="pri_01m7snqssz62ktxjprxm5ttfdx" selected>Monthly Pro · R149.99 per month</option>
+      <option value="pri_01m7snwrmkdc2scdx52dnc37tr">Annual Pro · R1,199.00 per year</option>
+      <option value="pri_01m7sp1sxevqvqrg1jk2deazmn">Monthly launch · R99.00 per month</option>
+      <option value="pri_01m7sp4k71f0jz1ej804tpczd9">Annual launch · R990.00 per year</option>
+    </select>
+    <button id="checkout" disabled>Open test checkout</button>
+    <p id="status" role="status">Loading Paddle…</p>
+  </main>
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+  <script>
+    const button = document.querySelector('#checkout');
+    const plan = document.querySelector('#plan');
+    const message = document.querySelector('#status');
+    try {
+      Paddle.Environment.set('sandbox');
+      Paddle.Initialize({
+        token: 'test_58cfae4e8812847822285ca863f',
+        eventCallback(event) {
+          if (event.name === 'checkout.completed') message.textContent = 'Test payment completed.';
+          if (event.name === 'checkout.error') message.textContent = 'Paddle could not complete this checkout. Please try again.';
+        }
+      });
+      message.textContent = '';
+      button.disabled = false;
+      button.addEventListener('click', () => {
+        try {
+          message.textContent = '';
+          Paddle.Checkout.open({ items: [{ priceId: plan.value, quantity: 1 }] });
+        } catch {
+          message.textContent = 'Checkout could not open. Refresh the page and try again.';
+        }
+      });
+    } catch {
+      message.textContent = 'Paddle could not load. Check your connection and refresh the page.';
+    }
+  </script>
+</body>
+</html>
