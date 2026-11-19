@@ -34,7 +34,7 @@ export const createPayfastSandboxCheckout=onCall({region:"europe-west1",invoker:
     return_url:origin+"/?payfastSandbox=returned",cancel_url:origin+"/?payfastSandbox=cancelled",
     notify_url:"https://europe-west1-batch-boss-android.cloudfunctions.net/payfastSandboxNotify",
     m_payment_id:id,amount:p.amount,item_name:"BatchBoss Sandbox "+plan,
-    payment_method:"cc",subscription_type:"1",billing_date:next,recurring_amount:p.amount,frequency:p.frequency,cycles:"0"};
+    subscription_type:"1",billing_date:next,recurring_amount:p.amount,frequency:p.frequency,cycles:"0"};
   fields.signature=hash(canonical(Object.entries(fields).filter(([,v])=>v!=="")));
   await db().doc("payfastSandboxSessions/"+id).create({uid:req.auth.uid,plan,amount:p.amount,frequency:p.frequency,billingDate:next,status:"pending",environment:"sandbox",createdAt:FieldValue.serverTimestamp()});
   return {environment:"sandbox",reference:id,checkoutUrl:host+"/eng/process",fields};
