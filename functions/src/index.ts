@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -18,7 +18,6 @@ const adminEmail = defineString("ADMIN_EMAIL");
 const payfastMerchantId = defineSecret("PAYFAST_MERCHANT_ID");
 const payfastMerchantKey = defineSecret("PAYFAST_MERCHANT_KEY");
 const payfastPassphrase = defineSecret("PAYFAST_PASSPHRASE");
-const payfastEnabled = defineString("PAYFAST_ENABLED", { default: "false" });
 const payfastSecrets = [payfastMerchantId, payfastMerchantKey, payfastPassphrase];
 
 function requireSignedIn(request: { auth?: { uid: string; token: Record<string, unknown> } }) {
@@ -265,10 +264,7 @@ export const submitDeletionRequest = onCall({ region: "europe-west1", invoker: "
 type PayfastFields = Record<string, string>;
 
 const APP_URL = "https://app.batchboss.co.za";
-const PAYFAST_URL = "https://www.payfast.co.za/eng/process";
 const PAYFAST_VALIDATE_URL = "https://www.payfast.co.za/eng/query/validate";
-const PAYFAST_NOTIFY_URL =
-  "https://europe-west1-batch-boss-android.cloudfunctions.net/payfastNotify";
 
 function payfastEncode(value: string): string {
   return encodeURIComponent(value.trim())
@@ -276,24 +272,6 @@ function payfastEncode(value: string): string {
     .replace(/[!'()*~]/g, character =>
       `%${character.charCodeAt(0).toString(16).toUpperCase()}`
     );
-}
-
-function payfastParameterString(fields: PayfastFields): string {
-  return Object.entries(fields)
-    .filter(([key, value]) => key !== "signature" && value !== "")
-    .map(([key, value]) => `${key}=${payfastEncode(value)}`)
-    .join("&");
-}
-
-function createPayfastSignature(
-  fields: PayfastFields,
-  passphrase: string
-): string {
-  let parameterString = payfastParameterString(fields);
-  if (passphrase) {
-    parameterString += `&passphrase=${payfastEncode(passphrase)}`;
-  }
-  return createHash("md5").update(parameterString).digest("hex");
 }
 
 function signaturesMatch(received: string, expected: string): boolean {
@@ -305,11 +283,6 @@ function signaturesMatch(received: string, expected: string): boolean {
 }
 
 type PayfastPlan = "weekly" | "monthly" | "annual";
-const PAYFAST_PLANS = {
-  weekly: { cents: 3999, frequency: "2", label: "Weekly" },
-  monthly: { cents: 14999, frequency: "3", label: "Monthly" },
-  annual: { cents: 119900, frequency: "6", label: "Annual" },
-} as const;
 function addBillingPeriod(date: Date, plan: PayfastPlan): Date {
   const result = new Date(date);
   if (plan === "weekly") { result.setUTCDate(result.getUTCDate() + 7); return result; }
@@ -319,9 +292,6 @@ function addBillingPeriod(date: Date, plan: PayfastPlan): Date {
   const last = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth()+1, 0)).getUTCDate();
   result.setUTCDate(Math.min(day,last));
   return result;
-}
-function localDay(date: Date): string {
-  return new Date(date.getTime()+2*60*60*1000).toISOString().slice(0,10);
 }
 function cents(value: string): number {
   if (!/^\d{1,9}(\.\d{1,2})?$/.test(value)) return NaN;
@@ -335,7 +305,7 @@ function paidThrough(value: unknown): number {
   return v?.toMillis?.() || 0;
 }
 
-// This read-only check is independent of the live checkout switch.
+// Retained for older admin clients.
 export const checkPayfastConnection = onCall(
   { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL, "https://admin.batchboss.co.za"] },
   async request => {
@@ -344,7 +314,7 @@ export const checkPayfastConnection = onCall(
     const passphrase = payfastPassphrase.value().trim();
     const merchantKeyPresent = !!payfastMerchantKey.value().trim();
     if (!merchantId || !passphrase || !merchantKeyPresent) {
-      return { connected: false, merchantKeyPresent, checkoutEnabled: payfastEnabled.value() === "true", status: "configuration_missing" };
+      return { connected: false, merchantKeyPresent, checkoutEnabled: false, status: "configuration_missing" };
     }
     const timestamp = new Date().toISOString().slice(0,19) + "+00:00";
     const headers = { "merchant-id": merchantId, version: "v1", timestamp };
@@ -358,10 +328,10 @@ export const checkPayfastConnection = onCall(
       const raw = (await result.text()).trim();
       const connected = result.ok && /^"?payfast api"?$/i.test(raw);
       // Never return credentials or untrusted provider response content.
-      return { connected, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: payfastEnabled.value() === "true",
+      return { connected, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: false,
         status: connected ? "connected" : "provider_rejected", httpStatus: result.status };
     } catch {
-      return { connected: false, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: payfastEnabled.value() === "true", status: "provider_unreachable" };
+      return { connected: false, merchantKeyPresent, merchantKeyVerified: false, checkoutEnabled: false, status: "provider_unreachable" };
     }
   }
 );
@@ -428,51 +398,9 @@ export const cancelPayfastSubscription=onCall({region:"europe-west1",invoker:"pu
 });
 
 export const createPayfastCheckout = onCall(
-  { region: "europe-west1", invoker: "public", secrets: payfastSecrets, cors: [APP_URL] },
-  async request => {
-    const current = requireSignedIn(request);
-    if (payfastEnabled.value() !== "true") throw new HttpsError("failed-precondition","Payfast checkout is not enabled yet.");
-    const plan = request.data?.plan;
-    if (!validPlan(plan)) throw new HttpsError("invalid-argument","Choose a weekly, monthly or annual Pro plan.");
-    if (request.data?.termsAccepted !== true) throw new HttpsError("invalid-argument","Accept the recurring payment terms first.");
-    const userRecord = await auth.getUser(current.uid);
-    const email = String(userRecord.email || "").trim();
-    if (!email) throw new HttpsError("failed-precondition","Your account requires an email address.");
-    const config = PAYFAST_PLANS[plan];
-    const amount = (config.cents/100).toFixed(2);
-    const paymentId = randomUUID();
-    const paymentRef = db.doc(`subscriptionPayments/${paymentId}`);
-    const profileRef = db.doc(`users/${current.uid}`);
-    const lockRef = db.doc(`payfastCheckouts/${current.uid}`);
-    const otherLockRef = db.doc(`paystackCheckouts/${current.uid}`);
-    const nextDate = addBillingPeriod(new Date(),plan);
-    const billingDate = localDay(nextDate);
-    const profile = await db.runTransaction(async t => {
-      const [p,l,o] = await Promise.all([t.get(profileRef),t.get(lockRef),t.get(otherLockRef)]);
-      if (!p.exists) throw new HttpsError("failed-precondition","Complete your profile first.");
-      const data = p.data()!;
-      if (data.subscriptionSource === "paystack" && (data.paystackSubscriptionCode || data.subscriptionStatus === "active"))
-        throw new HttpsError("failed-precondition","Contact support before switching from Paystack.");
-      if (data.subscriptionSource === "payfast" && (data.subscriptionRenews !== false || paidThrough(data.subscriptionExpiresAt)>Date.now()))
-        throw new HttpsError("failed-precondition","Manage your existing Payfast subscription first.");
-      if (data.subscriptionSource === "admin_promotion" && paidThrough(data.subscriptionExpiresAt)>Date.now())
-        throw new HttpsError("failed-precondition","Use your remaining promotional access first.");
-      if (l.exists || (o.data()?.expiresAtMs || 0)>Date.now())
-        throw new HttpsError("failed-precondition","A checkout is already pending. Contact support if it was abandoned.");
-      t.create(lockRef,{paymentId,createdAt:FieldValue.serverTimestamp()});
-      t.create(paymentRef,{uid:current.uid,email,plan,amount:config.cents/100,amountCents:config.cents,currency:"ZAR",
-        provider:"payfast",status:"pending",billingDate,createdAt:FieldValue.serverTimestamp()});
-      return data;
-    });
-    const fields: PayfastFields = {
-      merchant_id: payfastMerchantId.value(), merchant_key: payfastMerchantKey.value(),
-      return_url: `${APP_URL}/?payment=success`, cancel_url: `${APP_URL}/?payment=cancelled`, notify_url: PAYFAST_NOTIFY_URL,
-      name_first: String(profile.firstName || userRecord.displayName || "Baker").trim().split(/\s+/)[0].slice(0,100),
-      email_address: email, m_payment_id: paymentId, amount, item_name: `BatchBoss Pro ${config.label}`,
-      payment_method:"cc", subscription_type:"1",billing_date:billingDate,recurring_amount:amount,frequency:config.frequency,cycles:"0",
-    };
-    fields.signature = createPayfastSignature(fields,payfastPassphrase.value());
-    return {success:true,checkoutUrl:PAYFAST_URL,fields};
+  { region: "europe-west1", invoker: "public", cors: [APP_URL] },
+  () => {
+    throw new HttpsError("failed-precondition", "PayFast checkout has been retired.");
   }
 );
 
