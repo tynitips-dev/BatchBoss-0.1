@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
@@ -10,43 +10,18 @@ const passphrase=defineSecret("PAYFAST_SANDBOX_PASSPHRASE");
 const secrets=[merchantId,merchantKey,passphrase];
 const origin="https://admin.batchboss.co.za";
 const host="https://sandbox.payfast.co.za";
-const plans={weekly:{amount:"39.99",frequency:"2"},monthly:{amount:"149.99",frequency:"3"},annual:{amount:"1199.00",frequency:"6"}} as const;
-type Plan=keyof typeof plans;
 const encode=(v:string)=>encodeURIComponent(v).replace(/%20/g,"+").replace(/[!'()*~]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase());
 const hash=(raw:string)=>createHash("md5").update(raw+"&passphrase="+encode(passphrase.value().trim())).digest("hex");
 const canonical=(entries:[string,string][])=>entries.map(([k,v])=>k+"="+encode(v)).join("&");
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const db=()=>getFirestore();
-function billingDate(plan:Plan){
-  const d=new Date(Date.now()+2*3600000);
-  if(plan==="weekly")d.setUTCDate(d.getUTCDate()+7);
-  else {const day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+(plan==="annual"?12:1));d.setUTCDate(Math.min(day,new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate()));}
-  return d.toISOString().slice(0,10);
-}
-export const createPayfastSandboxCheckout=onCall({region:"europe-west1",invoker:"public",cors:[origin],secrets},async req=>{
-  if(req.auth?.token.admin!==true)throw new HttpsError("permission-denied","Administrator access required.");
-  if(req.data?.confirmTest!==true)throw new HttpsError("invalid-argument","Confirm sandbox testing.");
-  const plan=req.data?.plan as Plan;
-  if(!Object.prototype.hasOwnProperty.call(plans,plan))throw new HttpsError("invalid-argument","Unknown plan.");
-  const idValue = merchantId.value().trim();
-  const keyValue = merchantKey.value().trim();
-  if (!/^\d+$/.test(idValue) || !keyValue || /\s/.test(keyValue)) {
-    throw new HttpsError("failed-precondition", "Check the sandbox merchant ID and key in Firebase Secret Manager.");
+export const createPayfastSandboxCheckout = onCall(
+  { region: "europe-west1", invoker: "public", cors: [origin] },
+  () => {
+    throw new HttpsError("failed-precondition", "PayFast checkout has been retired.");
   }
-  if (!passphrase.value().trim()) {
-    throw new HttpsError("failed-precondition", "Set the recurring-payment passphrase from your PayFast sandbox account.");
-  }
-  const p=plans[plan];
-  const id=randomUUID(), next=billingDate(plan);
-  const fields:Record<string,string>={merchant_id:idValue,merchant_key:keyValue,
-    return_url:origin+"/?payfastSandbox=returned",cancel_url:origin+"/?payfastSandbox=cancelled",
-    notify_url:"https://europe-west1-batch-boss-android.cloudfunctions.net/payfastSandboxNotify",
-    m_payment_id:id,amount:p.amount,item_name:"BatchBoss Sandbox "+plan,
-    subscription_type:"1",billing_date:next,recurring_amount:p.amount,frequency:p.frequency,cycles:"0"};
-  fields.signature=hash(canonical(Object.entries(fields).filter(([,v])=>v!=="")));
-  await db().doc("payfastSandboxSessions/"+id).create({uid:req.auth.uid,plan,amount:p.amount,frequency:p.frequency,billingDate:next,status:"pending",environment:"sandbox",createdAt:FieldValue.serverTimestamp()});
-  return {environment:"sandbox",reference:id,checkoutUrl:host+"/eng/process",fieldOrder:Object.keys(fields),fields};
-});
+);
+
 export const payfastSandboxNotify=onRequest({region:"europe-west1",invoker:"public",secrets},async(req,res)=>{
   try{
     if(req.method!=="POST"){res.status(405).send("Method not allowed");return;}
