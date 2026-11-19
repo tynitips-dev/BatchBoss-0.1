@@ -6,6 +6,9 @@ type Connection = { connected: boolean; merchantKeyPresent: boolean; merchantKey
 type Payment = { id: string; uid: string; reference: string; plan: string; amountCents: number; currency: string; status: string; paidAt: string | null; requiresReview: boolean }
 const check = httpsCallable<undefined, Connection>(functions, 'checkPayfastConnection')
 const list = httpsCallable<undefined, { payments: Payment[] }>(functions, 'listPayfastPayments')
+type SandboxResult = {reference:string;environment:string;plan:string;amount:string;billingDate:string;status:string;signatureVerified:boolean;serverValidated:boolean;subscriptionTokenReceived:boolean}
+const sandboxCheckout=httpsCallable<{plan:string;confirmTest:boolean},{environment:string;reference:string;checkoutUrl:string;fields:Record<string,string>}>(functions,'createPayfastSandboxCheckout')
+const sandboxResult=httpsCallable<{reference:string},SandboxResult>(functions,'getPayfastSandboxResult')
 const money = (cents: number, currency: string) => currency + ' ' + (cents/100).toFixed(2)
 
 export default function PayfastAdmin() {
@@ -13,6 +16,27 @@ export default function PayfastAdmin() {
   const [payments,setPayments]=useState<Payment[]|null>(null)
   const [busy,setBusy]=useState('')
   const [error,setError]=useState('')
+  const [testPlan,setTestPlan]=useState('weekly')
+  const [reference,setReference]=useState(()=>sessionStorage.getItem('batchboss:payfastSandboxReference')||'')
+  const [testResult,setTestResult]=useState<SandboxResult|null>(null)
+  async function startSandbox(){
+    setError('');setBusy('sandbox');setTestResult(null)
+    try {
+      const data=(await sandboxCheckout({plan:testPlan,confirmTest:true})).data
+      if(data.environment!=='sandbox'||data.checkoutUrl!=='https://sandbox.payfast.co.za/eng/process')throw Error('Unexpected checkout destination.')
+      setReference(data.reference);sessionStorage.setItem('batchboss:payfastSandboxReference',data.reference)
+      const form=document.createElement('form');form.action=data.checkoutUrl;form.method='POST'
+      for(const [name,value] of Object.entries(data.fields)){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.appendChild(input)}
+      document.body.appendChild(form);form.submit()
+    }catch(e){setError(e instanceof Error?e.message:'Sandbox checkout failed.')}
+    finally{setBusy('')}
+  }
+  async function checkSandbox(){
+    setError('');setBusy('sandbox-result')
+    try{setTestResult((await sandboxResult({reference})).data)}
+    catch(e){setError(e instanceof Error?e.message:'Unable to load sandbox result.')}
+    finally{setBusy('')}
+  }
   async function refresh(kind:'connection'|'payments') {
     setError('');setBusy(kind)
     try {
@@ -30,6 +54,12 @@ export default function PayfastAdmin() {
       <p>Merchant key: {connection.merchantKeyPresent?'Present; checkout validation still required':'Missing'}</p>
       <p>Checkout: {connection.checkoutEnabled?'Enabled in backend':'Disabled in backend'}</p>
     </div>}
+    <h3>Subscription checkout test (sandbox only)</h3>
+    <p>No real money or customer entitlement changes. A completed test must be confirmed by a validated provider notification.</p>
+    <label>Test plan <select value={testPlan} onChange={e=>setTestPlan(e.target.value)} disabled={!!busy}><option value="weekly">Weekly R39.99</option><option value="monthly">Monthly R149.99</option><option value="annual">Annual R1199.00</option></select></label>
+    <button disabled={!!busy} onClick={startSandbox}>Start sandbox checkout</button>
+    {reference&&<div><p>Test reference: {reference}</p><button disabled={!!busy} onClick={checkSandbox}>Check test result</button></div>}
+    {testResult&&<div role="status"><p>Payment status: {testResult.status}</p><p>Expected amount: R{testResult.amount} · Next date: {testResult.billingDate}</p><p>Signature: {testResult.signatureVerified?'Verified':'Not verified'} · Server validation: {testResult.serverValidated?'Verified':'Not verified'} · Subscription token: {testResult.subscriptionTokenReceived?'Received':'Not received'}</p></div>}
     <h3>Recent verified payment records</h3>
     <button disabled={!!busy} onClick={()=>refresh('payments')}>{busy==='payments'?'Loading…':'Load recent payments'}</button>
     {error&&<p role="alert">{error}</p>}
