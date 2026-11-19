@@ -23,6 +23,6 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react()],
-    build: { outDir: 'dist', emptyOutDir: true },
+    build: { outDir: 'dist', emptyOutDir: true, rollupOptions: { input: ['index.html','pricing/index.html','welcome/index.html'] } },
   }
 })
