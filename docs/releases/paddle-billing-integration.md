@@ -1,0 +1,9 @@
+# Paddle integration status
+
+The catalog in web/src/regional-plan-prices.json records the actual six-country BatchBoss pricing, including proposed international launch amounts. All amounts are integer minor units. No annual Baker Finder or Full Suite price has been fabricated. Supplier packages are ZA only. Marketplace is per listing.
+
+The /pricing/ page compares catalog prices even with no Paddle configuration. The optional sandbox is explicitly gated by VITE_PADDLE_SANDBOX_ENABLED and a test_ client token; it previews the five existing Pro price IDs separately and opens one test item per checkout. Sandbox results never grant entitlements. No production Paddle initialization or live billing is enabled. Paystack callable, webhooks and management flows are unchanged by this integration.
+
+Before activation: obtain verified LIVE catalog mappings (separate from sandbox); verify each configured country's overrides, free trial and exact renewal terms; obtain Paddle live domain approval; confirm eligibility for Baker Finder, Full Suite and Marketplace; implement authenticated server-created checkout, signature-verified idempotent webhooks, account/subscription binding, expiry, renewals/cancellation/failed-payment handling and duplicate-provider prevention. Keep existing Paystack customers on Paystack. Verify default payment link /pricing/ with the production client only after these gates pass. Test real sandbox and live checkout, including payment-method update and _ptxn links. Never rely on client completion events for granting Pro. International signup and Android remain gated separately.
+
+Custom Pro codes are unrelated to Paddle discounts: they grant a time-limited admin promotion, no card or automatic renewal. Codes are optional, normalized uppercase, 5–24 alphanumeric, unique and hashed; existing BBP codes work. Public campaigns must use bounded redemptions and expiry. Do not put API secrets in frontend config.
