@@ -9,7 +9,7 @@ function admin(request:any){const user=signedIn(request);if(user.token.admin!==t
 const now=()=>FieldValue.serverTimestamp();
 export function normaliseProCode(value:unknown){
  const code=typeof value==='string'?value.trim().toUpperCase():'';
- if(!/^BBP-[A-F0-9]{24}$/.test(code))throw new HttpsError('invalid-argument','Please check the Pro code.');
+ if(!/^(?:BBP-[A-F0-9]{24}|[A-Z0-9]{5,24})$/.test(code))throw new HttpsError('invalid-argument','Please check the Pro code.');
  return code;
 }
 export function validateProOffer(data:any,time=Date.now()){
@@ -23,13 +23,17 @@ export function validateProOffer(data:any,time=Date.now()){
 }
 export async function createProCodeHandler(request:any,db=getFirestore()){
  const actor=admin(request),offer=validateProOffer(request.data);
- const code='BBP-'+randomBytes(12).toString('hex').toUpperCase(),id=hash(code);
+ const requested=request.data?.customCode;
+ const custom=typeof requested==='string'?requested.trim().toUpperCase():'';
+ if(requested!==undefined && requested!==null && (typeof requested!=='string'||(custom!==''&&!/^[A-Z0-9]{5,24}$/.test(custom))))
+  throw new HttpsError('invalid-argument','Custom codes must contain 5–24 letters or numbers.');
+ const code=custom||'BBP-'+randomBytes(12).toString('hex').toUpperCase(),id=hash(code);
  const batch=db.batch();
  batch.create(db.doc('proRedeemCodes/'+id),{source:offer.source,durationDays:offer.durationDays,maxRedemptions:offer.maxRedemptions,
   expiresAt:Timestamp.fromMillis(offer.expiresAtMillis),redemptions:0,active:true,createdBy:actor.uid,createdAt:now()});
  batch.create(db.collection('adminAuditLogs').doc(),{action:'PRO_CODE_CREATED',codeId:id,source:offer.source,durationDays:offer.durationDays,
   maxRedemptions:offer.maxRedemptions,actorUid:actor.uid,createdAt:now()});
- await batch.commit();
+ try{await batch.commit();}catch(error:any){if(error?.code===6||error?.code==='already-exists')throw new HttpsError('already-exists','This code already exists. Choose another code.');throw error;}
  return {code,id,...offer};
 }
 export async function redeemProCodeHandler(request:any,db=getFirestore(),time=Date.now()){
@@ -45,7 +49,7 @@ export async function redeemProCodeHandler(request:any,db=getFirestore(),time=Da
    throw new HttpsError('failed-precondition','This code is unavailable, expired or fully redeemed.');
   validateProOffer({source:offer.source,durationDays:offer.durationDays,maxRedemptions:offer.maxRedemptions,expiresAtMillis:offer.expiresAt.toMillis()},time);
   const previousExpiry=profile.subscriptionExpiresAt?.toMillis?.()||0;
-  if(profile.subscriptionSource==='paystack' && (previousExpiry>time || ['active','trialing'].includes(profile.subscriptionStatus)))
+  if(['paystack','paddle','payfast'].includes(profile.subscriptionSource) && (previousExpiry>time || ['active','trialing'].includes(profile.subscriptionStatus)))
    throw new HttpsError('failed-precondition','Your paid subscription is protected. Contact support to use this code.');
   const start=profile.subscriptionSource==='admin_promotion' && profile.subscriptionStatus==='active'?Math.max(time,previousExpiry):time;
   const expiresAt=Timestamp.fromMillis(start+offer.durationDays*86400000);

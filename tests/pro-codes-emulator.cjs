@@ -68,3 +68,17 @@ test('code definitions and redemption records are not publicly readable',async()
   assert.equal(response.status,403);
  }
 });
+
+test('custom codes are case-insensitive, unique, bounded and still protect paid accounts',async()=>{
+ const data={source:'Global campaign',durationDays:7,maxRedemptions:2,expiresAtMillis:now+86400000,customCode:' global7 '};
+ const created=await createProCodeHandler({auth:admin,data},db);
+ assert.equal(created.code,'GLOBAL7');
+ await assert.rejects(()=>createProCodeHandler({auth:admin,data:{...data,customCode:'global7'}},db),{code:'already-exists'});
+ for(const customCode of ['A','BBP-123','too many spaces',123])await assert.rejects(()=>createProCodeHandler({auth:admin,data:{...data,customCode}},db),{code:'invalid-argument'});
+ await profile('custom-paddle',{subscriptionSource:'paddle',subscriptionStatus:'trialing',subscriptionExpiresAt:Timestamp.fromMillis(now+86400000)});
+ await assert.rejects(()=>redeem('custom-paddle','global7'),{code:'failed-precondition'});
+ await profile('custom-baker');
+ assert.equal((await redeem('custom-baker','global7')).alreadyRedeemed,false);
+ assert.equal((await redeem('custom-baker','GLOBAL7')).alreadyRedeemed,true);
+ assert.equal((await db.doc('proRedeemCodes/'+created.id).get()).get('redemptions'),1);
+});
