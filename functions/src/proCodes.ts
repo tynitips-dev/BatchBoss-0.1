@@ -40,7 +40,7 @@ export async function redeemProCodeHandler(request:any,db=getFirestore(),time=Da
  const user=signedIn(request),code=normaliseProCode(request.data?.code),id=hash(code);
  const codeRef=db.doc('proRedeemCodes/'+id),profileRef=db.doc('users/'+user.uid),receiptRef=db.doc('proCodeRedemptions/'+id+'_'+hash(user.uid));
  return db.runTransaction(async transaction=>{
-  const [offerSnap,profileSnap,receipt]=await Promise.all([transaction.get(codeRef),transaction.get(profileRef),transaction.get(receiptRef)]);
+  const [offerSnap,profileSnap,receipt,paddleLock]=await Promise.all([transaction.get(codeRef),transaction.get(profileRef),transaction.get(receiptRef),transaction.get(db.doc('paddleBilling/live/checkoutLocks/'+user.uid))]);
   if(receipt.exists)return {redeemed:true,alreadyRedeemed:true,expiresAt:receipt.get('expiresAt').toDate().toISOString()};
   const offer=offerSnap.data(),profile=profileSnap.data();
   if(!profile || !profile.bakeryId)throw new HttpsError('failed-precondition','Finish setting up your bakery account first.');
@@ -48,7 +48,8 @@ export async function redeemProCodeHandler(request:any,db=getFirestore(),time=Da
    !Number.isInteger(offer.redemptions)||offer.redemptions<0||offer.redemptions>=offer.maxRedemptions)
    throw new HttpsError('failed-precondition','This code is unavailable, expired or fully redeemed.');
   validateProOffer({source:offer.source,durationDays:offer.durationDays,maxRedemptions:offer.maxRedemptions,expiresAtMillis:offer.expiresAt.toMillis()},time);
-  const previousExpiry=profile.subscriptionExpiresAt?.toMillis?.()||0;
+  if(paddleLock.exists||profile.paddleSubscriptionId)throw new HttpsError('failed-precondition','Your Paddle payment is protected. Contact support to use this code.');
+   const previousExpiry=profile.subscriptionExpiresAt?.toMillis?.()||0;
   if(['paystack','paddle','payfast'].includes(profile.subscriptionSource) && (previousExpiry>time || ['active','trialing'].includes(profile.subscriptionStatus)))
    throw new HttpsError('failed-precondition','Your paid subscription is protected. Contact support to use this code.');
   const start=profile.subscriptionSource==='admin_promotion' && profile.subscriptionStatus==='active'?Math.max(time,previousExpiry):time;

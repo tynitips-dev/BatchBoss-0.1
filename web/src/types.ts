@@ -6,10 +6,12 @@ export type UserProfile = {
   surname: string
   email: string
   role: 'owner' | 'staff' | 'admin'
-  subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo'
+  subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo' | 'pro'
   subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
   subscriptionSource?: string
   subscriptionBillingInterval?: string
+  paddleSubscriptionId?: string
+  paddleCustomerId?: string
   paystackSubscriptionCode?: string
   subscriptionExpiresAt?: unknown
 }

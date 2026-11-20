@@ -131,13 +131,13 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   if(!isFreeCheckoutProfile(p.data())||ps.exists||a.exists)throw new HttpsError('failed-precondition','Manage existing billing with support before opening a new checkout.');
   const old=l.data();
   if(old){
-   if(old.plan===plan&&old.status==='ready'&&id(old.transactionId,'txn'))return old.transactionId as string;
+   if(old.plan===plan&&old.status==='ready'&&id(old.transactionId,'txn'))return {transactionId:old.transactionId as string,customerId:old.customerId as string};
    throw new HttpsError('failed-precondition','A payment attempt is already linked. Contact support before opening another.');
   }
   tx.create(lock,{uid,plan,status:'creating',country:route.country,currency:route.currency,createdAt:FieldValue.serverTimestamp()});
   return null;
  });
- if(previous)return {transactionId:previous,token:checkoutToken.value(),environment:m};
+ if(previous){if(!id(previous.customerId,'ctm'))throw new HttpsError('failed-precondition','Payment attempt needs review.');return {...previous,country:route.country,token:checkoutToken.value(),environment:m};}
  // Require a fresh provider customer. Never claim an existing customer solely by email.
  const customer=await paddleApi(m,'/customers',{email:currentUser.email});
  if(!id(customer.id,'ctm'))throw new HttpsError('unavailable','Provider customer setup needs review.');
@@ -153,7 +153,7 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   tx.create(base.collection('checkoutIntents').doc(transactionId),{uid,transactionId,customerId,priceId:mapped.priceId,productId:mapped.productId,interval:mapped.interval,plan,currency:route.currency,country:route.country,amount,status:'pending',createdAt:FieldValue.serverTimestamp()});
   tx.update(lock,{status:'ready',transactionId});
  });
- return {transactionId,token:checkoutToken.value(),environment:m};
+ return {transactionId,customerId,country:route.country,token:checkoutToken.value(),environment:m};
 });
 function projection(profile:Json,entityId:string,snap:ReturnType<typeof subscriptionSnapshot>,prices:Record<string,Price>,live:boolean){
  if(!live)return null;
@@ -179,6 +179,15 @@ async function applyEvent(m:Mode,e:Event){
  const ref=base.collection(kind+'s').doc(entityId),receipt=base.collection('events').doc(e.event_id);
  const prices=kind==='subscription'||kind==='transaction'?config():{};
  const liveProvision=m==='live'&&provisionEnabled.value()==='true';
+ // Fetch the real billing country only for the original checkout, not recurring payments.
+ let completedCountry:string|null=null;
+ if(kind==='transaction'&&e.event_type==='transaction.completed'){
+  const intent=(await base.collection('checkoutIntents').doc(entityId).get()).data();
+  if(intent&&intent.status==='pending'&&completedMatches(e.data,intent)&&id(e.data.customer_id,'ctm')&&id(e.data.address_id,'add')){
+   const address=await paddleApi(m,'/customers/'+e.data.customer_id+'/addresses/'+e.data.address_id);
+   if(address.id===e.data.address_id&&address.customer_id===e.data.customer_id)completedCountry=str(address.country_code);
+  }
+ }
  return db.runTransaction(async tx=>{
   const [seen,old]=await Promise.all([tx.get(receipt),tx.get(ref)]);
   if(seen.exists)return 'duplicate';
@@ -200,7 +209,7 @@ async function applyEvent(m:Mode,e:Event){
    const intentRef=base.collection('checkoutIntents').doc(entityId),intent=(await tx.get(intentRef)).data();
    if(intent&&intent.status==='pending'){
     const uid=intent.uid,customerId=intent.customerId,subId=e.data.subscription_id;
-    if(!completedMatches(e.data,intent)||typeof uid!=='string'||!uid||uid.includes('/')||!id(customerId,'ctm')||!id(subId,'sub')){
+    if(!completedMatches(e.data,intent)||completedCountry!==intent.country||typeof uid!=='string'||!uid||uid.includes('/')||!id(customerId,'ctm')||!id(subId,'sub')){
      tx.update(intentRef,{status:'review',reason:'provider-completion-mismatch',updatedAt:FieldValue.serverTimestamp()});
     }else{
      const ownerRef=base.collection('customerBindings').doc(customerId),accountRef=base.collection('accountBindings').doc(uid),subRef=base.collection('subscriptionBindings').doc(subId),lockRef=base.collection('checkoutLocks').doc(uid),userRef=db.collection('users').doc(uid);

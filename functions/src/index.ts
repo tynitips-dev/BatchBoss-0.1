@@ -126,12 +126,16 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
     throw new HttpsError("failed-precondition", "This login does not have a BatchBoss user profile yet. Sign in to the customer portal once, then try again.");
   }
 
-  const existing = userSnapshot.data() || {};
-  if (enabled && existing.subscriptionSource === "paystack" && existing.subscriptionStatus === "active") {
-    throw new HttpsError("failed-precondition", "This account already has an active paid subscription. Do not replace its billing access with a gift.");
-  }
   const expiresAt = enabled ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
-  await userRef.set(enabled ? {
+  await db.runTransaction(async tx => {
+    const [current,paddleLock]=await Promise.all([tx.get(userRef),tx.get(db.doc("paddleBilling/live/checkoutLocks/"+uid))]);
+    if(!current.exists)throw new HttpsError("failed-precondition","User profile missing.");
+    const existing=current.data() || {};
+    if(paddleLock.exists || existing.paddleSubscriptionId || existing.subscriptionSource === "paddle" ||
+      (enabled && existing.subscriptionSource === "paystack" && existing.subscriptionStatus === "active")){
+      throw new HttpsError("failed-precondition","This account has protected billing. Contact support rather than overriding its access.");
+    }
+    tx.set(userRef,enabled ? {
     subscriptionPlan: "promo",
     subscriptionStatus: "active",
     subscriptionSource: "admin_promotion",
@@ -147,7 +151,8 @@ export const setPromotionalPro = onCall({ region: "europe-west1", invoker: "publ
     subscriptionExpiresAt: FieldValue.delete(),
     subscriptionGrantedBy: FieldValue.delete(),
     updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+    }, { merge: true });
+  });
 
   await db.collection("adminAuditLogs").add({
     action: enabled ? "PROMOTIONAL_PRO_GRANTED" : "PROMOTIONAL_PRO_REMOVED",

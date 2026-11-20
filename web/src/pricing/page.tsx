@@ -58,7 +58,7 @@ function Pricing(){
  return <main><a href="/">Back to Baker Portal</a><h1>Choose your BatchBoss plan</h1>
  <p>Free tools, Pro subscriptions and optional bakery services. Select a country to compare prices.</p>
  <label>Country <select value={country} onChange={e=>setCountry(e.target.value as LaunchCountry)}>{launchCountries.map(c=><option key={c.code} value={c.code}>{c.name} ({regionPresets[c.code].currency})</option>)}</select></label>
- <p className="notice">{sandbox?'Paddle sandbox testing only. Use test payment details. No real money or Pro access is transferred.':'Catalog preview. Live Paddle checkout is not enabled. Existing Paystack subscriptions are managed in the Baker Portal.'}</p>
+ <p className="notice">{sandbox?'Paddle sandbox testing only. Use test payment details. No real money or Pro access is transferred.':'Compare prices here, then sign in to the Baker Portal to subscribe or manage your existing plan. Availability depends on your account region.'}</p>
  {notice&&<p role="alert">{notice}</p>}
  {sandbox&&<label>Test email (optional) <input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>}
  <div className="plans"><article><h2>BatchBoss Free</h2><p className="price">{formatRegionalMoney(0,currency,locale)}</p><p>Start with free tools.</p><a href="/">Open BatchBoss</a></article>{plans.map(plan=>{
@@ -67,7 +67,7 @@ function Pricing(){
   const isLaunch=plan.name.includes('launch special')
   return <article key={plan.name}><h2>{plan.name}</h2><p className="price">{formatRegionalMoney(amount/100,currency,locale)} <small>/ {plan.interval} · {currency}</small></p>
    {isLaunch&&<small>{country==='ZA'?'Promotional terms apply.':'Proposed launch pricing; terms and availability pending.'}</small>}
-   {sandbox&&ids[plan.name]?<><small>{quote?'Paddle test quote: '+quote.total+' (taxes may affect totals)':preview?'Test quote unavailable for this country':'Checking test quote…'}</small><button disabled={!quote} onClick={()=>checkout(plan)}>Open test checkout</button></>:<small>Checkout availability to be confirmed.</small>}
+   {sandbox&&ids[plan.name]?<><small>{quote?'Paddle test quote: '+quote.total+' (taxes may affect totals)':preview?'Test quote unavailable for this country':'Checking test quote…'}</small><button disabled={!quote} onClick={()=>checkout(plan)}>Open test checkout</button></>:<small>Subscribe from your signed-in Baker Portal when available.</small>}
   </article>
  })}</div></main>
 }
