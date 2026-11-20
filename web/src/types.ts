@@ -6,10 +6,14 @@ export type UserProfile = {
   surname: string
   email: string
   role: 'owner' | 'staff' | 'admin'
-  subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo'
+  subscriptionPlan?: 'free' | 'monthly' | 'annual' | 'promo' | 'pro'
   subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
   subscriptionSource?: string
   subscriptionBillingInterval?: string
+  paddlePlan?: 'weekly'|'monthly'|'annual'|'finder'|'full_suite' | null
+  paddleSubscriptionStatus?: string
+  paddleSubscriptionId?: string
+  paddleCustomerId?: string
   paystackSubscriptionCode?: string
   subscriptionExpiresAt?: unknown
 }
@@ -25,7 +29,7 @@ export type Customer = {
   createdAt?: unknown
 }
 
-export type ModuleKey = 'supplierDirectory'
+export type ModuleKey = 'supplierDirectory' | 'directoryListing' | 'marketplace'
   | 'home' | 'recipes' | 'ingredients' | 'inventory' | 'packaging' | 'suppliers'
   | 'invoices' | 'quotes' | 'receipts' | 'products' | 'tasks'
   | 'customers' | 'orders' | 'tools' | 'subscription' | 'settings'

@@ -1,5 +1,7 @@
 package com.example.data.remote
 
+import com.example.util.RegionalCurrency
+
 import android.util.Log
 import com.example.BatchBossApplication
 import com.example.data.local.PendingCloudChange
@@ -279,6 +281,14 @@ object FirebaseService {
                 )
             }
 
+            // The first overseas Android release must not read amounts as rand.
+            val bakeryDocument = firestoreInstance.collection("bakeries").document(bakeryId).get().awaitTask()
+            if (!RegionalCurrency.nativeWorkspaceEnabled(bakeryDocument.data.orEmpty())) {
+                authInstance.signOut()
+                stopAllRealtimeListeners()
+                currentBakeryId = ""
+                return FirebaseLoginResult(success = false, errorMessage = "Use the BatchBoss website for your regional workspace until native currency support is released.")
+            }
             // Set exact bakeryId
             currentBakeryId = bakeryId
 
@@ -500,6 +510,7 @@ object FirebaseService {
             for (recipe in recipes) {
                 val recipeDoc = recipesColl.document(recipe.id.toString())
                 val recipeData = hashMapOf(
+                    "currency" to recipe.currency,
                     "id" to recipe.id,
                     "bakeryId" to targetBakeryId,
                     "name" to recipe.name,
@@ -538,6 +549,7 @@ object FirebaseService {
                 for (ing in matchingIngredients) {
                     val ingDoc = recipeDoc.collection("ingredients").document(ing.id.toString())
                     val ingData = hashMapOf(
+                        "currency" to ing.currency,
                         "id" to ing.id,
                         "recipeId" to ing.recipeId,
                         "name" to ing.name,
@@ -553,6 +565,7 @@ object FirebaseService {
             for (item in inventory) {
                 val invDoc = inventoryColl.document(item.id.toString())
                 val invData = hashMapOf(
+                    "currency" to item.currency,
                     "id" to item.id,
                     "bakeryId" to targetBakeryId,
                     "name" to item.name,
@@ -576,6 +589,7 @@ object FirebaseService {
             for (pkg in packaging) {
                 val pkgDoc = packagingColl.document(pkg.id.toString())
                 val pkgData = hashMapOf(
+                    "currency" to pkg.currency,
                     "id" to pkg.id,
                     "bakeryId" to targetBakeryId,
                     "name" to pkg.name,
@@ -602,6 +616,7 @@ object FirebaseService {
             for (cust in customers) {
                 val custDoc = customersColl.document(cust.id.toString())
                 val custData = hashMapOf(
+                    "currency" to cust.currency,
                     "id" to cust.id,
                     "bakeryId" to targetBakeryId,
                     "name" to cust.name,
@@ -688,6 +703,7 @@ object FirebaseService {
 
                 restoredPackaging.add(
                     PackagingItemEntity(
+                        currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
                         id = id,
                         userId = 0L,
                         bakeryId = targetBakeryId,
@@ -724,6 +740,7 @@ object FirebaseService {
 
                 restoredCustomers.add(
                     CustomerEntity(
+                        currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
                         id = id,
                         bakeryId = targetBakeryId,
                         name = name,
@@ -763,6 +780,7 @@ object FirebaseService {
 
                 restoredRecipes.add(
                     RecipeEntity(
+                        currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
                         id = id,
                         name = name,
                         category = category,
@@ -799,6 +817,7 @@ object FirebaseService {
 
                     restoredIngredients.add(
                         RecipeIngredientEntity(
+                            currency = RegionalCurrency.fromRecord(iDoc.data.orEmpty()),
                             id = ingId,
                             recipeId = ingRecipeId,
                             name = ingName,
@@ -926,6 +945,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return PackagingItemEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1016,6 +1036,7 @@ object FirebaseService {
         }
 
         return InventoryItemEntity(
+            currency = RegionalCurrency.fromRecord(data),
             id = id,
             firestoreId = docId,
             userId = 0L,
@@ -1076,6 +1097,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return RecipeEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1122,6 +1144,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return RecipeIngredientEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             recipeFirestoreId = recipeFirestoreId,
@@ -1152,6 +1175,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return CustomerEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1187,6 +1211,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return ProductServiceEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1245,6 +1270,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return InvoiceEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1295,6 +1321,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return QuoteEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1338,6 +1365,7 @@ object FirebaseService {
         val updatedAt = extractUpdatedAt(doc)
 
         return OrderEntity(
+            currency = RegionalCurrency.fromRecord(doc.data.orEmpty()),
             id = id,
             firestoreId = doc.id,
             userId = 0L,
@@ -1462,6 +1490,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("inventory").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "name" to item.name,
@@ -1506,6 +1535,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("recipes").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "name" to item.name,
@@ -1582,6 +1612,7 @@ object FirebaseService {
                 .collection("recipes").document(recipeFirestoreId)
                 .collection("ingredients").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to ingredient.currency,
                 "id" to if (ingredient.id > 0) ingredient.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "recipeId" to ingredient.recipeId,
                 "recipeFirestoreId" to recipeFirestoreId,
@@ -1626,6 +1657,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("customers").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "name" to item.name,
@@ -1665,6 +1697,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("products").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "name" to item.name,
@@ -1708,6 +1741,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("invoices").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "invoiceNumber" to item.invoiceNumber,
                 "bakeryId" to targetBakeryId,
@@ -1762,6 +1796,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("quotes").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "quoteNumber" to item.quoteNumber,
                 "bakeryId" to targetBakeryId,
@@ -1818,6 +1853,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("orders").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "orderNumber" to item.orderNumber,
@@ -1904,6 +1940,7 @@ object FirebaseService {
         return try {
             val docRef = db.collection("bakeries").document(targetBakeryId).collection("packaging").document(docId)
             val data = hashMapOf<String, Any?>(
+                "currency" to item.currency,
                 "id" to if (item.id > 0) item.id else (docId.toLongOrNull() ?: System.currentTimeMillis()),
                 "bakeryId" to targetBakeryId,
                 "name" to item.name,

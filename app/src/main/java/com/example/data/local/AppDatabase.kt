@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
         PackagingItemEntity::class,
         PendingCloudChange::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -72,6 +72,16 @@ abstract class AppDatabase : RoomDatabase() {
                 found
             }
             if (!exists) db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $definition")
+        }
+
+        // All existing Android business amounts have historically been processed as ZAR.
+        // Add metadata only; never convert or rewrite amounts, IDs or ownership.
+        val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                listOf("customers", "orders", "recipes", "recipe_ingredients", "inventory_items", "products_services", "invoices", "quotes", "packaging_items").forEach { table ->
+                    addColumnIfMissing(db, table, "currency", "TEXT NOT NULL DEFAULT 'ZAR'")
+                }
+            }
         }
 
         val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
@@ -218,7 +228,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         internal fun builder(context: Context, name: String): RoomDatabase.Builder<AppDatabase> =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
-                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
 
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {

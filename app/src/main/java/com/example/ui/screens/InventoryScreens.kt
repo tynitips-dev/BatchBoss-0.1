@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -67,7 +69,7 @@ fun InventoryListScreen(
     }
 
     val totalStockValuation = remember(allInventory) {
-        allInventory.sumOf { it.currentStock * it.unitPrice }
+        RegionalCurrency.formatTotals(allInventory.map { it.currency to (it.currentStock * it.unitPrice) })
     }
 
     Scaffold(
@@ -168,7 +170,7 @@ fun InventoryListScreen(
                             Text(text = "Total Stock Value", fontSize = 12.sp, color = MediumText)
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "R${String.format("%.2f", totalStockValuation)}",
+                                text = totalStockValuation,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BatchPink
@@ -571,7 +573,7 @@ fun InventoryListScreen(
                                 )
                             }
                             if (estCost > 0) {
-                                Text("~R${String.format("%.2f", estCost)}", fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
+                                Text("~${RegionalCurrency.format(estCost, item.currency, 2)}", fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -625,7 +627,7 @@ private fun CompactIngredientCard(
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Text(
-                "R${String.format("%.2f", item.unitPrice)} / ${item.unit}",
+                "${RegionalCurrency.format(item.unitPrice, item.currency, 4)} / ${item.unit}",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = BatchPink,
@@ -728,7 +730,7 @@ fun StockItemCard(
                         if (item.packagePrice > 0.0 && item.gramsPerUnit > 0.0) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Pack: R${String.format("%.2f", item.packagePrice)} (${if (item.gramsPerUnit == item.gramsPerUnit.toInt().toDouble()) item.gramsPerUnit.toInt().toString() else item.gramsPerUnit} ${item.unit})",
+                                text = "Pack: ${RegionalCurrency.format(item.packagePrice, item.currency, 2)} (${if (item.gramsPerUnit == item.gramsPerUnit.toInt().toDouble()) item.gramsPerUnit.toInt().toString() else item.gramsPerUnit} ${item.unit})",
                                 fontSize = 11.sp,
                                 color = MediumText
                             )
@@ -796,14 +798,14 @@ fun StockItemCard(
                         Icon(Icons.Outlined.Sell, contentDescription = null, tint = BatchPink, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Price: R${String.format("%.2f", item.unitPrice)} / ${item.unit}",
+                            text = "Price: ${RegionalCurrency.format(item.unitPrice, item.currency, 4)} / ${item.unit}",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = DarkText
                         )
                     }
                     Text(
-                        text = "Total Value: R${String.format("%.2f", totalItemValue)}",
+                        text = "Total Value: ${RegionalCurrency.format(totalItemValue, item.currency, 2)}",
                         fontSize = 11.sp,
                         color = MediumText
                     )
@@ -950,7 +952,7 @@ fun EditStockPriceDialog(
                         ) {
                             Text("Cost per ${item.unit}:", fontSize = 12.sp, color = DarkText)
                             Text(
-                                text = "R${String.format("%.4f", calculatedCostPerGram)} / ${item.unit}",
+                                text = "${RegionalCurrency.format(calculatedCostPerGram, item.currency, 4)} / ${item.unit}",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BatchPink
@@ -958,7 +960,7 @@ fun EditStockPriceDialog(
                         }
                         if (item.unit == "g" && calculatedCostPerGram > 0) {
                             Text(
-                                text = "Equivalent to R${String.format("%.2f", calculatedCostPerGram * 1000)} / kg",
+                                text = "Equivalent to ${RegionalCurrency.format(calculatedCostPerGram * 1000, item.currency, 2)} / kg",
                                 fontSize = 11.sp,
                                 color = MediumText
                             )
@@ -1014,7 +1016,7 @@ fun EditStockPriceDialog(
                     ) {
                         Text("Total Stock Value:", fontSize = 12.sp, color = DarkText)
                         Text(
-                            text = "R${String.format("%.2f", liveValuation)}",
+                            text = "${RegionalCurrency.format(liveValuation, item.currency, 2)}",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = BatchPink

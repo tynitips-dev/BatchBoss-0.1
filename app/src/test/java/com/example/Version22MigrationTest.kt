@@ -88,7 +88,10 @@ class Version22MigrationTest {
             val room = AppDatabase.builder(context, name).allowMainThreadQueries().setJournalMode(RoomDatabaseJournalMode).build()
             try {
                 val migrated = room.openHelper.writableDatabase // Room validates every table and index here.
-                assertEquals(16, migrated.version)
+                assertEquals(17, migrated.version)
+                for (table in listOf("customers", "recipes", "invoices", "packaging_items", "inventory_items")) {
+                    if (before.containsKey(table)) assertEquals("ZAR", row(migrated, table)["currency"])
+                }
                 for ((table, oldRow) in before) {
                     val current = row(migrated, table)
                     for ((column, value) in oldRow) assertEquals("Changed $table.$column for $kind", value, current[column])

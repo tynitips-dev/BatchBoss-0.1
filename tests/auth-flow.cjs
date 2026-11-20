@@ -62,9 +62,11 @@ test("account changes clear old data and ignore stale profile/error callbacks",(
 
 // Exercise the real signup/login submit handlers without creating hosted accounts.
 function authScreenHarness(search,metadataFailure=false){
- const states=[],writes=[],updates=[],busy=[];let cursor=0;
- const react={useState(initial){const i=cursor++;states[i]=typeof initial==='function'?initial():initial;return [states[i],value=>{states[i]=value;}];},useEffect(){}};
- const module={exports:{}},platformModule={exports:{}};
+ const states=[],writes=[],updates=[],busy=[];let cursor=0,created=0;
+ const react={useState(initial){const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],value=>{states[i]=typeof value==='function'?value(states[i]):value;}];},useEffect(){}};
+ const module={exports:{}},platformModule={exports:{}},workspaceModule={exports:{}};
+ const workspaceSource=fs.readFileSync(path.join(__dirname,'../web/src/workspace-utils.ts'),'utf8');
+ vm.runInNewContext(ts.transpileModule(workspaceSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:workspaceModule,exports:workspaceModule.exports,Intl,Error});
  const platformSource=fs.readFileSync(path.join(__dirname,'../web/src/accountPlatform.ts'),'utf8');
  vm.runInNewContext(ts.transpileModule(platformSource,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{module:platformModule,exports:platformModule.exports,URLSearchParams});
  const fallback=new Proxy(function(){},{get:()=>fallback});
@@ -72,8 +74,9 @@ function authScreenHarness(search,metadataFailure=false){
   if(name==='react')return react;
   if(name==='react/jsx-runtime')return {jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})};
   if(name==='./accountPlatform')return platformModule.exports;
+  if(name==='./workspace-utils')return workspaceModule.exports;
   if(name==='./firebase')return {auth:{},db:{},firebaseConfigured:true};
-  if(name==='firebase/auth')return {createUserWithEmailAndPassword:async()=>({user:{uid:'fixture-user'}}),signInWithEmailAndPassword:async()=>({user:{uid:'fixture-user'}})};
+  if(name==='firebase/auth')return {createUserWithEmailAndPassword:async()=>{created++;return {user:{uid:'fixture-user'}}},signInWithEmailAndPassword:async()=>({user:{uid:'fixture-user'}})};
   if(name==='firebase/firestore')return {
    doc:(base,...parts)=>({path:parts.length?parts.join('/'):(base.path+'/fixture-bakery')}),
    collection:(_db,...parts)=>({path:parts.join('/')}),serverTimestamp:()=>({serverTime:true}),
@@ -85,11 +88,12 @@ function authScreenHarness(search,metadataFailure=false){
  const source=fs.readFileSync(path.join(__dirname,'../web/src/App.tsx'),'utf8')+'\nexport { AuthScreen as __AuthScreen };';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  class TestFormData{constructor(values){this.values=values}get(key){return this.values[key]??null}}
- vm.runInNewContext(code,{require:requireFake,module,exports:module.exports,console,Intl,Date,URLSearchParams,location:{search},FormData:TestFormData});
- const tree=module.exports.__AuthScreen({onBusyChange:value=>busy.push(value)});
- function find(node){if(!node||typeof node!=='object')return null;if(node.type==='form')return node;const children=node.props?.children;for(const child of Array.isArray(children)?children:[children]){const result=find(child);if(result)return result}return null}
- const form=find(tree);assert.ok(form);
- return {writes,updates,busy,states,submit:()=>form.props.onSubmit({preventDefault(){},currentTarget:{email:'baker@example.test',password:'synthetic-password',firstName:'Test',surname:'Baker',bakeryName:'Fixture Bakery'}})};
+ vm.runInNewContext(code,{require:requireFake,module,exports:module.exports,console,Intl,Date,URLSearchParams,location:{search},FormData:TestFormData,Error});
+ const render=()=>{cursor=0;return module.exports.__AuthScreen({onBusyChange:value=>busy.push(value)})}
+ function find(node,predicate){if(!node||typeof node!=='object')return null;if(predicate(node))return node;const children=node.props?.children;for(const child of Array.isArray(children)?children:[children]){const result=find(child,predicate);if(result)return result}return null}
+ const form=()=>find(render(),node=>node.type==='form');
+ assert.ok(form());
+ return {writes,updates,busy,states,created:()=>created,country:code=>find(render(),node=>node.type==='select').props.onChange({target:{value:code}}),submit:()=>form().props.onSubmit({preventDefault(){},currentTarget:{email:'baker@example.test',password:'synthetic-password',firstName:'Test',surname:'Baker',bakeryName:'Fixture Bakery'}})};
 }
 test('Android registration link creates a shared Firebase profile with its original route recorded',async()=>{
  const h=authScreenHarness('?signup=1&from=android');await h.submit();
@@ -106,5 +110,18 @@ test('direct web signup records web; web login never replaces registration histo
  assert.equal('registrationPlatform' in login.updates[0].data,false);
 });
 test('platform metadata failure does not report a successful web login as failed',async()=>{
- const h=authScreenHarness('',true);await h.submit();assert.deepEqual(h.busy,[true,false]);assert.equal(h.states[2],'');
+ const h=authScreenHarness('',true);await h.submit();assert.deepEqual(h.busy,[true,false]);assert.equal(h.states.at(-1),'');
+});
+
+test('signup stores explicit South African currency metadata',async()=>{
+ const h=authScreenHarness('?signup=1');await h.submit();
+ const bakery=h.writes.find(write=>write.ref.path==='bakeries/fixture-bakery');
+ assert.ok(bakery);assert.equal(bakery.data.countryCode,'ZA');assert.equal(bakery.data.currency,'ZAR');
+ assert.equal(bakery.data.locale,'en-ZA');assert.equal(bakery.data.measurementSystem,'metric');assert.equal(bakery.data.temperatureUnit,'C');
+});
+test('unreleased overseas countries cannot create even an authentication account',async()=>{
+ const h=authScreenHarness('?signup=1');
+ h.country('US');
+ await h.submit();
+ assert.equal(h.created(),0);assert.equal(h.writes.length,0);assert.match(h.states.at(-1),/not available yet/);
 });

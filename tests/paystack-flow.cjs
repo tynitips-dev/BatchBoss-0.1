@@ -1,15 +1,15 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const Module=require('node:module');const {createHmac}=require('node:crypto');
-const records=new Map();let updates=0;let queue=Promise.resolve();const key='sk_live_fixture_not_a_real_key';
+const records=new Map();let updates=0;let internationalEnabled=false;let queue=Promise.resolve();const key='sk_live_fixture_not_a_real_key';
 class Ref{constructor(path){this.path=path;this.id=path.split('/').pop()} async get(){return {exists:records.has(this.path),data:()=>records.get(this.path),id:this.id,ref:this}}async set(data,opt){records.set(this.path,opt?.merge?{...records.get(this.path),...data}:data)}async update(data){updates++;records.set(this.path,{...records.get(this.path),...data})}async delete(){records.delete(this.path)}}
 const db={doc:p=>new Ref(p),collection:p=>({where:(field,op,value)=>({get:async()=>({docs:await Promise.all([...records.keys()].filter(k=>k.startsWith(p+'/')&&records.get(k)[field]===value).map(k=>new Ref(k).get()))})})}),runTransaction:fn=>{const result=queue.then(()=>fn({get:r=>r.get(),set:(r,d,o)=>r.set(d,o),update:(r,d)=>r.update(d)}));queue=result.catch(()=>{});return result}};
 class HttpsError extends Error{constructor(code,message){super(message);this.code=code}}
-const old=Module._load;Module._load=function(id,...args){if(id==='firebase-admin/firestore')return {getFirestore:()=>db,FieldValue:{serverTimestamp:()=>new Date()}};if(id==='firebase-admin/auth')return {getAuth:()=>({getUser:async()=>({email:'fixture@example.com'})})};if(id==='firebase-functions/params')return {defineSecret:()=>({value:()=>key}),defineString:name=>({value:()=>name==='PAYSTACK_ENABLED'?'true':name==='PAYSTACK_MONTHLY_PLAN_CODE'?'PLN_month':'PLN_year'})};if(id==='firebase-functions/v2/https')return {HttpsError,onCall:(o,fn)=>fn,onRequest:(o,fn)=>fn};if(id==='firebase-functions/v2/scheduler')return {onSchedule:(o,fn)=>fn};return old.call(this,id,...args)};
+const old=Module._load;Module._load=function(id,...args){if(id==='firebase-admin/firestore')return {getFirestore:()=>db,FieldValue:{serverTimestamp:()=>new Date()}};if(id==='firebase-admin/auth')return {getAuth:()=>({getUser:async()=>({email:'fixture@example.com'})})};if(id==='firebase-functions/params')return {defineSecret:()=>({value:()=>key}),defineString:(name,options)=>({value:()=>name==='PAYSTACK_INTERNATIONAL_ZAR_ENABLED'?(internationalEnabled?'true':'false'):name==='PAYSTACK_ENABLED'?'true':name==='PAYSTACK_MONTHLY_PLAN_CODE'?'PLN_month':name==='PAYSTACK_ANNUAL_PLAN_CODE'?'PLN_year':options?.default??''})};if(id==='firebase-functions/v2/https')return {HttpsError,onCall:(o,fn)=>fn,onRequest:(o,fn)=>fn};if(id==='firebase-functions/v2/scheduler')return {onSchedule:(o,fn)=>fn};return old.call(this,id,...args)};
 const api=require('../functions/lib/paystack.js');Module._load=old;
 const expected={uid:'baker1',provider:'paystack',amount:14900,currency:'ZAR',customer:'CUS_baker',planCode:'PLN_month',domain:'live',interval:'monthly'};
 let tx={reference:'BB-first',status:'success',amount:14900,currency:'ZAR',customer:{customer_code:'CUS_baker'},plan:{plan_code:'PLN_month'},domain:'live',paid_at:'2026-10-12T10:00:00Z',id:123};
 global.fetch=async(url)=>({ok:true,json:async()=>({status:true,data:url.includes('/subscription/')?{domain:'live',customer:{customer_code:'CUS_baker'},plan:{plan_code:'PLN_month',interval:'monthly',currency:'ZAR'},amount:14900,status:'active'}:tx})});
 const request=uid=>({auth:{uid},data:{reference:'BB-first'}});
-function reset(){records.clear();updates=0;records.set('users/baker1',{subscriptionStatus:'free'});records.set('subscriptionPayments/BB-first',{...expected,status:'pending'});tx={...tx,status:'success',amount:14900,domain:'live',reference:'BB-first',paid_at:'2026-10-12T10:00:00Z'}}
+function reset(){records.clear();updates=0;records.set('users/baker1',{subscriptionStatus:'free',bakeryId:'fixture'});records.set('bakeries/fixture',{currency:'ZAR',countryCode:'ZA'});internationalEnabled=false;records.set('subscriptionPayments/BB-first',{...expected,status:'pending'});tx={...tx,status:'success',amount:14900,domain:'live',reference:'BB-first',plan:{plan_code:'PLN_month'},currency:'ZAR',paid_at:'2026-10-12T10:00:00Z'}}
 async function webhook(event,valid=true){const body=Buffer.from(JSON.stringify(event));let status;let output;await api.paystackWebhook({method:'POST',body:event,rawBody:body,headers:{'x-paystack-signature':valid?createHmac('sha512',key).update(body).digest('hex'):'bad'}},{status(s){status=s;return this},send(s){output=s}});return {status,output}}
 test('callback and concurrent duplicate verification grant exactly once',async()=>{reset();await Promise.all([api.verifyPaystackPayment(request('baker1')),api.verifyPaystackPayment(request('baker1'))]);assert.equal(updates,1);assert.equal(records.get('users/baker1').subscriptionExpiresAt.toISOString(),'2026-11-12T10:00:00.000Z');assert.equal(records.get('subscriptionPayments/BB-first').status,'success')});
 test('another account cannot verify this checkout',async()=>{reset();await assert.rejects(api.verifyPaystackPayment(request('other')),e=>e.code==='permission-denied');assert.equal(updates,0)});
@@ -32,3 +32,43 @@ test('verified renewal invoice is mapped without relying on checkout metadata',a
   await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code==='unavailable'&&/HTTP 502/.test(e.message));
  }finally{global.fetch=original;}
  });
+
+test('foreign checkout is gated, consent is required, and domestic billing is unchanged',async()=>{
+ reset();
+ assert.equal((await api.getPaystackPlans({auth:{uid:'baker1'}})).enabled,true);
+ records.set('bakeries/fixture',{currency:'GBP',countryCode:'GB'});
+ assert.equal((await api.getPaystackPlans({auth:{uid:'baker1'}})).enabled,false);
+ await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly',billingCurrencyAccepted:'ZAR'}}),e=>e.code==='failed-precondition');
+ internationalEnabled=true;
+ const plans=await api.getPaystackPlans({auth:{uid:'baker1'}});
+ assert.equal(plans.enabled,true);assert.equal(plans.billingCurrency,'ZAR');assert.equal(plans.international,true);
+ assert.equal(plans.monthlyLaunchOffer.enabled,false);
+ await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly'}}),e=>e.code==='invalid-argument');
+ await assert.rejects(api.createPaystackCheckout({auth:{uid:'baker1'},data:{plan:'monthly_launch',billingCurrencyAccepted:'ZAR',termsAccepted:true}}),e=>e.code==='failed-precondition');
+});
+
+test('Directory-only payments grant listing access, not Pro, and are idempotent',async()=>{
+ reset();records.set('subscriptionPayments/BB-first',{...expected,amount:4900,planCode:'PLN_directory',tier:'directory_listing',status:'pending'});
+ tx={...tx,amount:4900,plan:{plan_code:'PLN_directory'},paid_at:new Date().toISOString()};
+ await api.verifyPaystackPayment(request('baker1'));
+ assert.equal(records.get('users/baker1').subscriptionStatus,'free');
+ assert.ok(records.get('listingEntitlements/baker1').directoryListingExpiresAt.getTime()>Date.now());
+ assert.equal(records.get('listingEntitlements/baker1').directoryPaymentReference,'BB-first');
+ await api.verifyPaystackPayment(request('baker1'));assert.equal(updates,0);
+});
+test('Full Suite grants Pro and listing entitlements; weekly Pro does not grant listing rights',async()=>{
+ for(const [tier,amount,interval] of [['full_suite',22000,'monthly'],['weekly',3999,'weekly']]){
+  reset();records.set('subscriptionPayments/BB-first',{...expected,tier,amount,interval,status:'pending'});
+  tx={...tx,amount,paid_at:new Date().toISOString()};
+  await api.verifyPaystackPayment(request('baker1'));
+  assert.equal(records.get('users/baker1').subscriptionStatus,'active');
+  assert.equal(!!records.get('listingEntitlements/baker1')?.fullSuiteExpiresAt,tier==='full_suite');
+ }
+});
+test('test-mode Full Suite and Directory payments cannot grant live access',async()=>{
+ for(const [tier,amount] of [['full_suite',22000],['directory_listing',4900]]){
+  reset();records.set('subscriptionPayments/BB-first',{...expected,tier,amount,domain:'test',status:'pending'});tx={...tx,amount,domain:'test'};
+  await api.verifyPaystackPayment(request('baker1'));
+  assert.equal(records.get('users/baker1').subscriptionStatus,'free');assert.equal(records.has('listingEntitlements/baker1'),false);
+ }
+});

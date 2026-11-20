@@ -525,3 +525,32 @@ td small {
 .supplier-rejection-form textarea{width:100%;min-height:90px;border:1px solid #dfe4ec;border-radius:10px;padding:10px;font:inherit}
 @media(max-width:740px){.supplier-review-item{grid-template-columns:1fr}}
 .campaign-lightbox{width:min(900px,calc(100vw - 40px));max-height:90vh;overflow:auto;border:0;border-radius:16px;padding:24px;color:#17233b;background:#fff;box-shadow:0 20px 80px #0005}.campaign-lightbox::backdrop{background:#101828b3}.campaign-lightbox .supplier-review-image{width:100%;height:auto;max-height:60vh;object-fit:contain}.campaign-lightbox .supplier-review-image-empty{min-height:180px}.campaign-lightbox p,.campaign-lightbox dd{overflow-wrap:anywhere;white-space:pre-wrap}.campaign-lightbox dt{font-weight:700;margin-top:12px}.campaign-lightbox dd{margin:4px 0 0}
+
+/* BatchBoss admin refresh */
+:root{background:#fff7fa;color:#233449}
+.admin-shell aside{background:#fff;color:#233449;border-right:1px solid #f1dce5;overflow-y:auto}
+.admin-shell nav button{color:#526477}
+.admin-shell nav .nav-active{background:#b62d65;color:#fff}
+.admin-user{border-color:#f1dce5}.admin-user small,.admin-user button{color:#68788b}
+.admin-shell main>header{background:linear-gradient(125deg,#a92b60,#c7477b);padding:22px;border-radius:18px;color:#fff;margin-bottom:24px}
+.admin-shell main>header .eyebrow{color:#fff}.admin-shell main>header h1{font-size:27px}
+.panel,.stats article{border-color:#efdbe4;box-shadow:0 5px 20px #6b244b08}
+.codes-workspace{display:grid;gap:18px}
+.codes-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:22px 0 12px;align-items:end}
+.codes-workspace label{display:grid;gap:7px;font-size:13px;font-weight:700;min-width:0}
+.codes-workspace input,.codes-workspace select{width:100%;min-width:0;border:1px solid #e8d6df;border-radius:10px;padding:11px 12px;background:white;color:#233449;font:inherit}
+.codes-workspace input:focus,.codes-workspace select:focus{outline:2px solid #b62d65;outline-offset:1px}
+.codes-workspace .primary{background:#b62d65;margin:0}
+.codes-workspace button:disabled{opacity:.5;cursor:not-allowed}
+.codes-created{background:#fff4f8;border:1px solid #edc9d8;border-radius:14px;padding:16px;margin-top:18px}
+.codes-copy{display:flex;gap:8px}.codes-copy button{white-space:nowrap}
+.codes-workspace .secondary{margin:0!important}
+.codes-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.codes-summary article{display:grid;gap:8px}.codes-summary span{font-size:13px;color:#68788b}.codes-summary strong{font-size:26px;color:#a92b60}
+.codes-filters{display:flex;gap:14px;flex-wrap:wrap;margin-top:16px}.codes-filters label:first-child{flex:1 1 220px}
+.codes-list th{background:#fff4f8}.codes-list td{font-size:13px}.codes-list progress{width:85px;height:7px;accent-color:#b62d65}
+.code-status{display:inline-block;padding:6px 10px;border-radius:99px;font-size:11px;font-weight:700;background:#edf0f4;color:#526477}
+.code-status.active{background:#dcfce7;color:#166534}.code-status.expired{background:#fee2e2;color:#991b1b}.code-status.fully-redeemed{background:#fff0cf;color:#805300}
+.codes-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0}
+@media(max-width:900px){.codes-form{grid-template-columns:repeat(2,minmax(0,1fr))}.codes-summary{grid-template-columns:1fr}}
+@media(max-width:560px){.codes-form{grid-template-columns:1fr}.codes-copy{flex-wrap:wrap}.codes-pagination{flex-wrap:wrap}}

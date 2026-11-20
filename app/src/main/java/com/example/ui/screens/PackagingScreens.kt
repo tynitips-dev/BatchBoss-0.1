@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -95,7 +97,7 @@ fun PackagingListScreen(
     var showRestockDialog by remember { mutableStateOf(false) }
 
     val totalValuation = remember(allPackaging) {
-        allPackaging.sumOf { it.currentStock * it.unitPrice }
+        RegionalCurrency.formatTotals(allPackaging.map { it.currency to (it.currentStock * it.unitPrice) })
     }
 
     val filteredPackaging = remember(allPackaging, lowStockPackaging, selectedTab, selectedCategoryFilter, searchQuery) {
@@ -252,7 +254,7 @@ fun PackagingListScreen(
                             Text(text = "Packaging Valuation", fontSize = 12.sp, color = MediumText)
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = formatZar(totalValuation),
+                                text = totalValuation,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BatchPink
@@ -622,7 +624,7 @@ fun PackagingListScreen(
                                 )
                             }
                             if (estCost > 0) {
-                                Text(formatZar(estCost), fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
+                                Text(RegionalCurrency.format(estCost,item.currency), fontSize = 12.sp, color = DarkText, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -774,7 +776,7 @@ fun PackagingItemCard(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Pack: ${formatZar(item.packagePrice)} for ${if (item.packageQuantity % 1.0 == 0.0) item.packageQuantity.toInt().toString() else item.packageQuantity} ${item.unit}",
+                        text = "Pack: ${RegionalCurrency.format(item.packagePrice,item.currency)} for ${if (item.packageQuantity % 1.0 == 0.0) item.packageQuantity.toInt().toString() else item.packageQuantity} ${item.unit}",
                         fontSize = 11.sp,
                         color = MediumText
                     )
@@ -787,7 +789,7 @@ fun PackagingItemCard(
                         color = LightText
                     )
                     Text(
-                        text = "${formatUnitCost(item.unitPrice)} / ${item.unit}",
+                        text = "${RegionalCurrency.format(item.unitPrice,item.currency)} / ${item.unit}",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = BatchPink,

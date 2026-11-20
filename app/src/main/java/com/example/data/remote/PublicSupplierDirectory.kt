@@ -22,6 +22,7 @@ object PublicSupplierDirectory {
         require(rows.length() <= 25)
         val suppliers = (0 until rows.length()).mapNotNull { index ->
             val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (row.has("countryCode") && row.opt("countryCode") != "ZA") return@mapNotNull null
             val fields = listOf("id", "businessName", "category", "city", "province", "description", "delivery")
             if (fields.any { row.opt(it) !is String || row.getString(it).length > 2000 }) return@mapNotNull null
             if (!validId(row.getString("id")) || row.getString("category") !in listOf("Ingredients", "Packaging", "Equipment", "Decorating")) return@mapNotNull null

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import './supplier-directory.css'
+import {supplierCountryMatches} from './supplierRecord'
 
-export type Supplier = { id: string; businessName: string; category: string; city: string; province: string; description: string; delivery: string }
+export type Supplier = { id: string; businessName: string; category: string; city: string; province: string; description: string; delivery: string; countryCode?: string }
 type Page = { suppliers: Supplier[]; nextCursor: string | null }
 const categories = ['Ingredients', 'Packaging', 'Equipment', 'Decorating']
 const publicId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -15,7 +16,7 @@ function readPage(value: unknown): Page {
   const suppliers = page.suppliers.filter(p => p && typeof p.id === 'string' && publicId.test(p.id) && categories.includes(p.category) && ['businessName', 'city', 'province', 'description', 'delivery'].every(key => typeof p[key as keyof Supplier] === 'string'))
   return { suppliers, nextCursor: page.nextCursor }
 }
-export default function SupplierDirectory({ initialCategory = '', savedIds = [], onSave }: { initialCategory?: string; savedIds?: string[]; onSave?: (supplier: Supplier) => Promise<void> }) {
+export default function SupplierDirectory({ initialCategory = '', savedIds = [], countryCode = 'ZA', onSave }: { initialCategory?: string; savedIds?: string[]; countryCode?: string; onSave?: (supplier: Supplier) => Promise<void> }) {
   const [items, setItems] = useState<Supplier[]>([])
   const [category, setCategory] = useState(initialCategory)
   const [search, setSearch] = useState('')
@@ -24,7 +25,7 @@ export default function SupplierDirectory({ initialCategory = '', savedIds = [],
   const [saving, setSaving] = useState('')
   const [saveError, setSaveError] = useState('')
   async function save(supplier: Supplier) {
-    if (!onSave || saving || savedIds.includes(supplier.id)) return
+    if (!onSave || saving || savedIds.includes(supplier.id) || !supplierCountryMatches(supplier,countryCode)) return
     setSaving(supplier.id); setSaveError('')
     try { await onSave(supplier) } catch { setSaveError('We could not save this supplier. Please try again.') }
     finally { setSaving('') }
@@ -57,21 +58,21 @@ export default function SupplierDirectory({ initialCategory = '', savedIds = [],
     if (endpoint) void load()
     return () => { controller.current?.abort(); controller.current = null }
   }, [endpoint])
-  const shown = items.filter(p => (!category || p.category === category) && (!city.trim() || p.city.toLowerCase().includes(city.trim().toLowerCase())) && (!province || p.province.toLowerCase() === province.toLowerCase()) && `${p.businessName} ${p.city} ${p.province} ${p.description} ${p.delivery}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const shown = items.filter(p => supplierCountryMatches(p,countryCode) && (!category || p.category === category) && (!city.trim() || p.city.toLowerCase().includes(city.trim().toLowerCase())) && (!province.trim() || p.province.toLowerCase() === province.trim().toLowerCase()) && `${p.businessName} ${p.city} ${p.province} ${p.description} ${p.delivery}`.toLowerCase().includes(search.trim().toLowerCase()))
   return <section className="content-card supplier-directory">
     <span className="eyebrow">BatchBoss supplier directory</span><h2>Find suppliers</h2>
-    <p>Discover approved suppliers with an active listing for your next bake.</p>
+    <p>Discover approved suppliers listed in your bakery’s country.</p>
     <div className="directory-filters">
       <label>Search businesses or location<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Business, city or province" /></label>
       <label>Category<select value={category} onChange={e => setCategory(e.target.value)}><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c === 'Decorating' ? 'Cake decorations' : c}</option>)}</select></label>
-      <label>City or town<input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Cape Town" /></label>
-      <label>Province<select value={province} onChange={e => setProvince(e.target.value)}><option value="">All provinces</option>{['Eastern Cape','Free State','Gauteng','KwaZulu-Natal','Limpopo','Mpumalanga','North West','Northern Cape','Western Cape'].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label>City or town<input value={city} onChange={e => setCity(e.target.value)} placeholder={countryCode==='ZA'?'e.g. Cape Town':'City or town'} /></label>
+      {countryCode==='ZA'?<label>Province<select value={province} onChange={e => setProvince(e.target.value)}><option value="">All provinces</option>{['Eastern Cape','Free State','Gauteng','KwaZulu-Natal','Limpopo','Mpumalanga','North West','Northern Cape','Western Cape'].map(p => <option key={p}>{p}</option>)}</select></label>:<label>State / region<input value={province} onChange={e=>setProvince(e.target.value)} placeholder="All regions"/></label>}
       {endpoint && <button className="outline-button" disabled={busy} onClick={() => void load()}>Refresh</button>}
     </div>
     {!endpoint ? <p>The supplier directory is being connected. Please check back soon.</p> : <>
       {busy && <p role="status">Loading suppliers…</p>}
       {error && <p role="alert">{error} <button onClick={() => void load(cursor)}>Try again</button></p>}
-      {!busy && !error && !shown.length && <p>{items.length ? 'No matches in the loaded suppliers. Try another search or load more.' : 'No suppliers to display yet.'}</p>}
+      {!busy && !error && !shown.length && <p>{items.some(p=>supplierCountryMatches(p,countryCode)) ? 'No matches in the loaded suppliers. Try another search or load more.' : 'No suppliers from your country in the loaded listings yet.'}</p>}
       {saveError && <p role="alert">{saveError}</p>}
       <div className="directory-grid">{shown.map(p => <article className="directory-card" key={p.id}>
         <span className="eyebrow">{p.category}</span><h3>{p.businessName}</h3><p>{p.city}, {p.province}</p><p>{p.description}</p>

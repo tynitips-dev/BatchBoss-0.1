@@ -1,18 +1,28 @@
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 import {defineSecret,defineString} from 'firebase-functions/params';
 import {HttpsError,onCall,onRequest} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
-import {validSignature,periodEnd,matchesPayment} from './paystack-core';
+import {validSignature,periodEnd,matchesPayment,billingRoute} from './paystack-core';
+import {listingRegion, sameListingRegion, marketplaceBillingAvailable} from './listingRegion';
 const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
+const fullSuite=defineString('PAYSTACK_FULL_SUITE_PLAN_CODE',{default:'PLN_wcarn44xe2inazs'});
+const directoryListing=defineString('PAYSTACK_DIRECTORY_LISTING_PLAN_CODE',{default:'PLN_o85gnfrc0qi3q3l'});
+const directoryListingEnabled=defineString('PAYSTACK_DIRECTORY_LISTING_ENABLED',{default:'false'});
+const fullSuiteEnabled=defineString('PAYSTACK_FULL_SUITE_ENABLED',{default:'false'});
+const weekly=defineString('PAYSTACK_WEEKLY_PLAN_CODE',{default:'PLN_vyhv43kg8cua0ij'});
+const weeklyEnabled=defineString('PAYSTACK_WEEKLY_ENABLED',{default:'false'});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
+const paddleCheckoutEnabled=defineString('PADDLE_CHECKOUT_ENABLED',{default:'false'});
+const internationalZar=defineString('PAYSTACK_INTERNATIONAL_ZAR_ENABLED',{default:'false'});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
 const monthlyLaunchEnabled=defineString('PAYSTACK_MONTHLY_LAUNCH_ENABLED',{default:'false'});
 const annualLaunchEnabled=defineString('PAYSTACK_ANNUAL_LAUNCH_ENABLED',{default:'false'});
+const marketplaceEnabled=defineString('PAYSTACK_MARKETPLACE_ENABLED',{default:'false'});
 const APP='https://app.batchboss.co.za';
 const options={region:'europe-west1',invoker:'public' as const,secrets:[secret],cors:[APP]};
 const db=()=>getFirestore();
@@ -21,11 +31,14 @@ function uidOf(r:any){if(!r.auth)throw new HttpsError('unauthenticated','Please 
 function mode(){const key=secret.value();if(!/^sk_(test|live)_/.test(key))throw new HttpsError('failed-precondition','Paystack is not configured.');return key.startsWith('sk_live_')?'live':'test';}
 function promotionEnabled(offer:string){return offer==='monthly_launch'?monthlyLaunchEnabled.value()==='true':offer==='annual_launch'?annualLaunchEnabled.value()==='true':false;}
 function planForCode(code:string){
- if(code===monthlyPromo.value()&&/^PLN_/.test(code))return {interval:'monthly' as const,amount:9900,currency:'ZAR',planCode:code,domain:mode(),offer:'monthly_launch',invoiceLimit:2};
- if(code===annualPromo.value()&&/^PLN_/.test(code))return {interval:'annual' as const,amount:99000,currency:'ZAR',planCode:code,domain:mode(),offer:'annual_launch',invoiceLimit:1};
+ if(code===weekly.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'weekly' as const,amount:3999,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'weekly' as const};
+ if(code===directoryListing.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:4900,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'directory_listing' as const};
+ if(code===fullSuite.value()&&/^PLN_[a-zA-Z0-9]+$/.test(code))return {interval:'monthly' as const,amount:22000,currency:'ZAR',planCode:code,domain:mode(),offer:null,invoiceLimit:0,tier:'full_suite' as const};
+ if(code===monthlyPromo.value()&&/^PLN_/.test(code))return {interval:'monthly' as const,amount:9900,currency:'ZAR',planCode:code,domain:mode(),offer:'monthly_launch',invoiceLimit:2,tier:null};
+ if(code===annualPromo.value()&&/^PLN_/.test(code))return {interval:'annual' as const,amount:99000,currency:'ZAR',planCode:code,domain:mode(),offer:'annual_launch',invoiceLimit:1,tier:null};
  return null;
 }
-function planFor(interval:string){if(!['monthly','annual'].includes(interval))throw new HttpsError('invalid-argument','Choose monthly or annual.');const planCode=interval==='monthly'?monthly.value():annual.value();if(!/^PLN_[a-zA-Z0-9]+$/.test(planCode))throw new HttpsError('failed-precondition','Payment plans are not configured yet.');return {interval:interval as 'monthly'|'annual',amount:interval==='monthly'?14900:119900,currency:'ZAR',planCode,domain:mode()};}
+function planFor(interval:string){if(!['monthly','annual'].includes(interval))throw new HttpsError('invalid-argument','Choose monthly or annual.');const planCode=interval==='monthly'?monthly.value():annual.value();if(!/^PLN_[a-zA-Z0-9]+$/.test(planCode))throw new HttpsError('failed-precondition','Payment plans are not configured yet.');return {interval:interval as 'monthly'|'annual',amount:interval==='monthly'?14900:119900,currency:'ZAR',planCode,domain:mode(),tier:null};}
 async function api(path:string,body?:unknown){
  // Only fixed operation labels and status codes enter logs: never keys or customer data.
  const operation=path.startsWith('/plan/')?'plan lookup':path==='/customer'?'customer setup':path==='/transaction/initialize'?'checkout initialization':path.startsWith('/transaction/verify/')?'payment verification':'subscription management';
@@ -50,22 +63,61 @@ async function api(path:string,body?:unknown){
  return json.data;
 }
 function safeLink(raw:string,host:string){const url=new URL(raw);if(url.protocol!=='https:'||url.hostname!==host)throw new Error('Unexpected payment URL');return url.toString();}
-export const getPaystackPlans=onCall(options,async request=>{uidOf(request);if(enabled.value()!=='true')return {enabled:false};return {enabled:true,testMode:mode()==='test',monthly:149,annual:1199,monthlyLaunchOffer:{enabled:promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};});
+async function checkoutRoute(uid:string){
+ const profile=(await db().doc(`users/${uid}`).get()).data();
+ if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId)return null;
+ const bakery=(await db().doc(`bakeries/${profile.bakeryId}`).get()).data();
+ return billingRoute(bakery,internationalZar.value()==='true'&&paddleCheckoutEnabled.value()!=='true');
+}
+export const getPaystackPlans=onCall(options,async request=>{
+ const uid=uidOf(request),route=await checkoutRoute(uid);
+ if(enabled.value()!=='true'||!route?.enabled)return {enabled:false,billingCurrency:'ZAR',international:route?.international||false};
+ const local=!route.international;
+ const p=(await db().doc('users/'+uid).get()).data(),ent=(await db().doc('listingEntitlements/'+uid).get()).data();
+ const locked=!!(p?.subscriptionSource==='paddle'||p?.paddleSubscriptionId||p?.payfastToken||p?.subscriptionSource==='payfast'||ent?.directorySubscriptionCode||ent?.directoryPaymentReference||(ent?.directoryListingExpiresAt?.toMillis?.()??0)>Date.now());
+ return {enabled:true,billingCurrency:'ZAR',international:route.international,testMode:mode()==='test',monthly:149,annual:1199,listingPlans:{weekly:local&&!locked&&weeklyEnabled.value()==='true',directory_listing:local&&!locked&&!p?.paystackSubscriptionCode&&p?.subscriptionStatus==='free'&&directoryListingEnabled.value()==='true',full_suite:local&&!locked&&fullSuiteEnabled.value()==='true'},directoryManagementAvailable:local&&!!ent?.directorySubscriptionCode,monthlyLaunchOffer:{enabled:local&&promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:local&&promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};
+});
+// Hosted Paystack links do not expose a documented server-side invalidation operation.
+// Preserve unresolved references rather than risk duplicate recurring charges.
+export const recoverPaystackCheckout=onCall(options,async request=>{
+ const uid=uidOf(request),lockRef=db().doc('paystackCheckouts/'+uid),lock=(await lockRef.get()).data();
+ if(!lock||lock.completedAt)return {status:'none'};
+ const reference=String(lock.reference||'');
+ if(!/^BB-[0-9a-f-]{36}$/.test(reference))return {status:'review'};
+ const expected=(await db().doc('subscriptionPayments/'+reference).get()).data();
+ if(!expected||expected.uid!==uid||expected.provider!=='paystack'||expected.domain!==mode())return {status:'review'};
+ const remote=await api('/transaction/verify/'+encodeURIComponent(reference));
+ if(remote.reference!==reference||remote.domain!==expected.domain)return {status:'review'};
+ if(remote.status==='success'){await settle(reference,uid);return {status:'success'};}
+ const current=(await lockRef.get()).data();
+ if(current?.reference!==reference||current.completedAt)return {status:'review'};
+ return {status:'pending',...(typeof current.checkoutUrl==='string'?{checkoutUrl:safeLink(current.checkoutUrl,'checkout.paystack.com')}: {})};
+});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
+ const route=await checkoutRoute(uid);
+ if(!route?.enabled)throw new HttpsError('failed-precondition','Regional subscription billing is not available yet.');
+ if(route.international&&request.data?.billingCurrencyAccepted!=='ZAR')throw new HttpsError('invalid-argument','Please confirm that your subscription will be billed in South African rand (ZAR).');
  const requestedPlan=String(request.data?.plan);
  const promotional=requestedPlan==='monthly_launch'||requestedPlan==='annual_launch';
- if(promotional && !promotionEnabled(requestedPlan))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');
+ if(promotional && (route.international||!promotionEnabled(requestedPlan)))throw new HttpsError('failed-precondition','Promotional checkout is not currently enabled.');
  if(promotional && request.data?.termsAccepted!==true)throw new HttpsError('invalid-argument','Please accept the promotional payment terms.');
- const plan=promotional
+ const suite=requestedPlan==='full_suite';
+ if(suite&&fullSuiteEnabled.value()!=='true')throw new HttpsError('failed-precondition','Full Suite checkout is not available yet.');
+ const directory=requestedPlan==='directory_listing';
+ if(directory&&directoryListingEnabled.value()!=='true')throw new HttpsError('failed-precondition','Directory Listing checkout is not available yet.');
+ const weeklyPlan=requestedPlan==='weekly';
+ if(route.international&&(suite||directory||weeklyPlan))throw new HttpsError('failed-precondition','Regional listing and weekly checkout is not available yet.');
+ if(weeklyPlan&&weeklyEnabled.value()!=='true')throw new HttpsError('failed-precondition','Weekly Pro checkout is not available yet.');
+ const plan=weeklyPlan ? planForCode(weekly.value()) : suite ? planForCode(fullSuite.value()) : directory ? planForCode(directoryListing.value()) : promotional
    ? planForCode(requestedPlan==='monthly_launch'?monthlyPromo.value():annualPromo.value())
    : {...planFor(requestedPlan),offer:null,invoiceLimit:0};
- if(!plan)throw new HttpsError('failed-precondition','The promotional plan is not configured.');
+ if(!plan || ((suite||directory||weeklyPlan) && (!('tier' in plan)||plan.tier!==requestedPlan)))throw new HttpsError('failed-precondition','The selected plan is not configured.');
 
  const user=await getAuth().getUser(uid);if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
  // Backend owns pricing and validates the dashboard plan before opening checkout.
  const remotePlan=await api(`/plan/${encodeURIComponent(plan.planCode)}`);
- if(remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':'monthly')||remotePlan.domain!==plan.domain||(promotional&&Number(remotePlan.invoice_limit)!==plan.invoiceLimit))throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
+ if(remotePlan.amount!==plan.amount||remotePlan.currency!=='ZAR'||remotePlan.interval!==(plan.interval==='annual'?'annually':plan.interval)||remotePlan.domain!==plan.domain||(promotional&&Number(remotePlan.invoice_limit)!==plan.invoiceLimit))throw new HttpsError('failed-precondition','Paystack plan configuration does not match BatchBoss pricing. Please contact support.');
  let previousEnded=false;
  const previous=(await db().doc(`users/${uid}`).get()).data();
  if(previous?.subscriptionSource==='paystack' && previous.paystackSubscriptionCode){
@@ -73,18 +125,87 @@ export const createPaystackCheckout=onCall(options,async request=>{
   previousEnded=!!linked&&['cancelled','completed','complete'].includes(linked.remote.status)&&previous.subscriptionExpiresAt?.toMillis?.()<=Date.now();
  }
  const lockRef=db().doc(`paystackCheckouts/${uid}`);const profileRef=db().doc(`users/${uid}`);const reference=`BB-${randomUUID()}`;
- const existing=await db().runTransaction(async t=>{const [lock,profile]=await Promise.all([t.get(lockRef),t.get(profileRef)]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode&&!previousEnded)throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const old=lock.data();if(old&&old.expiresAtMs>Date.now()){if(old.planCode===plan.planCode&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or wait 30 minutes before starting another.');}t.set(lockRef,{reference,interval:plan.interval,planCode:plan.planCode,expiresAtMs:Date.now()+30*60*1000});return null;});
+ const existing=await db().runTransaction(async t=>{const [lock,profile,paddleLock,payfastLock,directoryAccess]=await Promise.all([t.get(lockRef),t.get(profileRef),t.get(db().doc(`paddleBilling/live/checkoutLocks/${uid}`)),t.get(db().doc(`payfastCheckouts/${uid}`)),t.get(db().doc(`listingEntitlements/${uid}`))]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(paddleLock.exists||p.subscriptionSource==='paddle'||p.paddleSubscriptionId)throw new HttpsError('failed-precondition','Manage your existing Paddle billing before opening Paystack checkout.');if(p.subscriptionSource==='paystack'&&(!p.paystackSubscriptionCode||!previousEnded))throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(payfastLock.exists||p.payfastToken||(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active'))throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const ent=directoryAccess.data();if(ent&&(ent.directorySubscriptionCode||ent.directoryPaymentReference||(ent.directoryListingExpiresAt?.toMillis?.()??0)>Date.now()))throw new HttpsError('failed-precondition','Manage your existing Directory subscription with support before changing plans.');if(directory&&(p.subscriptionStatus!=='free'||p.subscriptionSource))throw new HttpsError('failed-precondition','Contact support before changing your paid plan.');const old=lock.data();if(old&&(!old.completedAt&&(old.expiresAtMs>Date.now()||old.tier==='directory_listing'||old.tier==='full_suite'||old.tier==='weekly'))){if(old.planCode===plan.planCode&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or contact billing support before starting another.');}t.set(lockRef,{reference,interval:plan.interval,planCode:plan.planCode,tier:plan.tier,expiresAtMs:Date.now()+30*60*1000});return null;});
  if(existing)return {checkoutUrl:existing};
  try{
   const customer=await api('/customer',{email:user.email});const customerCode=String(customer.customer_code);if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new Error('Invalid customer');
   const customerRef=db().doc(`paystackCustomers/${customerCode}`);
   await db().runTransaction(async t=>{const mapped=await t.get(customerRef);if(mapped.exists&&mapped.data()?.uid!==uid)throw new HttpsError('failed-precondition','This payment customer is linked to another account. Contact support.');t.set(customerRef,{uid,domain:plan.domain,updatedAt:now()},{merge:true});});
-  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',createdAt:now()});
+  await db().doc(`subscriptionPayments/${reference}`).set({...plan,uid,customer:customerCode,provider:'paystack',status:'pending',accountingCurrency:route.accountingCurrency,international:route.international,createdAt:now()});
   const result=await api('/transaction/initialize',{email:user.email,amount:plan.amount,currency:'ZAR',plan:plan.planCode,reference,channels:['card'],callback_url:`${APP}/?payment=paystack`,metadata:{batchbossReference:reference}});
   const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
   await lockRef.update({checkoutUrl});return {checkoutUrl};
- }catch(e){await lockRef.delete();throw e;}
+ }catch(e){if(!plan.tier)await lockRef.delete();throw e;}
 });
+// One-off item fees use a separate ledger, with no subscription plan or Pro entitlement.
+export const createMarketplaceCheckout=onCall(options,async request=>{
+ const uid=uidOf(request),id=String(request.data?.id||'');
+ if(!/^[0-9a-f-]{36}$/.test(id))throw new HttpsError('invalid-argument','Invalid listing ID.');
+ if(enabled.value()!=='true'||marketplaceEnabled.value()!=='true')throw new HttpsError('failed-precondition','Marketplace checkout is not enabled.');
+ const domain=mode(), user=await getAuth().getUser(uid);
+ if(!user.email)throw new HttpsError('failed-precondition','Your account needs an email address.');
+ const workspace=db().doc(`listingWorkspaces/${uid}`), lock=workspace.collection('marketplaceCheckouts').doc(id);
+ const draft=workspace.collection('drafts').doc(id), publication=workspace.collection('publications').doc(id);
+ const reference='BB-MKT-'+randomUUID();
+ const attempt=db().doc(`marketplacePayments/${reference}`);
+ const existing=await db().runTransaction(async t=>{
+  const month=new Intl.DateTimeFormat('sv-SE',{timeZone:'Africa/Johannesburg',year:'numeric',month:'2-digit'}).format(new Date());
+  const allowance=workspace.collection('allowances').doc(month);
+  const [d,l,p,u,access,usage]=await Promise.all([t.get(draft),t.get(lock),t.get(publication),t.get(db().doc(`users/${uid}`)),t.get(db().doc(`listingEntitlements/${uid}`)),t.get(allowance)]);
+  if(!u.exists||d.data()?.kind!=='marketplace')throw new HttpsError('failed-precondition','Save your listing first.');
+  const bakeryId=u.data()?.bakeryId;
+  if(typeof bakeryId!=='string'||!bakeryId||bakeryId.includes('/'))throw new HttpsError('failed-precondition','Verify your bakery workspace.');
+  const region=listingRegion((await t.get(db().doc(`bakeries/${bakeryId}`))).data());
+  if(!marketplaceBillingAvailable(region)||!sameListingRegion(region??undefined,d.data()))throw new HttpsError('failed-precondition','Regional Marketplace billing is not available yet.');
+  if(p.exists)throw new HttpsError('failed-precondition','This listing has already been published.');
+  const old=l.data();
+  if(old?.status==='paid')throw new HttpsError('failed-precondition','This listing is already paid. Publish it from your draft.');
+  if(old?.reference){
+   if(old.domain!==domain)throw new HttpsError('failed-precondition','Contact support about the previous checkout.');
+   if(old.checkoutUrl)return {checkoutUrl:String(old.checkoutUrl)};
+   throw new HttpsError('failed-precondition','Checkout is being prepared or needs support. Do not pay twice.');
+  }
+  if((access.data()?.fullSuiteExpiresAt?.toMillis?.()??0)>Date.now()&&(usage.data()?.used??0)<3)throw new HttpsError('failed-precondition','You have an included listing. Use Save and publish instead.');
+  t.create(attempt,{uid,id,reference,domain,amount:2000,currency:'ZAR',listingCountryCode:region!.countryCode,listingCurrency:region!.currency,email:user.email,status:'pending',createdAt:now()});
+  t.set(lock,{reference,domain,status:'pending',createdAt:now()});return null;
+ });
+ if(existing)return existing;
+ // Retain the lock on ambiguous provider errors: a second charge must not be initiated.
+ const result=await api('/transaction/initialize',{email:user.email,amount:2000,currency:'ZAR',reference,callback_url:APP+'/?tab=marketplace&payment=marketplace',metadata:{batchbossReference:reference}});
+ const checkoutUrl=safeLink(result.authorization_url,'checkout.paystack.com');
+ await lock.set({checkoutUrl},{merge:true});return {checkoutUrl};
+});
+async function settleMarketplace(reference:string,expectedUid?:string){
+ if(!/^BB-MKT-[0-9a-f-]{36}$/.test(reference))throw new HttpsError('invalid-argument','Invalid listing payment reference.');
+ const ref=db().doc(`marketplacePayments/${reference}`), snap=await ref.get(), expected=snap.data();
+ if(!expected||(expectedUid&&expected.uid!==expectedUid))throw new HttpsError('permission-denied','Payment is not linked to your account.');
+ const tx=await api('/transaction/verify/'+encodeURIComponent(reference));
+ if(tx.status!=='success')return {status:String(tx.status||'pending')};
+ if(tx.reference!==reference||tx.amount!==2000||tx.currency!=='ZAR'||tx.domain!==expected.domain||String(tx.customer?.email||'').toLowerCase()!==String(expected.email).toLowerCase()||!Number.isFinite(new Date(tx.paid_at).getTime())||tx.plan?.plan_code||tx.plan_object?.plan_code||(typeof tx.plan==='string'&&tx.plan))throw new HttpsError('failed-precondition','Listing payment details do not match.');
+ const workspace=db().doc(`listingWorkspaces/${expected.uid}`), lock=workspace.collection('marketplaceCheckouts').doc(expected.id);
+ await db().runTransaction(async t=>{
+  const publication=workspace.collection('publications').doc(expected.id);
+  const publicId=createHash('sha256').update(JSON.stringify([expected.uid,expected.id])).digest('hex');
+  const catalog=db().doc(`listingCatalogs/marketplace/entries/${publicId}`);
+  const [current,l,user,draft,existing]=await Promise.all([t.get(ref),t.get(lock),t.get(db().doc(`users/${expected.uid}`)),t.get(workspace.collection('drafts').doc(expected.id)),t.get(publication)]);
+  const details=draft.data();
+  if(current.data()?.status==='success')return;
+  if(l.data()?.reference!==reference||!user.exists)throw new HttpsError('failed-precondition','Listing payment needs support.');
+  t.update(ref,{status:'success',transactionId:String(tx.id),paidAt:tx.paid_at,processedAt:now()});
+  t.update(lock,{status:expected.domain==='live'?'paid':'test_paid',updatedAt:now()});
+  if(expected.domain==='live'){
+   if(details?.kind!=='marketplace')throw new HttpsError('failed-precondition','Paid listing draft is missing. Contact support.');
+   const paidRegion=listingRegion({countryCode:expected.listingCountryCode,currency:expected.listingCurrency});
+   if(!marketplaceBillingAvailable(paidRegion)||!sameListingRegion(paidRegion??undefined,details)||existing.exists&&!sameListingRegion(existing.data(),details))throw new HttpsError('failed-precondition','Paid listing currency could not be verified. Contact support; do not pay again.');
+   if(existing.data()?.status!=='sold'){
+    const fields={kind:'marketplace',countryCode:paidRegion!.countryCode,currency:paidRegion!.currency,title:details.title,area:details.area,description:details.description,priceCents:details.priceCents,logo:'',photos:details.photos??[],sellerType:'baker',standalonePaid:true,status:'published',updatedAt:now()};
+    t.set(publication,fields);t.set(catalog,{...fields,ownerUid:expected.uid});
+   }
+  }
+ });
+ return {status:'success',testMode:expected.domain==='test'};
+}
+export const verifyMarketplacePayment=onCall(options,async request=>settleMarketplace(String(request.data?.reference||''),uidOf(request)));
 async function settle(reference:string,expectedUid?:string,subscriptionCode?:string){
  if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference))throw new HttpsError('invalid-argument','Invalid payment reference.');
  const paymentRef=db().doc(`subscriptionPayments/${reference}`);const payment=await paymentRef.get();let expected=payment.data();
@@ -93,33 +214,40 @@ async function settle(reference:string,expectedUid?:string,subscriptionCode?:str
  const transaction=await api(`/transaction/verify/${encodeURIComponent(reference)}`);
  if(transaction.status!=='success')return {status:String(transaction.status||'pending')};
  if(transaction.reference!==reference || !matchesPayment(transaction,expected as any))throw new HttpsError('failed-precondition','Payment details do not match the subscription.');
+ const listingExpiryField=expected.tier==='full_suite'?'fullSuiteExpiresAt':expected.tier==='directory_listing'?'directoryListingExpiresAt':null;
  const expires=periodEnd(transaction.paid_at,expected.interval);const profileRef=db().doc(`users/${expected.uid}`);
- await db().runTransaction(async t=>{const [current,profile]=await Promise.all([t.get(paymentRef),t.get(profileRef)]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
+ await db().runTransaction(async t=>{const suiteRef=db().doc(`listingEntitlements/${expected!.uid}`);const checkoutLock=db().doc('paystackCheckouts/'+expected!.uid);const [current,profile,locked,suiteAccess]=await Promise.all([t.get(paymentRef),t.get(profileRef),t.get(checkoutLock),...(expected!.domain==='live'&&listingExpiryField?[t.get(suiteRef)]:[])]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
  t.set(paymentRef,{...expected,reference,status:'success',transactionId:String(transaction.id),paidAt:transaction.paid_at,processedAt:now()},{merge:true});
+ if(expected!.tier&&locked.data()?.reference===reference)t.set(checkoutLock,{completedAt:now()},{merge:true});
+ if(suiteAccess && listingExpiryField && p.subscriptionSource!=='paddle' && p.subscriptionSource!=='payfast' && (suiteAccess.data()?.[listingExpiryField]?.toMillis?.() ?? 0)<expires.getTime()){
+  t.set(suiteRef,{[listingExpiryField]:expires,...(expected!.tier==='directory_listing'?{directoryPaymentReference:reference,...(subscriptionCode?{directorySubscriptionCode:subscriptionCode}:{})}:{}),updatedAt:now()},{merge:true});
+ }
  // Test mode records test payments but never grants production entitlements.
- if(expected!.domain==='live' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
+ if(expected!.domain==='live' && expected!.tier!=='directory_listing' && p.subscriptionSource!=='paddle' && p.subscriptionSource!=='payfast' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
  });return {status:'success',testMode:expected.domain==='test'};
 }
 export const verifyPaystackPayment=onCall(options,async request=>settle(String(request.data?.reference||''),uidOf(request)));
 async function syncSubscription(code:string){
  if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new Error('Invalid subscription');
  const s=await api(`/subscription/${code}`);const customer=String(s.customer?.customer_code||'');const mapping=await db().doc(`paystackCustomers/${customer}`).get();if(!mapping.exists)return null;
- const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||planFor(interval);
+ const uid=mapping.data()!.uid;const interval=s.plan?.interval==='annually'?'annual':s.plan?.interval==='monthly'?'monthly':s.plan?.interval==='weekly'?'weekly':'';if(!interval)return null;const plan=planForCode(String(s.plan?.plan_code||''))||(interval==='weekly'?null:planFor(interval));if(!plan||plan.interval!==interval)return null;
  if(s.domain!==plan.domain||s.plan?.plan_code!==plan.planCode||s.amount!==plan.amount||s.plan?.currency!=='ZAR'||(Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)>0&&s.plan?.invoice_limit!=null&&Number(s.plan.invoice_limit)!==Number('invoiceLimit' in plan ? plan.invoiceLimit : 0)))throw new Error('Subscription mismatch');
  await db().doc(`paystackSubscriptions/${code}`).set({...plan,customer,uid,provider:'paystack',status:s.status,updatedAt:now()},{merge:true});
- if(plan.domain==='live')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
+ if(plan.domain==='live'&&plan.tier==='directory_listing')await db().runTransaction(async t=>{const ref=db().doc(`listingEntitlements/${uid}`);const current=await t.get(ref);const row=current.data();if(!row?.directoryPaymentReference||row.directorySubscriptionCode&&row.directorySubscriptionCode!==code)return;t.set(ref,{directorySubscriptionCode:code,directorySubscriptionStatus:s.status,updatedAt:now()},{merge:true});});
+ if(plan.domain==='live'&&plan.tier!=='directory_listing')await db().runTransaction(async t=>{const ref=db().doc(`users/${uid}`);const snap=await t.get(ref);if(!snap.exists)return;const p=snap.data()!;
  // Never overwrite a later subscription or an administrator's promotion.
  if(p.subscriptionSource!=='paystack'||(p.paystackSubscriptionCode&&p.paystackSubscriptionCode!==code&&!['cancelled','completed','complete'].includes(p.paystackSubscriptionStatus)))return;
  t.update(ref,{paystackSubscriptionCode:code,paystackSubscriptionStatus:s.status,subscriptionRenews:s.status==='active',updatedAt:now()});});
  return {uid,remote:s};
 }
+export const managePaystackDirectory=onCall(options,async request=>{const uid=uidOf(request);const access=(await db().doc('listingEntitlements/'+uid).get()).data();const code=String(access?.directorySubscriptionCode||'');if(!/^SUB_[a-zA-Z0-9]+$/.test(code))throw new HttpsError('failed-precondition','Directory subscription is not linked yet. Contact support.');const sub=(await db().doc('paystackSubscriptions/'+code).get()).data();if(sub?.uid!==uid||sub?.tier!=='directory_listing'||sub?.domain!=='live')throw new HttpsError('permission-denied','Directory billing ownership could not be verified.');const result=await api('/subscription/'+code+'/manage/link');return {url:safeLink(result.link,'paystack.com')};});
 export const managePaystackSubscription=onCall(options,async request=>{const uid=uidOf(request);const profile=(await db().doc(`users/${uid}`).get()).data();const code=String(profile?.paystackSubscriptionCode||'');if(!/^SUB_[a-zA-Z0-9]+$/.test(code)||profile?.subscriptionSource!=='paystack')throw new HttpsError('failed-precondition','No Paystack subscription is linked yet. Please contact support.');const result=await api(`/subscription/${code}/manage/link`);return {url:safeLink(result.link,'paystack.com')};});
 export const paystackWebhook=onRequest({region:'europe-west1',invoker:'public',secrets:[secret]},async(request,response)=>{
  if(request.method!=='POST'){response.status(405).send('Method not allowed');return;}
  if(!validSignature(request.rawBody,String(request.headers['x-paystack-signature']||''),secret.value())){response.status(401).send('Invalid signature');return;}
  try{const event=request.body;const data=event.data||{};
  if(event.event==='charge.success'){
-  const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
+  const reference=String(data.reference||'');if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(reference)){response.status(200).send('Ignored');return;}if(reference.startsWith('BB-MKT-')){await settleMarketplace(reference);response.status(200).send('OK');return;}const known=await db().doc(`subscriptionPayments/${reference}`).get();
   if(known.exists){await settle(reference);const customer=known.data()?.customer;
    // subscription.create may have arrived before charge.success.
    const subs=await db().collection('paystackSubscriptions').where('customer','==',customer).get();for(const sub of subs.docs)if(sub.data().planCode===known.data()?.planCode)await syncSubscription(sub.id);

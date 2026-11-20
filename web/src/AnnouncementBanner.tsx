@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-type Announcement={id:string;message:string;linkLabel:string;href:string};
-function parseAnnouncement(value:unknown):Announcement|null{
+export type Announcement={id:string;message:string;linkLabel:string;href:string};
+export function parseAnnouncement(value:unknown):Announcement|null{
   if(!value||typeof value!=='object')return null;
   const item=value as Record<string,unknown>;
   if(item.enabled!==true||typeof item.id!=='string'||!item.id||item.id.length>100||typeof item.message!=='string'||!item.message.trim()||item.message.length>300)return null;

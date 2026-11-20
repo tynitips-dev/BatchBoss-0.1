@@ -2,6 +2,10 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.example.util.RegionalMeasurements
+import com.example.util.AppFormatters
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -748,6 +752,7 @@ private fun ShortcutRow(
 fun UnitConverterScreen(
     onBack: () -> Unit
 ) {
+    var exactMode by remember { mutableStateOf(true) }
     var inputValue by remember { mutableStateOf("1") }
     var selectedIngredient by remember { mutableStateOf("Flour (All-Purpose)") }
     var fromUnit by remember { mutableStateOf("Cups") }
@@ -765,7 +770,7 @@ fun UnitConverterScreen(
 
     // Calculate result
     val density = ingredientsDensity[selectedIngredient] ?: 120.0
-    val inputNum = inputValue.toDoubleOrNull() ?: 1.0
+    val inputNum = inputValue.replace(',', '.').toDoubleOrNull() ?: 0.0
 
     // Convert input to grams
     val inputInGrams = when (fromUnit) {
@@ -813,9 +818,18 @@ fun UnitConverterScreen(
                 .fillMaxSize()
                 .background(BackgroundLight)
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = exactMode, onClick = { exactMode = true }, label = { Text("Exact units") })
+                FilterChip(selected = !exactMode, onClick = { exactMode = false }, label = { Text("Ingredient estimates") })
+            }
+            if (exactMode) {
+                RegionalConverterPanel()
+            } else {
+            Text("Ingredient weights are estimates based on a legacy 240 ml cup.", fontSize = 12.sp, color = MediumText)
             // Ingredient Picker
             Text("Select Ingredient", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkText)
             LazyColumn(modifier = Modifier.height(130.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -889,12 +903,69 @@ fun UnitConverterScreen(
                     Text(text = "$inputValue $fromUnit of $selectedIngredient =", fontSize = 13.sp, color = MediumText)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "${String.format("%.2f", result)} $toUnit",
+                        text = "${AppFormatters.formatDecimal(result)} $toUnit",
                         fontSize = 28.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = BatchPink
                     )
                 }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RegionalConverterPanel() {
+    val units = linkedMapOf(
+        "g" to "Grams", "kg" to "Kilograms", "oz" to "Ounces (weight)", "lb" to "Pounds",
+        "ml" to "Milliliters", "l" to "Liters", "cup_us" to "US cup (236.588 ml)",
+        "cup_metric" to "Metric cup (250 ml)", "cup" to "Legacy Android cup (240 ml)",
+        "fl_oz_us" to "US fluid ounce", "fl_oz_uk" to "UK fluid ounce",
+        "tsp" to "Metric teaspoon (5 ml)", "tbsp" to "Metric tablespoon (15 ml)",
+        "tsp_us" to "US teaspoon", "tbsp_us" to "US tablespoon", "tbsp_au" to "Australian tablespoon (20 ml)"
+    )
+    var amount by remember { mutableStateOf("1") }
+    var from by remember { mutableStateOf("cup_metric") }
+    var to by remember { mutableStateOf("ml") }
+    var temperature by remember { mutableStateOf("180") }
+    var celsius by remember { mutableStateOf(true) }
+    val result = amount.replace(',', '.').toDoubleOrNull()?.let { RegionalMeasurements.convert(it, from, to) }
+    val oven = temperature.replace(',', '.').toDoubleOrNull()?.let {
+        RegionalMeasurements.convertTemperature(it, if (celsius) "C" else "F", if (celsius) "F" else "C")
+    }
+    Text("Regional measurement converter", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    OutlinedTextField(value = amount, onValueChange = { amount = it.replace(',', '.') },
+        label = { Text("Quantity") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    RegionalUnitPicker("From", from, units) { from = it }
+    RegionalUnitPicker("To", to, units) { to = it }
+    Text(result?.let { AppFormatters.formatOptionalDecimal(it) + " " + units[to] }
+        ?: "Choose compatible units and enter a valid amount.", fontWeight = FontWeight.Bold, color = BatchPink)
+    Text("Weight and volume need ingredient density to convert between them.", fontSize = 12.sp, color = MediumText)
+    HorizontalDivider()
+    Text("Oven temperature", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    OutlinedTextField(value = temperature, onValueChange = { temperature = it.replace(',', '.') },
+        label = { Text(if (celsius) "Celsius (°C)" else "Fahrenheit (°F)") }, singleLine = true,
+        modifier = Modifier.fillMaxWidth())
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = celsius, onClick = { celsius = true }, label = { Text("°C to °F") })
+        FilterChip(selected = !celsius, onClick = { celsius = false }, label = { Text("°F to °C") })
+    }
+    Text(oven?.let { AppFormatters.formatOptionalDecimal(it) + (if (celsius) " °F" else " °C") }
+        ?: "Enter a valid temperature.", color = BatchPink, fontWeight = FontWeight.Bold)
+    Text("Exact conversion, not a fan-oven adjustment.", fontSize = 12.sp, color = MediumText)
+}
+
+@Composable
+private fun RegionalUnitPicker(label: String, selected: String, units: Map<String, String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(label + ": " + (units[selected] ?: selected))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            units.forEach { (unit, name) ->
+                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(unit); expanded = false })
             }
         }
     }

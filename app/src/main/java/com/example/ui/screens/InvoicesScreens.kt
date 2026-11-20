@@ -40,13 +40,10 @@ import com.example.ui.theme.*
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
-import java.text.NumberFormat
+import com.example.util.RegionalCurrency
 import java.util.Locale
 
-private fun formatZar(amount: Double): String {
-    val format = NumberFormat.getCurrencyInstance(Locale("en", "ZA"))
-    return format.format(amount).replace("ZAR", "R").trim()
-}
+private fun formatZar(amount: Double): String = RegionalCurrency.format(amount)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,9 +100,9 @@ fun InvoicesListScreen(
         }
     }
 
-    val totalBilled = remember(invoices) { invoices.sumOf { it.amount } }
-    val totalPending = remember(invoices) { invoices.filter { it.status == "Pending" }.sumOf { it.amount } }
-    val totalPaid = remember(invoices) { invoices.filter { it.status == "Paid" }.sumOf { it.amount } }
+    val totalBilled = remember(invoices) { RegionalCurrency.formatTotals(invoices.map { it.currency to it.amount }) }
+    val totalPending = remember(invoices) { RegionalCurrency.formatTotals(invoices.filter { it.status == "Pending" }.map { it.currency to it.amount }) }
+    val totalPaid = remember(invoices) { RegionalCurrency.formatTotals(invoices.filter { it.status == "Paid" }.map { it.currency to it.amount }) }
 
     Scaffold(
         topBar = {
@@ -244,19 +241,19 @@ fun InvoicesListScreen(
                 InvoiceStatCard(
                     modifier = Modifier.weight(1f),
                     title = "Total Billed",
-                    amount = "R${String.format("%,.0f", totalBilled)}",
+                    amount = totalBilled,
                     accentColor = SoftBlue
                 )
                 InvoiceStatCard(
                     modifier = Modifier.weight(1f),
                     title = "Pending",
-                    amount = "R${String.format("%,.0f", totalPending)}",
+                    amount = totalPending,
                     accentColor = WarmAmber
                 )
                 InvoiceStatCard(
                     modifier = Modifier.weight(1f),
                     title = "Collected",
-                    amount = "R${String.format("%,.0f", totalPaid)}",
+                    amount = totalPaid,
                     accentColor = MintGreen
                 )
             }
@@ -549,7 +546,7 @@ private fun InvoiceItemCard(
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = formatZar(itm.lineTotal),
+                                    text = RegionalCurrency.format(itm.lineTotal, invoice.currency),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = DarkText
@@ -598,7 +595,7 @@ private fun InvoiceItemCard(
                             )
                         }
                         Text(
-                            text = formatZar(invoice.packagingTotal),
+                            text = RegionalCurrency.format(invoice.packagingTotal, invoice.currency),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = BatchPink
@@ -623,7 +620,7 @@ private fun InvoiceItemCard(
                         color = LightText
                     )
                     Text(
-                        text = "R${String.format("%,.2f", invoice.amount)}",
+                        text = "${RegionalCurrency.format(invoice.amount, invoice.currency)}",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkText

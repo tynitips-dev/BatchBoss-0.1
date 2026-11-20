@@ -1,0 +1,119 @@
+[
+  {
+    "name": "Weekly Pro",
+    "interval": "week",
+    "prices": {
+      "USD": 299,
+      "ZAR": 3999,
+      "GBP": 229,
+      "CAD": 449,
+      "AUD": 449,
+      "NZD": 499
+    }
+  },
+  {
+    "name": "Monthly Pro",
+    "interval": "month",
+    "prices": {
+      "USD": 1099,
+      "ZAR": 14900,
+      "GBP": 849,
+      "CAD": 1599,
+      "AUD": 1699,
+      "NZD": 1899
+    }
+  },
+  {
+    "name": "Annual Pro",
+    "interval": "year",
+    "prices": {
+      "USD": 8999,
+      "ZAR": 119900,
+      "GBP": 6999,
+      "CAD": 12999,
+      "AUD": 13999,
+      "NZD": 14999
+    }
+  },
+  {
+    "name": "Full Suite Monthly",
+    "interval": "month",
+    "prices": {
+      "USD": 1699,
+      "ZAR": 22000,
+      "GBP": 1299,
+      "CAD": 2499,
+      "AUD": 2599,
+      "NZD": 2899
+    }
+  },
+  {
+    "name": "Baker Finder Monthly",
+    "interval": "month",
+    "prices": {
+      "USD": 399,
+      "ZAR": 4900,
+      "GBP": 299,
+      "CAD": 549,
+      "AUD": 599,
+      "NZD": 649
+    }
+  },
+  {
+    "name": "Marketplace Listing",
+    "interval": "listing",
+    "prices": {
+      "USD": 149,
+      "ZAR": 2000,
+      "GBP": 119,
+      "CAD": 219,
+      "AUD": 249,
+      "NZD": 249
+    }
+  },
+  {
+    "name": "Supplier Directory",
+    "interval": "month",
+    "prices": {
+      "ZAR": 19900
+    }
+  },
+  {
+    "name": "Supplier Growth",
+    "interval": "month",
+    "prices": {
+      "ZAR": 39900
+    }
+  },
+  {
+    "name": "Supplier Featured",
+    "interval": "month",
+    "prices": {
+      "ZAR": 79900
+    }
+  },
+  {
+    "name": "Monthly Pro launch special",
+    "interval": "month",
+    "prices": {
+      "ZAR": 9900,
+      "USD": 749,
+      "GBP": 549,
+      "CAD": 1049,
+      "AUD": 1099,
+      "NZD": 1249
+    }
+  },
+  {
+    "name": "Annual Pro launch special",
+    "interval": "year",
+    "prices": {
+      "ZAR": 99000,
+      "USD": 7499,
+      "GBP": 5499,
+      "CAD": 10499,
+      "AUD": 10999,
+      "NZD": 12499
+    }
+  }
+]

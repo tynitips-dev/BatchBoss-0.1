@@ -8,6 +8,7 @@ on:
       - "web/**"
       - "admin-web/**"
       - "functions/**"
+      - "tests/**"
       - "firebase.json"
       - ".github/workflows/web-build.yml"
 
@@ -25,6 +26,10 @@ jobs:
       - name: Compile Firebase functions
         working-directory: functions
         run: npm run build
+      - name: Test payment verification and regional checkout
+        run: node --test tests/payment-core.cjs tests/paystack-flow.cjs tests/paddle-core.cjs tests/paddle-flow.cjs tests/legacy-billing.cjs tests/listing-region.cjs tests/international-signup.cjs
+      - name: Validate published listing browser script
+        run: node --check website/published-listings.js && node --check scripts/paddle-live-preflight.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest
@@ -33,8 +38,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Validate Firebase web configuration
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -54,11 +57,26 @@ jobs:
           test "$VITE_FIREBASE_PROJECT_ID" = "batch-boss-android" || { echo "Firebase project must be batch-boss-android"; exit 1; }
       - name: Install customer portal dependencies
         working-directory: web
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "No committed web package-lock.json; installing dependencies from package.json"
+            npm install --no-audit --no-fund
+          fi
+      - name: Test recipe costing and regional measurements
+        run: node --test tests/workspace-utils.cjs tests/recipe-measurements.cjs tests/international-foundation.cjs tests/invoice-pdf.cjs
       - name: Build customer portal
         working-directory: web
         run: npm run build
         env:
+          VITE_PADDLE_SANDBOX_ENABLED: ${{ vars.VITE_PADDLE_SANDBOX_ENABLED }}
+          VITE_PADDLE_CLIENT_TOKEN: ${{ vars.VITE_PADDLE_CLIENT_TOKEN }}
+          VITE_PADDLE_PRO_WEEK: ${{ vars.VITE_PADDLE_PRO_WEEK }}
+          VITE_PADDLE_PRO_MONTH: ${{ vars.VITE_PADDLE_PRO_MONTH }}
+          VITE_PADDLE_PRO_YEAR: ${{ vars.VITE_PADDLE_PRO_YEAR }}
+          VITE_PADDLE_LAUNCH_MONTH: ${{ vars.VITE_PADDLE_LAUNCH_MONTH }}
+          VITE_PADDLE_LAUNCH_YEAR: ${{ vars.VITE_PADDLE_LAUNCH_YEAR }}
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}

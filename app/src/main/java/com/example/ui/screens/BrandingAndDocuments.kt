@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.util.RegionalCurrency
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -435,7 +437,7 @@ fun SendableInvoiceDialog(
             appendLine("🎂 ORDER DETAILS:")
             appendLine("${invoice.orderDescription}")
             appendLine()
-            appendLine("💵 TOTAL AMOUNT DUE: R${String.format("%,.2f", invoice.amount)}")
+            appendLine("💵 TOTAL AMOUNT DUE: ${RegionalCurrency.format(invoice.amount, invoice.currency)}")
             appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             appendLine("🏦 BANKING DETAILS FOR PAYMENT:")
             appendLine("Bank: ${biz.bankName}")
@@ -576,7 +578,7 @@ fun SendableInvoiceDialog(
                         ) {
                             Text("Total Amount Due:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
                             Text(
-                                text = "R${String.format("%,.2f", invoice.amount)}",
+                                text = "${RegionalCurrency.format(invoice.amount, invoice.currency)}",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = BatchPink
@@ -767,21 +769,21 @@ fun SendableQuoteDialog(
                 appendLine("📦 LINE ITEMS:")
                 quote.items.forEach { item ->
                     val qtyStr = if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else item.quantity.toString()
-                    appendLine("• ${item.itemName} x$qtyStr (${item.unit}) @ R${String.format("%,.2f", item.unitPrice)} = R${String.format("%,.2f", item.lineTotal)}")
+                    appendLine("• ${item.itemName} x$qtyStr (${item.unit}) @ ${RegionalCurrency.format(item.unitPrice, quote.currency)} = ${RegionalCurrency.format(item.lineTotal, quote.currency)}")
                 }
                 appendLine()
-                if (quote.subtotal > 0) appendLine("Subtotal: R${String.format("%,.2f", quote.subtotal)}")
-                if (quote.discountAmount > 0) appendLine("Discount: -R${String.format("%,.2f", quote.discountAmount)}")
-                if (quote.taxAmount > 0) appendLine("VAT (15%): R${String.format("%,.2f", quote.taxAmount)}")
+                if (quote.subtotal > 0) appendLine("Subtotal: ${RegionalCurrency.format(quote.subtotal, quote.currency)}")
+                if (quote.discountAmount > 0) appendLine("Discount: -${RegionalCurrency.format(quote.discountAmount, quote.currency)}")
+                if (quote.taxAmount > 0) appendLine("Tax (${quote.taxRatePercent}%): ${RegionalCurrency.format(quote.taxAmount, quote.currency)}")
             } else {
                 appendLine("🎂 ITEM & SPECIFICATIONS:")
                 appendLine(quote.recipeOrItemName)
             }
             appendLine()
-            appendLine("💵 TOTAL ${quote.docType.uppercase()}: R${String.format("%,.2f", quote.quotedPrice)}")
+            appendLine("💵 TOTAL ${quote.docType.uppercase()}: ${RegionalCurrency.format(quote.quotedPrice, quote.currency)}")
             appendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             appendLine("📌 ACCEPTANCE & DEPOSIT INSTRUCTIONS:")
-            appendLine("A 50% deposit (R${String.format("%,.2f", quote.quotedPrice * 0.5)}) secures your order.")
+            appendLine("A 50% deposit (${RegionalCurrency.format(quote.quotedPrice * 0.5, quote.currency)}) secures your order.")
             appendLine("Bank: ${biz.bankName}")
             appendLine("Account: ${biz.accountNumber}")
             appendLine("Branch Code: ${biz.branchCode}")
@@ -928,7 +930,7 @@ fun SendableQuoteDialog(
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Text(
-                                                text = "R${String.format("%,.2f", item.lineTotal)}",
+                                                text = "${RegionalCurrency.format(item.lineTotal, quote.currency)}",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = DarkText
@@ -946,19 +948,19 @@ fun SendableQuoteDialog(
                                     if (quote.subtotal > 0) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text("Subtotal", fontSize = 11.sp, color = MediumText)
-                                            Text("R${String.format("%,.2f", quote.subtotal)}", fontSize = 11.sp, color = DarkText)
+                                            Text("${RegionalCurrency.format(quote.subtotal, quote.currency)}", fontSize = 11.sp, color = DarkText)
                                         }
                                     }
                                     if (quote.discountAmount > 0) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text("Discount", fontSize = 11.sp, color = MintGreen)
-                                            Text("-R${String.format("%,.2f", quote.discountAmount)}", fontSize = 11.sp, color = MintGreen)
+                                            Text("-${RegionalCurrency.format(quote.discountAmount, quote.currency)}", fontSize = 11.sp, color = MintGreen)
                                         }
                                     }
                                     if (quote.taxAmount > 0) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text("VAT (15%)", fontSize = 11.sp, color = MediumText)
-                                            Text("R${String.format("%,.2f", quote.taxAmount)}", fontSize = 11.sp, color = DarkText)
+                                            Text("${RegionalCurrency.format(quote.taxAmount, quote.currency)}", fontSize = 11.sp, color = DarkText)
                                         }
                                     }
                                 }
@@ -986,7 +988,7 @@ fun SendableQuoteDialog(
                         ) {
                             Text("Total ${quote.docType}:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DarkText)
                             Text(
-                                text = "R${String.format("%,.2f", quote.quotedPrice)}",
+                                text = "${RegionalCurrency.format(quote.quotedPrice, quote.currency)}",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = WarmAmber

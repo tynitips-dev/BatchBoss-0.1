@@ -43,3 +43,22 @@ test('older accounts gain last-platform metadata without inventing registration 
  const other=await account();await db.doc('users/'+other.uid).set({uid:other.uid,bakeryId:'other',role:'owner',subscriptionPlan:'free',subscriptionStatus:'free'});
  const cross=await commit(user,{lastLoginPlatform:string('android')},{uid:other.uid});assert.equal(cross.status,403);
 });
+
+async function bakeryCommit(user,bakeryId,fields,create=false){
+ return fetch(`http://${host}/v1/projects/${project}/databases/(default)/documents:commit`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${user.token}`},body:JSON.stringify({writes:[{update:{name:prefix+'bakeries/'+bakeryId,fields},...(create?{}:{updateMask:{fieldPaths:Object.keys(fields)}})}]})});
+}
+test('public workspace registration remains domestic and currency metadata cannot be relabelled',async()=>{
+ const user=await account(),bakeryId='region-'+user.uid;
+ const blocked=await bakeryCommit(user,bakeryId,{ownerUid:string(user.uid),currency:string('USD'),countryCode:string('US')},true);
+ assert.equal(blocked.status,403);
+ const mismatch=await bakeryCommit(user,bakeryId,{ownerUid:string(user.uid),currency:string('ZAR'),countryCode:string('US')},true);
+ assert.equal(mismatch.status,403);
+ const allowed=await bakeryCommit(user,bakeryId,{ownerUid:string(user.uid),currency:string('ZAR'),countryCode:string('ZA')},true);
+ assert.equal(allowed.status,200,await allowed.text());
+ await db.doc('users/'+user.uid).set({uid:user.uid,bakeryId,role:'owner',subscriptionPlan:'free',subscriptionStatus:'free'});
+ assert.equal((await bakeryCommit(user,bakeryId,{currency:string('USD')})).status,403);
+ assert.equal((await bakeryCommit(user,bakeryId,{countryCode:string('US')})).status,403);
+ const update=await bakeryCommit(user,bakeryId,{name:string('Updated bakery name')});
+ assert.equal(update.status,200,await update.text());
+ assert.equal((await db.doc('bakeries/'+bakeryId).get()).get('currency'),'ZAR');
+});
