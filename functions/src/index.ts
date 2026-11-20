@@ -96,6 +96,13 @@ export const listAccounts = onCall({ region: "europe-west1", invoker: "public" }
         subscriptionPlan: String(data.subscriptionPlan || "free"),
         subscriptionStatus: String(data.subscriptionStatus || "free"),
         subscriptionExpiresAt,
+        subscriptionSource: String(data.subscriptionSource || ""),
+        subscriptionBillingInterval: String(data.subscriptionBillingInterval || ""),
+        subscriptionOffer: String(data.subscriptionOffer || ""),
+        paddlePlan: String(data.paddlePlan || ""),
+        paddleSubscriptionStatus: String(data.paddleSubscriptionStatus || ""),
+        countryCode: String(bakeryData.countryCode || ""),
+        accountingCurrency: String(bakeryData.currency || ""),
         registrationPlatform: accountPlatform(data.registrationPlatform),
         lastLoginPlatform: accountPlatform(data.lastLoginPlatform),
         lastLoginPlatformAt: typeof data.lastLoginPlatformAt?.toDate === 'function'
