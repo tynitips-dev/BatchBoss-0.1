@@ -52,3 +52,7 @@ Launch prices use the approved six-country catalog. Standard prices remain the r
 ### Approved payment link
 
 The pricing page no longer creates unbound sample checkouts. It displays the catalog; only a verified signed-in account can resume an original server-created pending transaction via `resumePaddleCheckout`. The SDK never initializes automatically from an unvalidated `_ptxn`. Existing customers should use the provider-hosted customer portal for subscription management. Confirm the deployed approved URL `https://app.batchboss.co.za/pricing/` and real payment-link recovery before launch. Email verification controls are available in the international subscription screen.
+
+## Final preflight tool
+
+Run `node scripts/paddle-live-preflight.cjs functions/.env.batch-boss-android` with the required secrets and deployed webhook URL in the local process environment after compiling Firebase functions. See `docs/releases/global-owner-preflight.md`. This is a read-only check; it never creates or removes Paddle entities. The old sandbox-only public checkout has been superseded by authenticated payment-link recovery. Launch offers are gated pending confirmed terms. Public checkout and signup gates exist but remain false.

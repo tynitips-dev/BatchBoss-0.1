@@ -29,7 +29,7 @@ jobs:
       - name: Test payment verification and regional checkout
         run: node --test tests/payment-core.cjs tests/paystack-flow.cjs tests/paddle-core.cjs tests/paddle-flow.cjs tests/legacy-billing.cjs tests/listing-region.cjs tests/international-signup.cjs
       - name: Validate published listing browser script
-        run: node --check website/published-listings.js
+        run: node --check website/published-listings.js && node --check scripts/paddle-live-preflight.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest
