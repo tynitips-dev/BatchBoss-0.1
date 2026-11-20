@@ -113,6 +113,21 @@ function SetupNotice() {
 function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>(new URLSearchParams(location.search).has('signup') ? 'signup' : 'login')
   const [country,setCountry]=useState<LaunchCountry>(()=>{for(const language of navigator.languages||[navigator.language]){try{const code=new Intl.Locale(language).region;if(launchCountries.some(c=>c.code===code))return code as LaunchCountry}catch{/* invalid locale */}}return 'ZA'})
+  const countryEdited=useRef(false)
+  useEffect(()=>{
+    if(mode!=='signup'||countryEdited.current)return
+    const token=import.meta.env.VITE_PADDLE_CLIENT_TOKEN,priceId=import.meta.env.VITE_PADDLE_REGION_PRICE_ID
+    if(typeof token!=='string'||!token.startsWith('live_')||typeof priceId!=='string'||!/^pri_[a-z0-9]{26}$/.test(priceId))return
+    let active=true
+    void import('@paddle/paddle-js').then(({initializePaddle})=>initializePaddle({token})).then(async client=>{
+      if(!client)return
+      const preview=await client.PricePreview({items:[{priceId,quantity:1}]})
+      const result=preview.data as unknown as {address?:{countryCode?:string};details?:{address?:{countryCode?:string}}}
+      const code=result.address?.countryCode??result.details?.address?.countryCode
+      if(active&&!countryEdited.current&&launchCountries.some(c=>c.code===code))setCountry(code as LaunchCountry)
+    }).catch(()=>{/* browser regional suggestion remains available */})
+    return()=>{active=false}
+  },[mode])
   const regional=regionalRegistration(country)!
   const [internationalCountries,setInternationalCountries]=useState<string[]>([])
   const signupEnabled=regional.registrationEnabled||signupPlatform(location.search)==='web'&&internationalCountries.includes(country)
@@ -200,7 +215,7 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           <label>First name<input name="firstName" required /></label>
           <label>Surname<input name="surname" required /></label>
         </div>}
-        {mode === 'signup' && <><label>Bakery name<input name="bakeryName" required /></label><label>Business country<select value={country} onChange={e=>setCountry(e.target.value as LaunchCountry)}>{launchCountries.map(c=><option key={c.code} value={c.code}>{c.name}</option>)}</select></label><p className="regional-signup-summary">Currency: {regional.currency} · {regional.measurementSystem==='us'?'US customary':'Metric'} · °{regional.temperatureUnit}</p>{!signupEnabled&&<p className="warning-note" role="status">This country is planned for BatchBoss Global. Registration is not yet open for this region.</p>}</>}
+        {mode === 'signup' && <><label>Bakery name<input name="bakeryName" required /></label><label>Confirm your business country<select value={country} onChange={e=>{countryEdited.current=true;setCountry(e.target.value as LaunchCountry)}}>{launchCountries.map(c=><option key={c.code} value={c.code}>{c.name}</option>)}</select></label><p className="regional-signup-summary">Currency: {regional.currency} · {regional.measurementSystem==='us'?'US customary':'Metric'} · °{regional.temperatureUnit}</p>{!signupEnabled&&<p className="warning-note" role="status">This country is planned for BatchBoss Global. Registration is not yet open for this region.</p>}</>}
         <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
         <label>Password<input name="password" type="password" minLength={8} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required /></label>
         {error && <div className="error-message">{error}</div>}
