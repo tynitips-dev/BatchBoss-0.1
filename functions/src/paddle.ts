@@ -420,6 +420,31 @@ export const paddleWebhook=onRequest({region:'europe-west1',invoker:'public',sec
  catch{res.status(500).send('Webhook processing failed');}
 });
 
+// Only server-created pending transactions owned by this authenticated account can
+// be resumed through Paddle's approved default payment link. Never open a raw _ptxn.
+export const resumePaddleCheckout=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
+ if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in to the account that started checkout.');
+ const uid=request.auth.uid,m=mode(),transactionId=request.data?.transactionId;
+ if(!id(transactionId,'txn')||!checkoutReady(uid,m))throw new HttpsError('failed-precondition','Checkout is not available.');
+ const region=await accountRegion(uid);
+ if(!region||region.provider!=='paddle')throw new HttpsError('failed-precondition','Checkout is unavailable in this region.');
+ const db=getFirestore(),base=db.collection('paddleBilling').doc(m);
+ const [subscription,listing]=await Promise.all([base.collection('checkoutIntents').doc(transactionId).get(),base.collection('marketplaceIntents').doc(transactionId).get()]);
+ if(subscription.exists===listing.exists)throw new HttpsError('permission-denied','This checkout is not linked to your account.');
+ const intent=(subscription.exists?subscription:listing).data()!;
+ if(intent.uid!==uid||intent.status!=='pending'||intent.country!==region.country||intent.currency!==region.currency||!id(intent.customerId,'ctm'))throw new HttpsError('permission-denied','This checkout is not available for your account.');
+ const owner=(await base.collection('customerBindings').doc(intent.customerId).get()).data();
+ if(owner?.uid!==uid)throw new HttpsError('permission-denied','Checkout ownership could not be verified.');
+ // Re-run the relevant gated options check; a withdrawn launch offer cannot be reopened.
+ if(subscription.exists){
+  const plan=intent.plan;if(!isCheckoutPlan(plan)&&!isLaunchOffer(plan))throw new HttpsError('failed-precondition','Subscription requires review.');
+  const sale=salePlan(plan,region);
+  if(!sale||sale.mapped.priceId!==intent.priceId||sale.amount!==intent.amount||sale.promo&&sale.promo.discountId!==intent.discountId)throw new HttpsError('failed-precondition','Subscription offer has changed. Contact support.');
+ }else if(!validListingId(intent.listingId)||!marketplaceConfig(uid,m,region))throw new HttpsError('failed-precondition','Listing checkout is unavailable.');
+ const remote=await paddleApi(m,'/transactions/'+transactionId);
+ if(remote.id!==transactionId||remote.customer_id!==intent.customerId||remote.currency_code!==intent.currency||!['draft','ready'].includes(str(remote.status)))throw new HttpsError('failed-precondition','The payment is no longer open. Check your subscription or listing status.');
+ return {transactionId,customerId:intent.customerId,country:region.country,token:checkoutToken.value(),environment:m,listingId:listing.exists?intent.listingId:null};
+});
 export const createPaddlePortalSession=onCall({region:'europe-west1',invoker:'public',secrets:[apiKey]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
  if(portalEnabled.value()!=='true')throw new HttpsError('failed-precondition','Paddle account management is not enabled.');

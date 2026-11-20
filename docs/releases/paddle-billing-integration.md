@@ -48,3 +48,7 @@ One-off Marketplace fees now have a distinct price configuration and checkout ca
 ### International launch offers
 
 Launch prices use the approved six-country catalog. Standard prices remain the recurring products; fixed, currency-specific Paddle discounts must match the price difference, exact standard price, campaign expiry and finite billing period count. Annual offer is one paid year, monthly count must be explicitly confirmed (one-month campaign availability is not a billing period count). No automatic indefinite promotional renewals. The first charge after any trial receives the discount, and the verified standard price resumes after the configured periods. UI displays renewal price and requires consent. Disabled by default; no remote discounts or products created. Do not configure a promo price as a standard price. Confirm discount eligibility and actual checkout behavior before turning on the offer. Existing local Paystack terms remain unchanged.
+
+### Approved payment link
+
+The pricing page no longer creates unbound sample checkouts. It displays the catalog; only a verified signed-in account can resume an original server-created pending transaction via `resumePaddleCheckout`. The SDK never initializes automatically from an unvalidated `_ptxn`. Existing customers should use the provider-hosted customer portal for subscription management. Confirm the deployed approved URL `https://app.batchboss.co.za/pricing/` and real payment-link recovery before launch. Email verification controls are available in the international subscription screen.

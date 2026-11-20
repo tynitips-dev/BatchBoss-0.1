@@ -56,6 +56,8 @@ global.fetch=async(url,opts)=>{
  else if(path==='/prices/'+ids.market)data={id:ids.market,product_id:ids.marketProduct,status:'active',billing_cycle:null,trial_period:null,unit_price:{amount:'149',currency_code:'USD'},unit_price_overrides:[{country_codes:['GB'],unit_price:{amount:'119',currency_code:'GBP'}}]};
  else if(path==='/customers'){assert.equal(JSON.parse(opts.body).email,'fixture@example.com');data={id:ids.customer}}
  else if(path==='/transactions'){const body=JSON.parse(opts.body);assert.equal(body.customer_id,ids.customer);assert.equal(body.currency_code,'GBP');assert.deepEqual(body.items,[{price_id:checkoutPlan==='marketplace'?ids.market:checkoutPlan==='finder'?ids.finder:checkoutPlan==='full_suite'?ids.suite:ids.monthly,quantity:1}]);data={id:checkoutPlan==='marketplace'?ids.marketTxn:ids.txn,customer_id:ids.customer,currency_code:'GBP'}}
+ else if(path==='/transactions/'+ids.txn)data={id:ids.txn,customer_id:ids.customer,currency_code:'GBP',status:'ready'};
+ else if(path==='/transactions/'+ids.marketTxn)data={id:ids.marketTxn,customer_id:ids.customer,currency_code:'GBP',status:'ready'};
  else if(path==='/customers/'+ids.customer+'/addresses/'+ids.address)data={id:ids.address,customer_id:ids.customer,country_code:addressCountry};
  else throw Error('Unexpected fixture API path '+path);
  return {ok:true,json:async()=>({data})};
@@ -206,3 +208,5 @@ test('Marketplace is independently gated and cannot sell a nonexistent, relabell
  reset();await assert.rejects(beginListing,e=>e.code==='failed-precondition');seedListing();set(ws+'drafts/'+listingId,{...records.get(ws+'drafts/'+listingId),countryCode:'US',currency:'USD'});await assert.rejects(beginListing,e=>e.code==='failed-precondition');seedListing();set(ws+'publications/'+listingId,{status:'published'});await assert.rejects(beginListing,e=>e.code==='failed-precondition');
  assert.equal(requests.some(([url])=>url.endsWith('/transactions')),false);
 });
+
+test('approved payment URL can only resume a server-owned pending transaction',async()=>{reset();await begin();const data=await api.resumePaddleCheckout(request('baker1',{transactionId:ids.txn}));assert.equal(data.transactionId,ids.txn);assert.equal(data.customerId,ids.customer);await assert.rejects(api.resumePaddleCheckout(request('baker1',{transactionId:ids.marketTxn})),e=>e.code==='permission-denied');await assert.rejects(api.resumePaddleCheckout(request('other',{transactionId:ids.txn})));const intent=records.get(root()+'checkoutIntents/'+ids.txn);intent.status='linked';await assert.rejects(api.resumePaddleCheckout(request('baker1',{transactionId:ids.txn})),e=>e.code==='permission-denied');});
