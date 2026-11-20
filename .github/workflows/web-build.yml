@@ -26,7 +26,7 @@ jobs:
         working-directory: functions
         run: npm run build
       - name: Test payment verification and regional checkout
-        run: node --test tests/payment-core.cjs tests/paystack-flow.cjs
+        run: node --test tests/payment-core.cjs tests/paystack-flow.cjs tests/paddle-core.cjs
 
   build-customer-portal:
     runs-on: ubuntu-latest
