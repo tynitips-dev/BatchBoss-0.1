@@ -38,7 +38,7 @@ const user=()=>records.get('users/baker1');
 const set=(path,data)=>records.set(path,clone(data));
 const request=(uid='baker1',data={})=>({auth:{uid,token:{firebase:{sign_in_provider:'password'}}},data});
 const price=(annual=false)=>({id:annual?ids.annual:ids.monthly,product_id:ids.product,billing_cycle:{interval:annual?'year':'month',frequency:1}});
-const item=(annual=false)=>({quantity:1,price:price(annual)});
+const item=(annual=false)=>({quantity:1,price:{...price(annual),status:'active',tax_mode:'account_setting',unit_price:{amount:annual?'6999':'849',currency_code:'GBP'},quantity:{minimum:1,maximum:1},unit_price_overrides:[]}});
 const plus=(days)=>new Date(Date.now()+days*86400000).toISOString();
 const future=plus(7),renewal=plus(37);
 let seq=0,requests=[],addressCountry='GB';
