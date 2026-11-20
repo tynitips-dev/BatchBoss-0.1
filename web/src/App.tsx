@@ -1,3 +1,4 @@
+import {trackMeta} from './metaPixel'
 import DecimalInput from './DecimalInput'
 import {downloadInvoicePdf,openInvoicePdf,shareInvoicePdf} from './invoicePdf'
 import BakeryRegion, { useBakeryRegion } from './BakeryRegion'
@@ -165,7 +166,8 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           throw reason
         })
         if(country!=='ZA'){
-          await httpsCallable(getFunctions(app,'europe-west1'),'createInternationalWorkspace')({country,bakeryName,firstName,surname})
+          const result=await httpsCallable<unknown,{created:boolean}>(getFunctions(app,'europe-west1'),'createInternationalWorkspace')({country,bakeryName,firstName,surname})
+          if(result.data.created)trackMeta('CompleteRegistration',{status:'completed'})
           return
         }
         const uid = credential.user.uid
@@ -189,6 +191,7 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           uid, email, role: 'owner', joinedAt: serverTimestamp(),
         })
         await batch.commit()
+        trackMeta('CompleteRegistration',{status:'completed'})
       }
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Something went wrong.'
