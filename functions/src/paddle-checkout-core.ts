@@ -57,7 +57,7 @@ export function remotePriceMatches(remote:any,expected:{priceId:string;productId
  return unit?.currency_code===expected.currency&&unit.amount===String(expected.amount);
 }
 export function isFreeCheckoutProfile(p:any):boolean {
- return !!p&&p.subscriptionPlan==='free'&&p.subscriptionStatus==='free'&&!p.subscriptionSource&&!p.paystackSubscriptionCode&&!p.paddleSubscriptionId;
+ return !!p&&p.subscriptionPlan==='free'&&p.subscriptionStatus==='free'&&!p.subscriptionSource&&!p.paystackSubscriptionCode&&!p.paddleSubscriptionId&&!p.payfastToken;
 }
 export function completedMatches(data:any,expected:any):boolean {
  const item=Array.isArray(data?.items)&&data.items.length===1?data.items[0]:null;

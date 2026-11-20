@@ -28,3 +28,7 @@ These commands are for the owner to run when the corresponding environment and r
 ### Lifecycle regression checks
 
 `tests/paddle-flow.cjs` exercises the real SDK signature verifier and the callable/webhook handlers with isolated Firestore and HTTP fixtures. It covers both first-purchase event orders, renewals, price changes, scheduled/immediate cancellation, failed payment recovery, stale events, duplicate webhooks, sandbox isolation, country and ownership mismatches, and checkout replay. The CI workflow runs these tests alongside the existing Paystack tests. These are simulated provider and database flows; they do not verify live Paddle, actual Firestore permissions, or real payment delivery.
+
+### PayFast retirement consolidation
+
+The older checkout callables now reject new sales; the previous PR #72's legacy notification, transaction deduplication, status, cancellation, expiry and receipt handling are retained. Pending and historical billing must never overwrite a different provider's access. The signed-in legacy PayFast view supports status and confirmed cancellation; unlinked historical tokens need support reconciliation. No provider records are deleted. The admin checkout tester was already absent in this branch. Verify historical PayFast secret availability (including sandbox notification secrets if that endpoint was previously used), legacy ownership records and receipt delivery in staging before any deployment. No live settings changed.

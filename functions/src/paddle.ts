@@ -139,8 +139,8 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
  // A pending transaction may still be payable. Never expire the lock on a timer.
  // Failed/ambiguous provider calls require explicit reconciliation, not a second purchase.
  const previous=await db.runTransaction(async tx=>{
-  const [p,l,ps,a]=await Promise.all([tx.get(profile),tx.get(lock),tx.get(db.doc('paystackCheckouts/'+uid)),tx.get(base.collection('accountBindings').doc(uid))]);
-  if(!isFreeCheckoutProfile(p.data())||ps.exists||a.exists)throw new HttpsError('failed-precondition','Manage existing billing with support before opening a new checkout.');
+  const [p,l,ps,a,pf]=await Promise.all([tx.get(profile),tx.get(lock),tx.get(db.doc('paystackCheckouts/'+uid)),tx.get(base.collection('accountBindings').doc(uid)),tx.get(db.doc('payfastCheckouts/'+uid))]);
+  if(!isFreeCheckoutProfile(p.data())||ps.exists||a.exists||pf.exists)throw new HttpsError('failed-precondition','Manage existing billing with support before opening a new checkout.');
   const old=l.data();
   if(old){
    if(old.plan===plan&&old.status==='ready'&&id(old.transactionId,'txn'))return {transactionId:old.transactionId as string,customerId:old.customerId as string};
