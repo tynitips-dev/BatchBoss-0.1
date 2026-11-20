@@ -357,6 +357,16 @@ function projectSubscription(tx:FirebaseFirestore.Transaction,profileRef:Firebas
   tx.set(getFirestore().doc('listingEntitlements/'+profileRef.id),{paddleSubscriptionId:entityId,paddleCountryCode:region!.country,paddleCurrency:region!.currency,paddleFinderExpiresAt:active&&rights.finder?expires:new Date(0),paddleSuiteExpiresAt:active&&rights.suite?expires:new Date(0),updatedAt:FieldValue.serverTimestamp()},{merge:true});
  }
 }
+// Accounting region is immutable; verified billing country may differ for Pro-only subscriptions.
+// Listing entitlements retain the stricter regional requirement.
+function completionCountryAllowed(country:string|null,intent:Json):boolean{
+ return typeof country==='string'&&/^[A-Z]{2}$/.test(country)&&(country===intent.country||['weekly','monthly','annual','monthly_launch','annual_launch'].includes(str(intent.plan)));
+}
+async function verifiedBillingCountry(m:Mode,data:Json):Promise<string|null>{
+ if(!id(data.customer_id,'ctm')||!id(data.address_id,'add'))return null;
+ const address=await paddleApi(m,'/customers/'+data.customer_id+'/addresses/'+data.address_id);
+ return address.id===data.address_id&&address.customer_id===data.customer_id?str(address.country_code):null;
+}
 // All binding records are created by trusted server-side checkout reconciliation,
 // never from a webhook email or client-supplied custom data. No binding = mirror only.
 async function applyEvent(m:Mode,e:Event){
@@ -401,7 +411,7 @@ async function applyEvent(m:Mode,e:Event){
    const intentRef=base.collection('checkoutIntents').doc(entityId),intent=(await tx.get(intentRef)).data();
    if(intent&&intent.status==='pending'){
     const uid=intent.uid,customerId=intent.customerId,subId=e.data.subscription_id;
-    if(!completedMatches(e.data,intent)||completedCountry!==intent.country||typeof uid!=='string'||!uid||uid.includes('/')||!id(customerId,'ctm')||!id(subId,'sub')){
+    if(!completedMatches(e.data,intent)||!completionCountryAllowed(completedCountry,intent)||typeof uid!=='string'||!uid||uid.includes('/')||!id(customerId,'ctm')||!id(subId,'sub')){
      tx.update(intentRef,{status:'review',reason:'provider-completion-mismatch',updatedAt:FieldValue.serverTimestamp()});
     }else{
      const ownerRef=base.collection('customerBindings').doc(customerId),accountRef=base.collection('accountBindings').doc(uid),subRef=base.collection('subscriptionBindings').doc(subId),lockRef=base.collection('checkoutLocks').doc(uid),userRef=db.collection('users').doc(uid);
@@ -411,8 +421,8 @@ async function applyEvent(m:Mode,e:Event){
       tx.update(intentRef,{status:'review',reason:'ownership-conflict',updatedAt:FieldValue.serverTimestamp()});
      }else{
       tx.create(accountRef,{uid,customerId,subscriptionId:subId,createdAt:FieldValue.serverTimestamp()});
-      tx.create(subRef,{uid,customerId,transactionId:entityId,country:intent.country,currency:intent.currency,createdAt:FieldValue.serverTimestamp()});
-      tx.update(intentRef,{status:'linked',subscriptionId:subId,updatedAt:FieldValue.serverTimestamp()});
+      tx.create(subRef,{uid,customerId,transactionId:entityId,country:intent.country,billingCountry:completedCountry,currency:intent.currency,createdAt:FieldValue.serverTimestamp()});
+      tx.update(intentRef,{status:'linked',subscriptionId:subId,billingCountry:completedCountry,reason:FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
       tx.update(lockRef,{status:'linked',subscriptionId:subId});
       if(mirrored){
        projectSubscription(tx,userRef,obj(user.data()),subId,mirrored as ReturnType<typeof subscriptionSnapshot>,prices,liveProvision,obj(intent));
@@ -450,6 +460,44 @@ export const paddleWebhook=onRequest({region:'europe-west1',invoker:'public',sec
  }catch{res.status(400).send('Webhook verification failed');return;}
  try{await applyEvent(m,e);res.status(200).send('OK');}
  catch{res.status(500).send('Webhook processing failed');}
+});
+
+// Recover a paid subscription from authoritative Paddle data, not a client receipt.
+// The original lock and ownership bindings remain mandatory; no payment is created.
+export const recoverPaddlePayment=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
+ if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
+ const uid=request.auth.uid,m=mode(),db=getFirestore(),base=db.collection('paddleBilling').doc(m);
+ if(m!=='live'||provisionEnabled.value()!=='true')throw new HttpsError('failed-precondition','Live payment recovery is unavailable.');
+ const lockRef=base.collection('checkoutLocks').doc(uid),lock=(await lockRef.get()).data();
+ if(!lock||!id(lock.transactionId,'txn'))throw new HttpsError('failed-precondition','No existing checkout found.');
+ const transactionId=lock.transactionId,intentRef=base.collection('checkoutIntents').doc(transactionId),intent=(await intentRef.get()).data();
+ if(!intent||intent.uid!==uid||lock.uid!==uid||!id(intent.customerId,'ctm'))throw new HttpsError('permission-denied','Payment ownership could not be verified.');
+ if(intent.status==='linked')return {status:'linked'};
+ if(!(intent.status==='pending'||intent.status==='review'&&intent.reason==='provider-completion-mismatch'))throw new HttpsError('failed-precondition','This payment requires billing support.');
+ const remote=await paddleApi(m,'/transactions/'+transactionId);
+ if(!completedMatches(remote,intent)||!id(remote.subscription_id,'sub'))throw new HttpsError('failed-precondition','A completed payment matching this checkout was not confirmed.');
+ const country=await verifiedBillingCountry(m,remote);
+ if(!completionCountryAllowed(country,intent))throw new HttpsError('failed-precondition','Billing region requires review.');
+ const subId=remote.subscription_id,customerId=intent.customerId,subscription=await paddleApi(m,'/subscriptions/'+subId),prices=config(),snapshot=subscriptionSnapshot(subscription),mapped=mappedPaddlePrice({items:snapshot.items},prices);
+ if(subscription.id!==subId||snapshot.customerId!==customerId||subscription.currency_code!==intent.currency||!mapped||!Array.isArray(subscription.items)||obj(obj(subscription.items[0]).price).id!==intent.priceId||!grantsPaddleAccess(snapshot.status,snapshot.expiresAtMs))throw new HttpsError('failed-precondition','An active matching subscription was not confirmed.');
+ const ownerRef=base.collection('customerBindings').doc(customerId),accountRef=base.collection('accountBindings').doc(uid),subRef=base.collection('subscriptionBindings').doc(subId),profileRef=db.collection('users').doc(uid),mirrorRef=base.collection('subscriptions').doc(subId);
+ await db.runTransaction(async tx=>{
+  const [l,i,o,a,b,p,mirror,ps,pf]=await Promise.all([tx.get(lockRef),tx.get(intentRef),tx.get(ownerRef),tx.get(accountRef),tx.get(subRef),tx.get(profileRef),tx.get(mirrorRef),tx.get(db.doc('paystackCheckouts/'+uid)),tx.get(db.doc('payfastCheckouts/'+uid))]);
+  const current=i.data(),profile=p.data(),mirrored=mirror.data();
+  if(current?.status==='linked'&&a.data()?.subscriptionId===subId&&b.data()?.uid===uid)return;
+  if(!current||current.uid!==uid||current.customerId!==customerId||current.priceId!==intent.priceId||current.country!==intent.country||current.plan!==intent.plan||!completedMatches(remote,current)||!completionCountryAllowed(country,current)||!(current.status==='pending'||current.status==='review'&&current.reason==='provider-completion-mismatch')||l.data()?.uid!==uid||l.data()?.transactionId!==transactionId||l.data()?.status!=='ready'||o.data()?.uid!==uid||a.exists||b.exists||ps.exists||pf.exists||!isFreeCheckoutProfile(profile)||typeof profile?.bakeryId!=='string'||profile.bakeryId.includes('/'))throw new HttpsError('failed-precondition','Payment ownership or billing status changed; contact support.');
+  const bakery=(await tx.get(db.doc('bakeries/'+profile.bakeryId))).data(),region=paymentRegion(bakery);
+  if(bakery?.ownerUid!==uid||region?.country!==current.country||region?.currency!==current.currency)throw new HttpsError('failed-precondition','Bakery region changed; contact support.');
+  // Prefer a newer webhook snapshot over an API snapshot fetched before this transaction.
+  const latest=mirrored&&providerEventClock(mirrored.updatedAt)>providerEventClock(snapshot.updatedAt)?mirrored as ReturnType<typeof subscriptionSnapshot>:snapshot;
+  if(latest.customerId!==customerId||!grantsPaddleAccess(latest.status,latest.expiresAtMs)||!mappedPaddlePrice({items:latest.items},prices)||obj(obj(latest.items[0]).price).id!==current.priceId)throw new HttpsError('failed-precondition','Subscription status changed; contact support.');
+  tx.create(accountRef,{uid,customerId,subscriptionId:subId,createdAt:FieldValue.serverTimestamp()});
+  tx.create(subRef,{uid,customerId,transactionId,country:current.country,billingCountry:country,currency:current.currency,createdAt:FieldValue.serverTimestamp()});
+  tx.update(intentRef,{status:'linked',subscriptionId:subId,billingCountry:country,reason:FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
+  tx.update(lockRef,{status:'linked',subscriptionId:subId});
+  projectSubscription(tx,profileRef,obj(profile),subId,latest,prices,true,obj(current));
+ });
+ return {status:'linked'};
 });
 
 // Only server-created pending transactions owned by this authenticated account can
