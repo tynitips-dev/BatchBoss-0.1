@@ -77,6 +77,22 @@ export const getPaystackPlans=onCall(options,async request=>{
  const locked=!!(p?.subscriptionSource==='paddle'||p?.paddleSubscriptionId||p?.payfastToken||p?.subscriptionSource==='payfast'||ent?.directorySubscriptionCode||ent?.directoryPaymentReference||(ent?.directoryListingExpiresAt?.toMillis?.()??0)>Date.now());
  return {enabled:true,billingCurrency:'ZAR',international:route.international,testMode:mode()==='test',monthly:149,annual:1199,listingPlans:{weekly:local&&!locked&&weeklyEnabled.value()==='true',directory_listing:local&&!locked&&!p?.paystackSubscriptionCode&&p?.subscriptionStatus==='free'&&directoryListingEnabled.value()==='true',full_suite:local&&!locked&&fullSuiteEnabled.value()==='true'},directoryManagementAvailable:local&&!!ent?.directorySubscriptionCode,monthlyLaunchOffer:{enabled:local&&promotionEnabled('monthly_launch'),amount:99,maxPayments:2,automaticStandardRenewal:false},annualLaunchOffer:{enabled:local&&promotionEnabled('annual_launch'),amount:990,maxPayments:1,automaticStandardRenewal:false}};
 });
+// Hosted Paystack links do not expose a documented server-side invalidation operation.
+// Preserve unresolved references rather than risk duplicate recurring charges.
+export const recoverPaystackCheckout=onCall(options,async request=>{
+ const uid=uidOf(request),lockRef=db().doc('paystackCheckouts/'+uid),lock=(await lockRef.get()).data();
+ if(!lock||lock.completedAt)return {status:'none'};
+ const reference=String(lock.reference||'');
+ if(!/^BB-[0-9a-f-]{36}$/.test(reference))return {status:'review'};
+ const expected=(await db().doc('subscriptionPayments/'+reference).get()).data();
+ if(!expected||expected.uid!==uid||expected.provider!=='paystack'||expected.domain!==mode())return {status:'review'};
+ const remote=await api('/transaction/verify/'+encodeURIComponent(reference));
+ if(remote.reference!==reference||remote.domain!==expected.domain)return {status:'review'};
+ if(remote.status==='success'){await settle(reference,uid);return {status:'success'};}
+ const current=(await lockRef.get()).data();
+ if(current?.reference!==reference||current.completedAt)return {status:'review'};
+ return {status:'pending',...(typeof current.checkoutUrl==='string'?{checkoutUrl:safeLink(current.checkoutUrl,'checkout.paystack.com')}: {})};
+});
 export const createPaystackCheckout=onCall(options,async request=>{
  const uid=uidOf(request);if(enabled.value()!=='true')throw new HttpsError('failed-precondition','Paystack checkout is not enabled yet.');
  const route=await checkoutRoute(uid);
