@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import {listingRegion,sameListingRegion,listingPermissions} from './listingRegion';
 import {marketplaceFees,validListingId,oneOffPriceMatches,marketplaceCompleted} from './paddle-marketplace-core';
+import {isLaunchOffer,baseLaunchPlan,launchConfig,launchDiscountMatches,SalePlan} from './paddle-launch-core';
 import {getAuth} from 'firebase-admin/auth';
 import {paymentRegion,standardPlans,checkoutAmount,isCheckoutPlan,isFreeCheckoutProfile,remotePriceMatches,completedMatches,configuredCheckoutPlan,planRights,CheckoutPlan} from './paddle-checkout-core';
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
@@ -22,6 +23,8 @@ const listingSubscriptionsEnabled=defineString('PADDLE_LISTING_SUBSCRIPTIONS_ENA
 const marketplaceEnabled=defineString('PADDLE_MARKETPLACE_ENABLED',{default:'false'});
 const marketplacePrice=defineString('PADDLE_MARKETPLACE_PRICE_ID',{default:''});
 const marketplaceProduct=defineString('PADDLE_MARKETPLACE_PRODUCT_ID',{default:''});
+const launchEnabled=defineString('PADDLE_LAUNCH_ENABLED',{default:'false'});
+const launchMap=defineString('PADDLE_LAUNCH_DISCOUNT_MAP',{default:'{}'});
 const priceMap=defineString('PADDLE_PRO_PRICE_MAP',{default:'{}'});
 
 type Mode='sandbox'|'live';
@@ -154,26 +157,37 @@ function planPrice(plan:CheckoutPlan){
  const entries=Object.entries(config()).filter(([,price])=>configuredCheckoutPlan(price)===plan);
  return entries.length===1?{priceId:entries[0][0],...entries[0][1]}:null;
 }
+function salePlan(plan:SalePlan,route:NonNullable<ReturnType<typeof paymentRegion>>){
+ const base=isLaunchOffer(plan)?baseLaunchPlan(plan):plan;
+ const mapped=planPrice(base),regular=checkoutAmount(base,route.currency);
+ if(!mapped||regular===undefined)return null;
+ const promo=isLaunchOffer(plan)&&launchEnabled.value()==='true'?launchConfig(launchMap.value(),plan,route.country,route.currency):null;
+ if(isLaunchOffer(plan)&&!promo)return null;
+ return {mapped,amount:promo?.amount??regular,regular,promo};
+}
 export const getPaddleCheckoutOptions=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
  const uid=request.auth.uid,m=mode(),route=await accountRegion(uid);
  if(!route||route.provider!=='paddle'||!checkoutReady(uid,m))return {enabled:false,plans:[]};
- const plans=(['weekly','monthly','annual','finder','full_suite'] as const).filter(p=>planPrice(p)).map(p=>({plan:p,amount:checkoutAmount(p,route.currency),currency:route.currency}));
+ const plans=(['weekly','monthly','annual','finder','full_suite','monthly_launch','annual_launch'] as const).flatMap(plan=>{const sale=salePlan(plan,route);return sale?[{plan,amount:sale.amount,currency:route.currency,...(sale.promo?{regularAmount:sale.regular,periods:sale.promo.periods,endsAt:sale.promo.endsAt}: {})}]:[]});
  return {enabled:plans.length>0,plans,environment:m};
 });
 export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
  const uid=request.auth.uid,m=mode(),plan:unknown=request.data?.plan;
  if(!checkoutReady(uid,m))throw new HttpsError('failed-precondition','Paddle checkout is not enabled for this account.');
- if(!isCheckoutPlan(plan))throw new HttpsError('invalid-argument','Choose an available BatchBoss subscription.');
+ if(!isCheckoutPlan(plan)&&!isLaunchOffer(plan))throw new HttpsError('invalid-argument','Choose an available BatchBoss subscription.');
  const route=await accountRegion(uid);
  if(!route||route.provider!=='paddle')throw new HttpsError('failed-precondition','Use your local subscription checkout.');
- const mapped=planPrice(plan),amount=checkoutAmount(plan,route.currency);
- if(!mapped||amount===undefined)throw new HttpsError('failed-precondition','This regional plan is not configured.');
+ const sale=salePlan(plan,route);
+ if(!sale)throw new HttpsError('failed-precondition','This regional plan is not configured.');
+ const {mapped,amount,regular,promo}=sale;
+ if(promo&&request.data?.launchTermsAccepted!==true)throw new HttpsError('invalid-argument','Accept the launch renewal terms before continuing.');
  const currentUser=await getAuth().getUser(uid);
  if(!currentUser.email||!currentUser.emailVerified||currentUser.disabled)throw new HttpsError('failed-precondition','Verify your account email before subscribing.');
  const remote=await paddleApi(m,'/prices/'+mapped.priceId);
- if(!remotePriceMatches(remote,{...mapped,country:route.country,currency:route.currency,amount}))throw new HttpsError('failed-precondition','Paddle price does not match the regional catalog.');
+ if(!remotePriceMatches(remote,{...mapped,country:route.country,currency:route.currency,amount:regular}))throw new HttpsError('failed-precondition','Paddle price does not match the regional catalog.');
+ if(promo&&!launchDiscountMatches(await paddleApi(m,'/discounts/'+promo.discountId),promo,mapped.priceId))throw new HttpsError('failed-precondition','Launch discount or renewal terms do not match the approved offer.');
  const db=getFirestore(),base=db.collection('paddleBilling').doc(m),lock=base.collection('checkoutLocks').doc(uid),profile=db.collection('users').doc(uid);
  // A pending transaction may still be payable. Never expire the lock on a timer.
  // Failed/ambiguous provider calls require explicit reconciliation, not a second purchase.
@@ -182,22 +196,22 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   if(!isFreeCheckoutProfile(p.data())||ps.exists||a.exists||pf.exists||directoryAccess.data()?.directorySubscriptionCode||directoryAccess.data()?.directoryPaymentReference)throw new HttpsError('failed-precondition','Manage existing billing with support before opening a new checkout.');
   const old=l.data();
   if(old){
-   if(old.plan===plan&&old.status==='ready'&&id(old.transactionId,'txn'))return {transactionId:old.transactionId as string,customerId:old.customerId as string};
+   if(old.plan===plan&&old.status==='ready'&&id(old.transactionId,'txn')&&(!promo||old.discountId===promo.discountId&&old.amount===amount&&old.periods===promo.periods&&old.endsAt===promo.endsAt))return {transactionId:old.transactionId as string,customerId:old.customerId as string};
    throw new HttpsError('failed-precondition','A payment attempt is already linked. Contact support before opening another.');
   }
-  tx.create(lock,{uid,plan,status:'creating',country:route.country,currency:route.currency,createdAt:FieldValue.serverTimestamp()});
+  tx.create(lock,{uid,plan,status:'creating',country:route.country,currency:route.currency,...(promo?{discountId:promo.discountId,amount,periods:promo.periods,endsAt:promo.endsAt}:{}),createdAt:FieldValue.serverTimestamp()});
   return null;
  });
  if(previous){if(!id(previous.customerId,'ctm'))throw new HttpsError('failed-precondition','Payment attempt needs review.');return {...previous,country:route.country,token:checkoutToken.value(),environment:m};}
  const customerId=await ensurePaddleCustomer(m,uid,currentUser.email);
  await lock.update({customerId});
- const transaction=await paddleApi(m,'/transactions',{items:[{price_id:mapped.priceId,quantity:1}],customer_id:customerId,currency_code:route.currency,collection_mode:'automatic'});
- if(!id(transaction.id,'txn')||transaction.customer_id!==customerId||transaction.currency_code!==route.currency)throw new HttpsError('unavailable','Provider transaction setup needs review.');
+ const transaction=await paddleApi(m,'/transactions',{items:[{price_id:mapped.priceId,quantity:1}],customer_id:customerId,currency_code:route.currency,collection_mode:'automatic',...(promo?{discount_id:promo.discountId}:{})});
+ if(!id(transaction.id,'txn')||transaction.customer_id!==customerId||transaction.currency_code!==route.currency||promo&&transaction.discount_id!==promo.discountId)throw new HttpsError('unavailable','Provider transaction setup needs review.');
  const transactionId=transaction.id,customerOwner=base.collection('customerBindings').doc(customerId);
  await db.runTransaction(async tx=>{
   const [l,owner]=await Promise.all([tx.get(lock),tx.get(customerOwner)]);
   if(l.data()?.status!=='creating'||l.data()?.customerId!==customerId||owner.data()?.uid!==uid)throw new HttpsError('failed-precondition','Billing owner needs review.');
-  tx.create(base.collection('checkoutIntents').doc(transactionId),{uid,transactionId,customerId,priceId:mapped.priceId,productId:mapped.productId,interval:mapped.interval,plan,currency:route.currency,country:route.country,amount,status:'pending',createdAt:FieldValue.serverTimestamp()});
+  tx.create(base.collection('checkoutIntents').doc(transactionId),{uid,transactionId,customerId,priceId:mapped.priceId,productId:mapped.productId,interval:mapped.interval,plan,currency:route.currency,country:route.country,amount,...(promo?{discountId:promo.discountId,regularAmount:regular,periods:promo.periods,endsAt:promo.endsAt}:{}),status:'pending',createdAt:FieldValue.serverTimestamp()});
   tx.update(lock,{status:'ready',transactionId});
  });
  return {transactionId,customerId,country:route.country,token:checkoutToken.value(),environment:m};

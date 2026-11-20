@@ -63,7 +63,7 @@ export function isFreeCheckoutProfile(p:any):boolean {
 }
 export function completedMatches(data:any,expected:any):boolean {
  const item=Array.isArray(data?.items)&&data.items.length===1?data.items[0]:null;
- return !!expected&&data?.id===expected.transactionId&&data.status==='completed'&&data.origin==='api'&&data.customer_id===expected.customerId&&data.currency_code===expected.currency&&data.collection_mode==='automatic'&&item?.quantity===1&&item.price?.id===expected.priceId&&item.price?.product_id===expected.productId&&item.price?.billing_cycle?.interval===expected.interval&&item.price?.billing_cycle?.frequency===1;
+ return !!expected&&data?.id===expected.transactionId&&data.status==='completed'&&data.origin==='api'&&data.customer_id===expected.customerId&&data.currency_code===expected.currency&&data.collection_mode==='automatic'&&item?.quantity===1&&item.price?.id===expected.priceId&&item.price?.product_id===expected.productId&&item.price?.billing_cycle?.interval===expected.interval&&item.price?.billing_cycle?.frequency===1&&(!expected.discountId||data.discount_id===expected.discountId);
 }
 
 /** Existing Pro maps without an explicit plan remain compatible. Additional offers must be explicit. */

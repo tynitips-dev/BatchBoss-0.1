@@ -8,13 +8,13 @@ import type {LaunchCountry} from './workspace-utils'
 import RedeemProCode from './RedeemProCode'
 import RegionalPlanPrices from './RegionalPlanPrices'
 
-type Plan='weekly'|'monthly'|'annual'|'finder'|'full_suite'
+type Plan='weekly'|'monthly'|'annual'|'finder'|'full_suite'|'monthly_launch'|'annual_launch'
 type Mode='sandbox'|'live'
-type Options={enabled:boolean;plans:{plan:Plan;amount:number;currency:string}[];environment?:Mode}
+type Options={enabled:boolean;plans:{plan:Plan;amount:number;currency:string;regularAmount?:number;periods?:number;endsAt?:string}[];environment?:Mode}
 type Checkout={transactionId:string;customerId:string;country:LaunchCountry;token:string;environment:Mode}
 const functions=getFunctions(app,'europe-west1')
-const labels={weekly:'Weekly Pro',monthly:'Monthly Pro',annual:'Annual Pro',finder:'Baker Finder',full_suite:'Full Suite'}
-const periods={weekly:'week',monthly:'month',annual:'year',finder:'month',full_suite:'month'}
+const labels={weekly:'Weekly Pro',monthly:'Monthly Pro',annual:'Annual Pro',finder:'Baker Finder',full_suite:'Full Suite',monthly_launch:'Monthly Pro launch special',annual_launch:'Annual Pro launch special'}
+const periods={weekly:'week',monthly:'month',annual:'year',finder:'month',full_suite:'month',monthly_launch:'month',annual_launch:'year'}
 
 export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProfile;isPro:boolean}){
  const region=useBakeryRegion()
@@ -26,11 +26,12 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
   httpsCallable<void,Options>(functions,'getPaddleCheckoutOptions')().then(r=>{if(active)setOptions(r.data)}).catch(()=>{if(active)setOptions({enabled:false,plans:[]})})
   return()=>{active=false}
  },[profile.uid])
+ const [acceptedLaunch,setAcceptedLaunch]=useState<Partial<Record<Plan,boolean>>>({})
  async function subscribe(plan:Plan){
   if(busy||!options?.enabled||linked||otherBilling||isPro)return
   setBusy(plan);setError('')
   try{
-   const {data}=await httpsCallable<{plan:Plan},Checkout>(functions,'createPaddleCheckout')({plan})
+   const {data}=await httpsCallable<{plan:Plan;launchTermsAccepted:boolean},Checkout>(functions,'createPaddleCheckout')({plan,launchTermsAccepted:acceptedLaunch[plan]===true})
    if(data.country!==region.countryCode||data.environment!==options.environment||!/^txn_[a-z0-9]{26}$/.test(data.transactionId)||!/^ctm_[a-z0-9]{26}$/.test(data.customerId)||!data.token.startsWith(data.environment==='sandbox'?'test_':'live_'))throw Error('Billing configuration could not be verified.')
    const client=await initializePaddle({token:data.token,...(data.environment==='sandbox'?{environment:'sandbox' as const}:{})})
    if(!client)throw Error('Checkout could not load. Try again with the same plan.')
@@ -57,7 +58,7 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
  <h3>Subscriptions ({region.currency})</h3>
  {!options?<p>Checking regional payment availability…</p>:!options.enabled?<p className="warning-note">Online subscription checkout is not available in your region yet.</p>:<>
  {options.environment==='sandbox'?<p className="warning-note">Sandbox only. Use test payment details; this does not activate live access.</p>:<p className="warning-note">Private checkout pilot. Confirm payment and renewal terms before continuing.</p>}
- <div className="plans">{options.plans.filter(p=>p.currency===region.currency).map(p=><article key={p.plan}><h3>{labels[p.plan]}</h3>{p.plan==='finder'&&<p>Directory listing only, no Pro access.</p>}{p.plan==='full_suite'&&<p>Pro, Baker Finder and three included Marketplace listings per month.</p>}<strong>{region.format(p.amount/100)}</strong><small> / {periods[p.plan]}. Applicable taxes, trial terms and final total are shown at checkout.</small><button className="primary-button" disabled={!!busy||paymentReturned} onClick={()=>subscribe(p.plan)}>{busy===p.plan?'Opening checkout…':'Subscribe'}</button></article>)}</div>
+ <div className="plans">{options.plans.filter(p=>p.currency===region.currency).map(p=><article key={p.plan}><h3>{labels[p.plan]}</h3>{p.plan==='finder'&&<p>Directory listing only, no Pro access.</p>}{p.plan==='full_suite'&&<p>Pro, Baker Finder and three included Marketplace listings per month.</p>}<strong>{region.format(p.amount/100)}</strong><small> / {periods[p.plan]}. Applicable taxes, trial terms and final total are shown at checkout.</small>{p.regularAmount!==undefined&&<><p>Launch price for {p.periods} paid {p.periods===1?periods[p.plan]:periods[p.plan]+'s'}, then {region.format(p.regularAmount/100)}/{periods[p.plan]} automatically unless canceled. Trial, tax and final total are shown at checkout.</p><label><input type="checkbox" checked={acceptedLaunch[p.plan]===true} onChange={e=>setAcceptedLaunch(old=>({...old,[p.plan]:e.target.checked}))}/> I accept these renewal terms.</label></>}<button className="primary-button" disabled={!!busy||paymentReturned||p.regularAmount!==undefined&&!acceptedLaunch[p.plan]} onClick={()=>subscribe(p.plan)}>{busy===p.plan?'Opening checkout…':'Subscribe'}</button></article>)}</div>
  </>}</>}
  {otherBilling&&!isPro&&<p className="warning-note">Please contact support to resolve your existing billing before starting a new subscription.</p>}
  <p className="billing-note">Status: <strong>{linked?profile.paddleSubscriptionStatus||profile.subscriptionStatus||'free':profile.subscriptionStatus||'free'}</strong>. Payments are processed on a secure checkout. BatchBoss does not store card details.</p><a href="mailto:info@batchboss.co.za">Need billing help? info@batchboss.co.za</a>
