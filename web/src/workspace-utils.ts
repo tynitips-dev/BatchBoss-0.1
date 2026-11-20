@@ -102,7 +102,7 @@ export function formatRecordMoney(value:number,record:Record<string,unknown>):st
  return formatRegionalMoney(value,currency,locale)
 }
 /** Never add different currencies together or apply an implicit exchange rate. */
-export function formatRecordTotals(records:ReadonlyArray<Record<string,unknown>>,key:string):string {
+export function formatRecordTotals(records:ReadonlyArray<Record<string,unknown>>,key:string,emptyCurrency='ZAR'):string {
  const totals=new Map<string,number>()
  let unavailable=false
  for(const record of records){
@@ -112,7 +112,7 @@ export function formatRecordTotals(records:ReadonlyArray<Record<string,unknown>>
  }
  const amounts=[...totals.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([currency,value])=>formatRecordMoney(value,{currency}))
  if(unavailable)amounts.push('Some amounts unavailable')
- return amounts.join(' / ')||money.format(0)
+ return amounts.join(' / ')||formatRecordMoney(0,{currency:emptyCurrency})
 }
 /** These web writers are still ZAR-only until non-ZAR workspace rollout is ready. */
 export const stagedCurrencyFields={currency:'ZAR'} as const
