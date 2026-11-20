@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { app } from './firebase'
+import { useBakeryRegion } from './BakeryRegion'
 
 type Kind = 'directoryListing' | 'marketplace'
 type Draft = { id: string; title: string; area: string; description: string; priceCents: number | null; logo: string; photos: string[]; status?: 'draft'|'pending'|'paid'|'published'|'sold';countryCode?:string|null;currency?:string|null;regionMismatch?:boolean }
@@ -226,14 +227,19 @@ export function ListingView({ tab, onViewPlans }: {
 
 type CheckoutPlan = 'weekly' | 'directory_listing' | 'full_suite'
 
-export function UpcomingListingPlans() {
+export function UpcomingListingPlans(){
+  const region=useBakeryRegion()
+  return region.countryCode==='ZA'?<DomesticListingPlans/>:null
+}
+function DomesticListingPlans() {
+  const [directoryManage,setDirectoryManage]=useState(false)
   const [available, setAvailable] = useState<Partial<Record<CheckoutPlan, boolean>>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
     let current = true
-    httpsCallable<void, { enabled: boolean; testMode?: boolean; listingPlans?: Partial<Record<CheckoutPlan, boolean>> }>(functions, 'getPaystackPlans')()
-      .then(({ data }) => { if (current && data.enabled && !data.testMode) setAvailable(data.listingPlans ?? {}) })
+    httpsCallable<void, { enabled: boolean; testMode?: boolean; directoryManagementAvailable?:boolean; listingPlans?: Partial<Record<CheckoutPlan, boolean>> }>(functions, 'getPaystackPlans')()
+      .then(({ data }) => { if(current && !data.testMode){setDirectoryManage(data.directoryManagementAvailable===true);if(data.enabled)setAvailable(data.listingPlans??{})} })
       .catch(() => { if (current) setError('Could not check checkout availability.') })
     return () => { current = false }
   }, [])
@@ -252,6 +258,10 @@ export function UpcomingListingPlans() {
     }
   }
 
+  async function manageDirectory(){
+    setBusy(true);setError('')
+    try{const {data}=await httpsCallable<void,{url:string}>(functions,'managePaystackDirectory')();const url=new URL(data.url);if(url.origin!=='https://paystack.com')throw Error('Unexpected billing management address.');location.assign(url.href)}catch(e){setError(e instanceof Error?e.message:'Could not open Directory billing.');setBusy(false)}
+  }
   const plans = [
     { code: 'weekly', title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
     { code: 'directory_listing', title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
@@ -260,7 +270,8 @@ export function UpcomingListingPlans() {
   ] as const
 
   return <section className="content-card">
-    <h2>Upcoming plans and listing prices</h2>
+    <h2>More plans and listing prices</h2>
+    {directoryManage&&<button className="outline-button" disabled={busy} onClick={manageDirectory}>Manage Directory subscription</button>}
     <p>Paid plans renew at the interval shown. Manage renewal through BatchBoss.</p>
     {error && <p role="alert">{error}</p>}
     <div className="plans">
@@ -269,7 +280,7 @@ export function UpcomingListingPlans() {
         <strong>{plan.price}</strong>
         <p>{plan.detail}</p>
         {'code' in plan && <button className="primary-button" type="button" disabled={busy || !available[plan.code]} onClick={() => checkout(plan.code)}>
-          {available[plan.code] ? 'Continue to Paystack' : 'Checkout coming soon'}
+          {available[plan.code] ? 'Subscribe now' : 'Checkout coming soon'}
         </button>}
       </article>)}
     </div>
