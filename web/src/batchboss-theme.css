@@ -39,3 +39,22 @@ th{background:#fffcfa;color:#6b7780;font-size:10px;letter-spacing:1px}td{font-si
 @media(max-width:380px){.auth-story{padding:23px}.auth-story h1{font-size:33px}.dashboard-main header .plan-badge{max-width:93px;font-size:8px}.quick-grid{grid-template-columns:1fr}.stat-card{padding:13px}.brand{font-size:22px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 }
+
+/* Unified subscription layout and bakery inbox */
+.subscription-view .plans,.content-card .plans{max-width:none;margin:16px 0 24px;gap:14px}
+.subscription-view .bb-standard-plans{grid-template-columns:repeat(4,minmax(0,1fr))}
+.subscription-view .promo-plans{grid-template-columns:repeat(2,minmax(0,1fr))}
+.subscription-view .plans article,.content-card .plans article{border:1px solid #edc9d8;border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:10px;min-width:0;background:#fff}
+.subscription-view .plans article.bb-featured-plan,.subscription-view .plans article.launch-offer{background:linear-gradient(145deg,#fff7fa,#fce4ee);border-color:#eab0c7}
+.subscription-view .plans article h3,.content-card .plans article h3{font-size:18px;line-height:1.25}
+.subscription-view .plans article strong,.content-card .plans article strong{font-size:clamp(20px,2.5vw,30px);color:var(--pink-dark);overflow-wrap:anywhere}
+.subscription-view .plans article button,.content-card .plans article button,.content-card .plans article a{margin-top:auto;white-space:normal}
+.dashboard-main>header .plan-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;white-space:nowrap;max-width:none;font-size:12px;cursor:pointer}
+.dashboard-main>header .plan-badge b{background:#a91e57;color:white;padding:2px 6px;border-radius:99px;font-size:10px}
+.bb-inbox{width:min(540px,94vw);margin:auto;max-height:85dvh;overflow-y:auto;color:var(--navy);background:#fff}
+.bb-inbox-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.bb-message{margin-top:12px;border:1px solid #edc9d8;border-radius:12px;padding:14px;background:white}
+.bb-message.unread{background:#fff0f5;border-left:4px solid #b62d65}
+.bb-message h3{font-size:16px;margin:0 0 5px}.bb-message p{margin:0 0 8px}
+@media(max-width:1150px){.subscription-view .bb-standard-plans{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.subscription-view .bb-standard-plans,.subscription-view .promo-plans{grid-template-columns:1fr}.dashboard-main>header .plan-badge{font-size:11px;margin:0}}
