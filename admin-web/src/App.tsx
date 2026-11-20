@@ -48,6 +48,8 @@ type AuditLog = {
   action: string
   targetEmail?: string
   actorEmail?: string
+  source?: string
+  createdAt?: {toDate?:()=>Date}
   status?: string
 }
 
@@ -174,7 +176,7 @@ function Dashboard({ user }: { user: User }) {
       setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DeletionRequest)))
     })
     const stopAudit = onSnapshot(query(collection(db, 'adminAuditLogs'), orderBy('createdAt', 'desc')), snapshot => {
-      setAudit(snapshot.docs.slice(0, 10).map(doc => ({ id: doc.id, ...doc.data() } as AuditLog)))
+      setAudit(snapshot.docs.slice(0, 60).map(doc => ({ id: doc.id, ...doc.data() } as AuditLog)))
     })
     return () => { stopRequests(); stopAudit() }
   }, [])
@@ -274,7 +276,7 @@ function Dashboard({ user }: { user: User }) {
       </section>}
       {(section==='deletions'||section==='activity')&&<section className="lower-grid">
         {section==='deletions'&&<article className="panel"><h2>Pending deletion requests</h2>{requests.length ? requests.slice(0, 6).map(item => <div className="list-row" key={item.id}><div><strong>{item.email}</strong><small>{item.reason}</small></div><span className="status pending">{item.status}</span></div>) : <p>No deletion requests.</p>}</article>}
-        {section==='activity'&&<article className="panel"><h2>Recent administrator activity</h2>{audit.length ? audit.map(item => <div className="list-row" key={item.id}><div><strong>{item.action.replaceAll('_', ' ')}</strong><small>{item.targetEmail || item.actorEmail || 'System action'}</small></div><span>{item.status || 'recorded'}</span></div>) : <p>No administrator activity yet.</p>}</article>}
+        {section==='activity'&&<div style={{gridColumn:'1 / -1',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(245px,1fr))',gap:16}}>{['Promotions & codes','Account access','Removals & other activity'].map((title,index)=>{const entries=audit.filter(item=>{const action=String(item.action||'').toUpperCase();const group=/PROMO|PRO_CODE|GIFT/.test(action)?0:/DELETE|DELETION|REMOVE/.test(action)?2:/DISABL|ENABL|ACTIVAT|ACCESS/.test(action)?1:2;return group===index});return <article className="panel" key={title}><h2>{title}</h2><p>{entries.length} recent events</p>{entries.length?entries.map(item=><div className="list-row" key={item.id}><div><strong>{String(item.action||'Activity').replaceAll('_',' ').toLowerCase().replace(/^./,c=>c.toUpperCase())}</strong><small>{item.targetEmail||item.source||item.actorEmail||'System action'}</small><small>{item.createdAt?.toDate?.().toLocaleString('en-ZA')||''}</small></div><span>{item.status||'Recorded'}</span></div>):<p>No recent activity in this category.</p>}</article>})}</div>}
       </section>}
     </main>
   </div>
