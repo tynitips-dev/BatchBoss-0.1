@@ -1,6 +1,6 @@
 // Server-only Paddle fulfillment. Environment-scoped mirrors must never be client-writable.
 import {getAuth} from 'firebase-admin/auth';
-import {paymentRegion,standardPlans,checkoutAmount,isCheckoutPlan,isFreeCheckoutProfile,remotePriceMatches,completedMatches} from './paddle-checkout-core';
+import {paymentRegion,standardPlans,checkoutAmount,isCheckoutPlan,isFreeCheckoutProfile,remotePriceMatches,completedMatches,configuredCheckoutPlan,planRights,CheckoutPlan} from './paddle-checkout-core';
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { defineSecret, defineString } from 'firebase-functions/params';
@@ -15,12 +15,13 @@ const portalEnabled=defineString('PADDLE_PORTAL_ENABLED',{default:'false'});
 const checkoutEnabled=defineString('PADDLE_CHECKOUT_ENABLED',{default:'false'});
 const pilotUid=defineString('PADDLE_TEST_UID',{default:''});
 const checkoutToken=defineString('PADDLE_CLIENT_TOKEN',{default:''});
+const listingSubscriptionsEnabled=defineString('PADDLE_LISTING_SUBSCRIPTIONS_ENABLED',{default:'false'});
 const priceMap=defineString('PADDLE_PRO_PRICE_MAP',{default:'{}'});
 
 type Mode='sandbox'|'live';
 type Json=Record<string,unknown>;
 type Event={event_id:string;event_type:string;occurred_at:string;data:Json};
-type Price={productId:string;interval:'week'|'month'|'year';offer?:string};
+type Price={productId:string;interval:'week'|'month'|'year';offer?:string;plan?:CheckoutPlan};
 const eventTypes=new Set(['subscription.created','subscription.updated','subscription.canceled','subscription.activated','subscription.trialing','subscription.paused','subscription.resumed','subscription.past_due','customer.created','customer.updated','transaction.completed']);
 const id=(value:unknown,prefix:string):value is string=>typeof value==='string'&&new RegExp('^'+prefix+'_[a-z0-9]{26}$').test(value);
 const obj=(value:unknown):Json=>value&&typeof value==='object'&&!Array.isArray(value)?value as Json:{};
@@ -56,7 +57,7 @@ function config():Record<string,Price>{
  const result=JSON.parse(priceMap.value()) as Record<string,Price>;
  if(!result||typeof result!=='object'||Array.isArray(result))throw Error('Invalid Paddle price map');
  for(const [key,value] of Object.entries(result)){
-  if(!id(key,'pri')||!value||!id(value.productId,'pro')||!['week','month','year'].includes(value.interval))throw Error('Invalid Paddle price entry');
+  if(!id(key,'pri')||!value||!id(value.productId,'pro')||!['week','month','year'].includes(value.interval)||(value.plan!==undefined&&!configuredCheckoutPlan(value)))throw Error('Invalid Paddle price entry');
  }
  return result;
 }
@@ -111,22 +112,23 @@ async function accountRegion(uid:string){
  if(!bakery||bakery.ownerUid!==uid)return null;
  return paymentRegion(bakery);
 }
-function planPrice(plan:keyof typeof standardPlans){
- const entries=Object.entries(config()).filter(([,price])=>price.interval===standardPlans[plan].interval&&!price.offer);
+function planPrice(plan:CheckoutPlan){
+ if((plan==='finder'||plan==='full_suite')&&listingSubscriptionsEnabled.value()!=='true')return null;
+ const entries=Object.entries(config()).filter(([,price])=>configuredCheckoutPlan(price)===plan);
  return entries.length===1?{priceId:entries[0][0],...entries[0][1]}:null;
 }
 export const getPaddleCheckoutOptions=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
  const uid=request.auth.uid,m=mode(),route=await accountRegion(uid);
  if(!route||route.provider!=='paddle'||!checkoutReady(uid,m))return {enabled:false,plans:[]};
- const plans=(['weekly','monthly','annual'] as const).filter(p=>planPrice(p)).map(p=>({plan:p,amount:checkoutAmount(p,route.currency),currency:route.currency}));
+ const plans=(['weekly','monthly','annual','finder','full_suite'] as const).filter(p=>planPrice(p)).map(p=>({plan:p,amount:checkoutAmount(p,route.currency),currency:route.currency}));
  return {enabled:plans.length>0,plans,environment:m};
 });
 export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
  const uid=request.auth.uid,m=mode(),plan:unknown=request.data?.plan;
  if(!checkoutReady(uid,m))throw new HttpsError('failed-precondition','Paddle checkout is not enabled for this account.');
- if(!isCheckoutPlan(plan))throw new HttpsError('invalid-argument','Choose a standard Pro plan.');
+ if(!isCheckoutPlan(plan))throw new HttpsError('invalid-argument','Choose an available BatchBoss subscription.');
  const route=await accountRegion(uid);
  if(!route||route.provider!=='paddle')throw new HttpsError('failed-precondition','Use your local subscription checkout.');
  const mapped=planPrice(plan),amount=checkoutAmount(plan,route.currency);
@@ -167,19 +169,28 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
  });
  return {transactionId,customerId,country:route.country,token:checkoutToken.value(),environment:m};
 });
-function projection(profile:Json,entityId:string,snap:ReturnType<typeof subscriptionSnapshot>,prices:Record<string,Price>,live:boolean){
- if(!live)return null;
- const current=profile.subscriptionSource,owns=profile.paddleSubscriptionId===entityId&&current==='paddle';
+// Profile and listing grants are updated atomically from the same verified subscription.
+function projectSubscription(tx:FirebaseFirestore.Transaction,profileRef:FirebaseFirestore.DocumentReference,profile:Json,entityId:string,snap:ReturnType<typeof subscriptionSnapshot>,prices:Record<string,Price>,live:boolean,regionBinding:Json){
+ if(!live)return;
+ const owns=profile.paddleSubscriptionId===entityId&&profile.subscriptionSource==='paddle';
+ if(!owns&&!isFreeCheckoutProfile(profile))return;
  const price=mappedPaddlePrice({items:snap.items},prices);
- if((owns||isFreeCheckoutProfile(profile))&&price&&grantsPaddleAccess(snap.status,snap.expiresAtMs)){
-  return {subscriptionPlan:'pro',subscriptionSource:'paddle',subscriptionStatus:snap.status,subscriptionExpiresAt:new Date(snap.expiresAtMs!),subscriptionBillingInterval:price.interval,subscriptionOffer:price.offer??null,paddleCustomerId:snap.customerId,paddleSubscriptionId:entityId,updatedAt:FieldValue.serverTimestamp()};
+ // Explicit configured plan needed for non-Pro grants; preserve older standard mappings.
+ const plan=price?configuredCheckoutPlan(price):null;
+ if(!plan&&!owns)return;
+ const region=paymentRegion({countryCode:regionBinding.country,currency:regionBinding.currency});
+ // Disallow listing grants without trusted checkout-region binding.
+ const rights=planRights(plan),listingRegionOK=region?.provider==='paddle';
+ const active=!!plan&&grantsPaddleAccess(snap.status,snap.expiresAtMs)&&(!rights.finder||listingRegionOK);
+ const expires=active?new Date(snap.expiresAtMs!):new Date(0);
+ const status=active?snap.status:snap.status==='canceled'?'cancelled':snap.status==='past_due'?'past_due':'expired';
+ // Directory-only members retain a free Pro profile even during an active listing subscription.
+ const proPlan=rights.pro||(!plan&&profile.subscriptionPlan==='pro');
+ tx.update(profileRef,{subscriptionPlan:proPlan?'pro':'free',subscriptionSource:'paddle',subscriptionStatus:proPlan?status:'free',subscriptionExpiresAt:proPlan?expires:new Date(0),subscriptionBillingInterval:price?.interval??profile.subscriptionBillingInterval??null,subscriptionOffer:price?.offer??null,paddlePlan:plan??profile.paddlePlan??null,paddleSubscriptionStatus:status,paddleCustomerId:snap.customerId,paddleSubscriptionId:entityId,updatedAt:FieldValue.serverTimestamp()});
+ if(listingRegionOK){
+  tx.set(getFirestore().doc('listingEntitlements/'+profileRef.id),{paddleSubscriptionId:entityId,paddleCountryCode:region!.country,paddleCurrency:region!.currency,paddleFinderExpiresAt:active&&rights.finder?expires:new Date(0),paddleSuiteExpiresAt:active&&rights.suite?expires:new Date(0),updatedAt:FieldValue.serverTimestamp()},{merge:true});
  }
- if(owns)return {subscriptionStatus:snap.status==='canceled'?'cancelled':snap.status==='past_due'?'past_due':'expired',subscriptionExpiresAt:new Date(),updatedAt:FieldValue.serverTimestamp()};
- // Store verified ownership even if the subscription initially arrives inactive.
- if(isFreeCheckoutProfile(profile)&&price)return {subscriptionPlan:'pro',subscriptionSource:'paddle',subscriptionStatus:'expired',subscriptionExpiresAt:new Date(),paddleCustomerId:snap.customerId,paddleSubscriptionId:entityId,updatedAt:FieldValue.serverTimestamp()};
- return null;
 }
-
 // All binding records are created by trusted server-side checkout reconciliation,
 // never from a webhook email or client-supplied custom data. No binding = mirror only.
 async function applyEvent(m:Mode,e:Event){
@@ -233,12 +244,11 @@ async function applyEvent(m:Mode,e:Event){
       tx.update(intentRef,{status:'review',reason:'ownership-conflict',updatedAt:FieldValue.serverTimestamp()});
      }else{
       tx.create(accountRef,{uid,customerId,subscriptionId:subId,createdAt:FieldValue.serverTimestamp()});
-      tx.create(subRef,{uid,customerId,transactionId:entityId,createdAt:FieldValue.serverTimestamp()});
+      tx.create(subRef,{uid,customerId,transactionId:entityId,country:intent.country,currency:intent.currency,createdAt:FieldValue.serverTimestamp()});
       tx.update(intentRef,{status:'linked',subscriptionId:subId,updatedAt:FieldValue.serverTimestamp()});
       tx.update(lockRef,{status:'linked',subscriptionId:subId});
       if(mirrored){
-       const patch=projection(obj(user.data()),subId,mirrored as ReturnType<typeof subscriptionSnapshot>,prices,liveProvision);
-       if(patch)tx.update(userRef,patch);
+       projectSubscription(tx,userRef,obj(user.data()),subId,mirrored as ReturnType<typeof subscriptionSnapshot>,prices,liveProvision,obj(intent));
       }
      }
     }
@@ -248,8 +258,7 @@ async function applyEvent(m:Mode,e:Event){
    const data=kind==='subscription'?subscriptionSnapshot(e.data):kind==='customer'?{email:str(e.data.email),status:str(e.data.status)}:{customerId:str(e.data.customer_id),subscriptionId:str(e.data.subscription_id)||null,status:str(e.data.status),currency:str(e.data.currency_code),totals:obj(obj(e.data.details).totals)};
    tx.set(ref,{...data,occurredAtMs,occurredAtMicros,lastEventId:e.event_id,updatedAt:FieldValue.serverTimestamp()});
    if(kind==='subscription'&&profileRef){
-    const patch=projection(profile,entityId,subscriptionSnapshot(e.data),prices,liveProvision);
-    if(patch)tx.update(profileRef,patch);
+    projectSubscription(tx,profileRef,profile,entityId,subscriptionSnapshot(e.data),prices,liveProvision,binding);
    }
   }
   tx.create(receipt,{eventType:e.event_type,entityId,occurredAtMs,occurredAtMicros,applied:isNew,receivedAt:FieldValue.serverTimestamp()});

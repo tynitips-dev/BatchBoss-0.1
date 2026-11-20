@@ -10,6 +10,8 @@ export type UserProfile = {
   subscriptionStatus?: 'free' | 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired'
   subscriptionSource?: string
   subscriptionBillingInterval?: string
+  paddlePlan?: 'weekly'|'monthly'|'annual'|'finder'|'full_suite' | null
+  paddleSubscriptionStatus?: string
   paddleSubscriptionId?: string
   paddleCustomerId?: string
   paystackSubscriptionCode?: string

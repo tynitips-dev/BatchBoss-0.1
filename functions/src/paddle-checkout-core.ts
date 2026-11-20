@@ -22,6 +22,8 @@ export const standardPlans={
       "NZD": 1899
     }
   },
+  "full_suite": {"interval":"month","prices":{"USD":1699,"ZAR":22000,"GBP":1299,"CAD":2499,"AUD":2599,"NZD":2899}},
+  "finder": {"interval":"month","prices":{"USD":399,"ZAR":4900,"GBP":299,"CAD":549,"AUD":599,"NZD":649}},
   "annual": {
     "interval": "year",
     "prices": {
@@ -63,3 +65,11 @@ export function completedMatches(data:any,expected:any):boolean {
  const item=Array.isArray(data?.items)&&data.items.length===1?data.items[0]:null;
  return !!expected&&data?.id===expected.transactionId&&data.status==='completed'&&data.origin==='api'&&data.customer_id===expected.customerId&&data.currency_code===expected.currency&&data.collection_mode==='automatic'&&item?.quantity===1&&item.price?.id===expected.priceId&&item.price?.product_id===expected.productId&&item.price?.billing_cycle?.interval===expected.interval&&item.price?.billing_cycle?.frequency===1;
 }
+
+/** Existing Pro maps without an explicit plan remain compatible. Additional offers must be explicit. */
+export function configuredCheckoutPlan(price:{interval:string;plan?:unknown;offer?:string}):CheckoutPlan|null {
+ if(price.offer)return null;
+ if(price.plan!==undefined)return isCheckoutPlan(price.plan)&&standardPlans[price.plan].interval===price.interval?price.plan:null;
+ return price.interval==='week'?'weekly':price.interval==='month'?'monthly':price.interval==='year'?'annual':null;
+}
+export function planRights(plan:CheckoutPlan|null){return {pro:plan==='weekly'||plan==='monthly'||plan==='annual'||plan==='full_suite',finder:plan==='finder'||plan==='full_suite',suite:plan==='full_suite'};}

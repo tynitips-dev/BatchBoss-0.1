@@ -42,7 +42,7 @@ test('country routes are derived from verified bakery metadata, never currency a
 });
 test('server standard pricing matches the published six-country catalog',()=>{
  const catalog=require('../web/src/regional-plan-prices.json');
- for(const [k,name] of Object.entries({weekly:'Weekly Pro',monthly:'Monthly Pro',annual:'Annual Pro'}))assert.deepEqual(standardPlans[k].prices,catalog.find(x=>x.name===name).prices);
+ for(const [k,name] of Object.entries({weekly:'Weekly Pro',monthly:'Monthly Pro',annual:'Annual Pro',finder:'Baker Finder Monthly',full_suite:'Full Suite Monthly'}))assert.deepEqual(standardPlans[k].prices,catalog.find(x=>x.name===name).prices);
 });
 test('remote price must match country override, currency, product, interval and amount',()=>{
  const e={priceId:'pri_1',productId:'pro_1',interval:'month',country:'GB',currency:'GBP',amount:849};
@@ -63,3 +63,5 @@ test('completed webhook must match the exact server-created checkout',()=>{
 });
 
 test('event ordering preserves provider microsecond precision',()=>{const {providerEventClock}=require('../functions/lib/paddle');const a=providerEventClock('2026-11-20T09:00:00.123001Z'),b=providerEventClock('2026-11-20T09:00:00.123002Z');assert.equal(b-a,1);assert.equal(shouldApplyPaddleEvent(b,a),false);assert.equal(providerEventClock('2026-11-20T11:00:00.123002+02:00'),b);});
+
+test('explicit plan mapping separates monthly Pro, Finder and Full Suite; invalid intervals are rejected',()=>{const {configuredCheckoutPlan,planRights}=require('../functions/lib/paddle-checkout-core');assert.equal(configuredCheckoutPlan({interval:'month'}),'monthly');assert.equal(configuredCheckoutPlan({interval:'month',plan:'finder'}),'finder');assert.equal(configuredCheckoutPlan({interval:'year',plan:'finder'}),null);assert.deepEqual(planRights('finder'),{pro:false,finder:true,suite:false});assert.deepEqual(planRights('full_suite'),{pro:true,finder:true,suite:true});});
