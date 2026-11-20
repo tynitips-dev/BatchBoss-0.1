@@ -221,8 +221,6 @@ const publicPreview = 'https://www.batchboss.co.za/batchboss-preview/'
 const listingPrices = {
   directory: 'R49 per month',
   marketplace: 'R20 once-off per listing',
-  weeklyPro: 'R39.99 per week',
-  fullSuite: 'R220 per month',
 }
 
 export function ListingView({ tab, onViewPlans }: {
@@ -251,11 +249,17 @@ export function ListingView({ tab, onViewPlans }: {
   </section>
 }
 
-type CheckoutPlan = 'weekly' | 'directory_listing' | 'full_suite'
+type CheckoutPlan = 'directory_listing'
 
 export function UpcomingListingPlans(){
   const region=useBakeryRegion()
-  return region.countryCode==='ZA'?<DomesticListingPlans/>:null
+  return region.countryCode==='ZA'?<DomesticListingPlans/>:<InternationalMarketplacePrice/>
+}
+function InternationalMarketplacePrice(){
+  const region=useBakeryRegion()
+  const [options,setOptions]=useState<MarketOptions|null>(null)
+  useEffect(()=>{let active=true;httpsCallable<void,MarketOptions>(functions,'getPaddleMarketplaceOptions')().then(({data})=>{if(active)setOptions(data)}).catch(()=>{if(active)setOptions({enabled:false})});return()=>{active=false}},[region.countryCode])
+  return <section className="content-card"><h2>Marketplace</h2><div className="plans"><article><h3>Marketplace Listing</h3><strong>{options?.enabled&&options.currency===region.currency&&Number.isSafeInteger(options.amount)?region.format(options.amount!/100):options?'Currently unavailable':'Checking price…'}</strong><p>One payment per item listing. No recurring fee.</p><a className="outline-button" href="/?tab=marketplace">Open Marketplace</a></article></div></section>
 }
 function DomesticListingPlans() {
   const [directoryManage,setDirectoryManage]=useState(false)
@@ -289,14 +293,12 @@ function DomesticListingPlans() {
     try{const {data}=await httpsCallable<void,{url:string}>(functions,'managePaystackDirectory')();const url=new URL(data.url);if(url.origin!=='https://paystack.com')throw Error('Unexpected billing management address.');location.assign(url.href)}catch(e){setError(e instanceof Error?e.message:'Could not open Directory billing.');setBusy(false)}
   }
   const plans = [
-    { code: 'weekly', title: 'Weekly BatchBoss Pro', price: listingPrices.weeklyPro, detail: 'Seven days of BatchBoss Pro access.' },
     { code: 'directory_listing', title: 'Directory Listing', price: listingPrices.directory, detail: 'A bakery profile in Find a Baker.' },
     { title: 'Marketplace Listing', price: listingPrices.marketplace, detail: 'One payment per item listing. No recurring fee.' },
-    { code: 'full_suite', title: 'BatchBoss Full Suite', price: listingPrices.fullSuite, detail: 'BatchBoss Pro, a Directory Listing and 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.' },
   ] as const
 
   return <section className="content-card">
-    <h2>More plans and listing prices</h2>
+    <h2>Directory & Marketplace</h2>
     {directoryManage&&<button className="outline-button" disabled={busy} onClick={manageDirectory}>Manage Directory subscription</button>}
     <p>Paid plans renew at the interval shown. Manage renewal through BatchBoss.</p>
     {error && <p role="alert">{error}</p>}
@@ -306,8 +308,8 @@ function DomesticListingPlans() {
         <strong>{plan.price}</strong>
         <p>{plan.detail}</p>
         {'code' in plan && <button className="primary-button" type="button" disabled={busy || !available[plan.code]} onClick={() => checkout(plan.code)}>
-          {available[plan.code] ? 'Subscribe now' : 'Checkout coming soon'}
-        </button>}
+          {available[plan.code] ? 'Subscribe now' : 'Checkout unavailable'}
+        </button>}{!('code' in plan)&&<a className="outline-button" href="/?tab=marketplace">Open Marketplace</a>}
       </article>)}
     </div>
   </section>
