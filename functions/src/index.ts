@@ -522,7 +522,7 @@ export const getMyPayfastPayments=onCall({region:"europe-west1",invoker:"public"
   return {payments:items.docs.map(doc=>{const p=doc.data();return {reference:doc.id,plan:p.plan,amountCents:p.amountCents,currency:p.currency,status:p.status,paidAt:p.paidAt?.toDate?.().toISOString()||null};}).sort((a,b)=>String(b.paidAt).localeCompare(String(a.paidAt)))};
 });
 
-export {createMarketplaceCheckout,verifyMarketplacePayment,managePaystackDirectory,getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
+export {recoverPaystackCheckout,createMarketplaceCheckout,verifyMarketplacePayment,managePaystackDirectory,getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
 
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 export { sendBatchBossGiftProEmail } from './giftProEmail';
