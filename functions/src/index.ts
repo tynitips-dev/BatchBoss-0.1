@@ -533,7 +533,7 @@ export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBa
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
 
-export {getPaddleCheckoutOptions,createPaddleCheckout,paddleWebhook,createPaddlePortalSession} from './paddle';
+export {getPaddleMarketplaceOptions,createPaddleMarketplaceCheckout,getPaddleCheckoutOptions,createPaddleCheckout,paddleWebhook,createPaddlePortalSession} from './paddle';
 
 export {createPayfastSandboxCheckout,payfastSandboxNotify,getPayfastSandboxResult} from './payfastSandbox';
 

@@ -1,4 +1,7 @@
 // Server-only Paddle fulfillment. Environment-scoped mirrors must never be client-writable.
+import {createHash} from 'node:crypto';
+import {listingRegion,sameListingRegion,listingPermissions} from './listingRegion';
+import {marketplaceFees,validListingId,oneOffPriceMatches,marketplaceCompleted} from './paddle-marketplace-core';
 import {getAuth} from 'firebase-admin/auth';
 import {paymentRegion,standardPlans,checkoutAmount,isCheckoutPlan,isFreeCheckoutProfile,remotePriceMatches,completedMatches,configuredCheckoutPlan,planRights,CheckoutPlan} from './paddle-checkout-core';
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
@@ -16,6 +19,9 @@ const checkoutEnabled=defineString('PADDLE_CHECKOUT_ENABLED',{default:'false'});
 const pilotUid=defineString('PADDLE_TEST_UID',{default:''});
 const checkoutToken=defineString('PADDLE_CLIENT_TOKEN',{default:''});
 const listingSubscriptionsEnabled=defineString('PADDLE_LISTING_SUBSCRIPTIONS_ENABLED',{default:'false'});
+const marketplaceEnabled=defineString('PADDLE_MARKETPLACE_ENABLED',{default:'false'});
+const marketplacePrice=defineString('PADDLE_MARKETPLACE_PRICE_ID',{default:''});
+const marketplaceProduct=defineString('PADDLE_MARKETPLACE_PRODUCT_ID',{default:''});
 const priceMap=defineString('PADDLE_PRO_PRICE_MAP',{default:'{}'});
 
 type Mode='sandbox'|'live';
@@ -112,6 +118,37 @@ async function accountRegion(uid:string){
  if(!bakery||bakery.ownerUid!==uid)return null;
  return paymentRegion(bakery);
 }
+// A shared UID-to-customer binding lets one-off buyers later subscribe without
+// claiming customers by email. Ambiguous creation is held for manual reconciliation.
+async function ensurePaddleCustomer(m:Mode,uid:string,email:string):Promise<string>{
+ const db=getFirestore(),base=db.collection('paddleBilling').doc(m),ref=base.collection('customerAccounts').doc(uid);
+ const existing=await db.runTransaction(async tx=>{
+  const [current,account]=await Promise.all([tx.get(ref),tx.get(base.collection('accountBindings').doc(uid))]);
+  const row=current.data();
+  if(row&&row.status!=='ready')throw new HttpsError('failed-precondition','A billing customer is being prepared. Contact support before retrying.');
+  const known=row?.customerId??account.data()?.customerId;
+  if(known!==undefined){
+   if(!id(known,'ctm'))throw new HttpsError('failed-precondition','Billing customer needs review.');
+   const owner=await tx.get(base.collection('customerBindings').doc(known));
+   if(owner.data()?.uid!==uid||account.exists&&account.data()?.customerId!==known)throw new HttpsError('permission-denied','Billing customer ownership mismatch.');
+   if(!current.exists)tx.create(ref,{uid,customerId:known,status:'ready',createdAt:FieldValue.serverTimestamp()});
+   return known;
+  }
+  tx.create(ref,{uid,status:'creating',createdAt:FieldValue.serverTimestamp()});return null;
+ });
+ if(existing)return existing;
+ const customer=await paddleApi(m,'/customers',{email});
+ if(!id(customer.id,'ctm'))throw new HttpsError('unavailable','Provider customer setup needs review.');
+ const customerId=customer.id,owner=base.collection('customerBindings').doc(customerId);
+ await db.runTransaction(async tx=>{
+  const [r,o]=await Promise.all([tx.get(ref),tx.get(owner)]);
+  if(r.data()?.status!=='creating'||o.exists)throw new HttpsError('failed-precondition','Billing owner needs review.');
+  tx.create(owner,{uid,createdAt:FieldValue.serverTimestamp()});
+  tx.update(ref,{status:'ready',customerId,updatedAt:FieldValue.serverTimestamp()});
+ });
+ return customerId;
+}
+
 function planPrice(plan:CheckoutPlan){
  if((plan==='finder'||plan==='full_suite')&&listingSubscriptionsEnabled.value()!=='true')return null;
  const entries=Object.entries(config()).filter(([,price])=>configuredCheckoutPlan(price)===plan);
@@ -152,23 +189,106 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   return null;
  });
  if(previous){if(!id(previous.customerId,'ctm'))throw new HttpsError('failed-precondition','Payment attempt needs review.');return {...previous,country:route.country,token:checkoutToken.value(),environment:m};}
- // Require a fresh provider customer. Never claim an existing customer solely by email.
- const customer=await paddleApi(m,'/customers',{email:currentUser.email});
- if(!id(customer.id,'ctm'))throw new HttpsError('unavailable','Provider customer setup needs review.');
- await lock.update({customerId:customer.id});
- const customerId=customer.id;
+ const customerId=await ensurePaddleCustomer(m,uid,currentUser.email);
+ await lock.update({customerId});
  const transaction=await paddleApi(m,'/transactions',{items:[{price_id:mapped.priceId,quantity:1}],customer_id:customerId,currency_code:route.currency,collection_mode:'automatic'});
  if(!id(transaction.id,'txn')||transaction.customer_id!==customerId||transaction.currency_code!==route.currency)throw new HttpsError('unavailable','Provider transaction setup needs review.');
  const transactionId=transaction.id,customerOwner=base.collection('customerBindings').doc(customerId);
  await db.runTransaction(async tx=>{
   const [l,owner]=await Promise.all([tx.get(lock),tx.get(customerOwner)]);
-  if(l.data()?.status!=='creating'||l.data()?.customerId!==customerId||owner.exists)throw new HttpsError('failed-precondition','Billing owner needs review.');
-  tx.create(customerOwner,{uid,createdAt:FieldValue.serverTimestamp()});
+  if(l.data()?.status!=='creating'||l.data()?.customerId!==customerId||owner.data()?.uid!==uid)throw new HttpsError('failed-precondition','Billing owner needs review.');
   tx.create(base.collection('checkoutIntents').doc(transactionId),{uid,transactionId,customerId,priceId:mapped.priceId,productId:mapped.productId,interval:mapped.interval,plan,currency:route.currency,country:route.country,amount,status:'pending',createdAt:FieldValue.serverTimestamp()});
   tx.update(lock,{status:'ready',transactionId});
  });
  return {transactionId,customerId,country:route.country,token:checkoutToken.value(),environment:m};
 });
+
+const listingKey=(uid:string,listingId:string)=>createHash('sha256').update(JSON.stringify([uid,listingId])).digest('hex');
+function marketplaceConfig(uid:string,m:Mode,route:ReturnType<typeof paymentRegion>){
+ if(!route||route.provider!=='paddle'||!checkoutReady(uid,m)||marketplaceEnabled.value()!=='true')return null;
+ const priceId=marketplacePrice.value(),productId=marketplaceProduct.value(),amount=marketplaceFees[route.currency];
+ if(!id(priceId,'pri')||!id(productId,'pro')||!amount||config()[priceId])return null;
+ return {priceId,productId,country:route.country,currency:route.currency,amount};
+}
+export const getPaddleMarketplaceOptions=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin]},async request=>{
+ if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
+ const uid=request.auth.uid,m=mode(),settings=marketplaceConfig(uid,m,await accountRegion(uid));
+ return settings?{enabled:true,amount:settings.amount,currency:settings.currency,environment:m}:{enabled:false};
+});
+export const createPaddleMarketplaceCheckout=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
+ if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
+ const uid=request.auth.uid,m=mode(),listingId=request.data?.id;
+ if(!validListingId(listingId))throw new HttpsError('invalid-argument','Save a valid Marketplace listing first.');
+ const settings=marketplaceConfig(uid,m,await accountRegion(uid));
+ if(!settings)throw new HttpsError('failed-precondition','International Marketplace checkout is not available.');
+ const account=await getAuth().getUser(uid);
+ if(!account.email||!account.emailVerified||account.disabled)throw new HttpsError('failed-precondition','Verify your account email first.');
+ const remote=await paddleApi(m,'/prices/'+settings.priceId);
+ if(!oneOffPriceMatches(remote,settings))throw new HttpsError('failed-precondition','The Paddle listing fee does not match the regional catalog.');
+ const db=getFirestore(),base=db.collection('paddleBilling').doc(m),key=listingKey(uid,listingId),lock=base.collection('marketplaceLocks').doc(key),workspace=db.doc('listingWorkspaces/'+uid),draft=workspace.collection('drafts').doc(listingId),publication=workspace.collection('publications').doc(listingId),workspaceLock=workspace.collection('marketplaceCheckouts').doc(listingId);
+ const month=new Intl.DateTimeFormat('sv-SE',{timeZone:'UTC',year:'numeric',month:'2-digit'}).format(new Date());
+ const region=listingRegion({countryCode:settings.country,currency:settings.currency});
+ const previous=await db.runTransaction(async tx=>{
+  const [d,l,p,w,u,access,usage]=await Promise.all([tx.get(draft),tx.get(lock),tx.get(publication),tx.get(workspaceLock),tx.get(db.doc('users/'+uid)),tx.get(db.doc('listingEntitlements/'+uid)),tx.get(workspace.collection('allowances').doc(month))]);
+  const profile=u.data(),details=d.data(),old=l.data(),other=w.data();
+  if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId||profile.bakeryId.includes('/')||details?.kind!=='marketplace'||!sameListingRegion(details,region??undefined)||p.exists)throw new HttpsError('failed-precondition','Save an unpublished regional listing first.');
+  const bakery=(await tx.get(db.doc('bakeries/'+profile.bakeryId))).data();
+  if(bakery?.ownerUid!==uid||!sameListingRegion(bakery,region??undefined))throw new HttpsError('permission-denied','Listing workspace ownership changed.');
+  if(old){
+   if(old.status==='ready'&&id(old.transactionId,'txn')&&id(old.customerId,'ctm')&&old.country===settings.country&&old.currency===settings.currency&&old.priceId===settings.priceId)return {transactionId:old.transactionId,customerId:old.customerId};
+   throw new HttpsError('failed-precondition','A listing payment is already linked. Please contact support before paying again.');
+  }
+  if(other)throw new HttpsError('failed-precondition','A prior listing checkout requires review.');
+  if(listingPermissions(region,access.data()).suite&&(usage.data()?.used??0)<3)throw new HttpsError('failed-precondition','You have an included Marketplace listing. Use Save and publish instead.');
+  tx.create(lock,{uid,listingId,bakeryId:profile.bakeryId,...settings,status:'creating',createdAt:FieldValue.serverTimestamp()});
+  // Sandbox locks are isolated and cannot prevent edits or publish live listings.
+  if(m==='live')tx.create(workspaceLock,{provider:'paddle',domain:'live',status:'pending',reference:key,countryCode:settings.country,currency:settings.currency,createdAt:FieldValue.serverTimestamp()});
+  return null;
+ });
+ if(previous)return {...previous,country:settings.country,token:checkoutToken.value(),environment:m};
+ const customerId=await ensurePaddleCustomer(m,uid,account.email);
+ const transaction=await paddleApi(m,'/transactions',{items:[{price_id:settings.priceId,quantity:1}],customer_id:customerId,currency_code:settings.currency,collection_mode:'automatic'});
+ if(!id(transaction.id,'txn')||transaction.customer_id!==customerId||transaction.currency_code!==settings.currency)throw new HttpsError('unavailable','Marketplace transaction needs review.');
+ const transactionId=transaction.id;
+ await db.runTransaction(async tx=>{
+  const [l,owner]=await Promise.all([tx.get(lock),tx.get(base.collection('customerBindings').doc(customerId))]);
+  const row=l.data();
+  if(row?.status!=='creating'||owner.data()?.uid!==uid)throw new HttpsError('failed-precondition','Listing payment ownership needs review.');
+  tx.create(base.collection('marketplaceIntents').doc(transactionId),{uid,listingId,bakeryId:row.bakeryId,key,customerId,transactionId,...settings,status:'pending',createdAt:FieldValue.serverTimestamp()});
+  tx.update(lock,{status:'ready',transactionId,customerId});
+ });
+ return {transactionId,customerId,country:settings.country,token:checkoutToken.value(),environment:m};
+});
+async function settlePaddleMarketplace(m:Mode,e:Event){
+ if(e.event_type!=='transaction.completed'||!id(e.data.id,'txn'))return;
+ const db=getFirestore(),base=db.collection('paddleBilling').doc(m),intentRef=base.collection('marketplaceIntents').doc(e.data.id),intent=(await intentRef.get()).data();
+ if(!intent||intent.status!=='pending')return;
+ if(m==='live'&&provisionEnabled.value()!=='true')throw Error('Live provisioning disabled');
+ let country:string|null=null;
+ if(marketplaceCompleted(e.data,intent)&&id(e.data.customer_id,'ctm')&&id(e.data.address_id,'add')){
+  const address=await paddleApi(m,'/customers/'+e.data.customer_id+'/addresses/'+e.data.address_id);
+  if(address.id===e.data.address_id&&address.customer_id===e.data.customer_id)country=str(address.country_code);
+ }
+ const uid=intent.uid,listingId=intent.listingId;
+ if(typeof uid!=='string'||!uid||uid.includes('/')||!validListingId(listingId)||!id(intent.customerId,'ctm')||intent.key!==listingKey(uid,listingId))throw Error('Invalid marketplace intent');
+ const ws=db.doc('listingWorkspaces/'+uid),lock=base.collection('marketplaceLocks').doc(intent.key),checkout=ws.collection('marketplaceCheckouts').doc(listingId),publication=ws.collection('publications').doc(listingId),catalog=db.doc('listingCatalogs/marketplace/entries/'+intent.key);
+ await db.runTransaction(async tx=>{
+  const [current,l,owner,user,draft,pub,wl]=await Promise.all([tx.get(intentRef),tx.get(lock),tx.get(base.collection('customerBindings').doc(intent.customerId)),tx.get(db.doc('users/'+uid)),tx.get(ws.collection('drafts').doc(listingId)),tx.get(publication),tx.get(checkout)]);
+  if(current.data()?.status!=='pending')return;
+  const row=current.data()!,details=draft.data(),region=listingRegion({countryCode:row.country,currency:row.currency});
+  const valid=marketplaceCompleted(e.data,row)&&country===row.country&&owner.data()?.uid===uid&&user.data()?.bakeryId===row.bakeryId&&l.data()?.transactionId===e.data.id&&l.data()?.customerId===row.customerId&&details?.kind==='marketplace'&&sameListingRegion(details,region??undefined)&&!pub.exists&&Number.isSafeInteger(details?.priceCents)&&details!.priceCents>0;
+  const liveLockOK=m==='sandbox'||(wl.data()?.provider==='paddle'&&wl.data()?.domain==='live'&&wl.data()?.status==='pending'&&wl.data()?.reference===row.key&&sameListingRegion(wl.data(),region??undefined));
+  if(!valid||!liveLockOK){tx.update(intentRef,{status:'review',reason:'listing-completion-conflict',updatedAt:FieldValue.serverTimestamp()});return;}
+  tx.update(intentRef,{status:m==='live'?'paid':'test_paid',updatedAt:FieldValue.serverTimestamp()});
+  tx.update(lock,{status:m==='live'?'paid':'test_paid',updatedAt:FieldValue.serverTimestamp()});
+  if(m==='live'){
+   const fields={kind:'marketplace',countryCode:region!.countryCode,currency:region!.currency,title:details!.title,area:details!.area,description:details!.description,priceCents:details!.priceCents,logo:'',photos:details!.photos??[],sellerType:'baker',standalonePaid:true,standaloneProvider:'paddle',status:'published',updatedAt:FieldValue.serverTimestamp()};
+   tx.update(checkout,{status:'paid',transactionId:e.data.id,updatedAt:FieldValue.serverTimestamp()});
+   tx.create(publication,fields);tx.create(catalog,{...fields,ownerUid:uid});
+  }
+ });
+}
+
 // Profile and listing grants are updated atomically from the same verified subscription.
 function projectSubscription(tx:FirebaseFirestore.Transaction,profileRef:FirebaseFirestore.DocumentReference,profile:Json,entityId:string,snap:ReturnType<typeof subscriptionSnapshot>,prices:Record<string,Price>,live:boolean,regionBinding:Json){
  if(!live)return;
@@ -201,6 +321,7 @@ async function applyEvent(m:Mode,e:Event){
  const entityId=e.data.id,occurredAtMs=millis(e.occurred_at),occurredAtMicros=providerEventClock(e.occurred_at);
  const ref=base.collection(kind+'s').doc(entityId),receipt=base.collection('events').doc(e.event_id);
  if((await receipt.get()).exists)return 'duplicate';
+ await settlePaddleMarketplace(m,e);
  const prices=kind==='subscription'||kind==='transaction'?config():{};
  const liveProvision=m==='live'&&provisionEnabled.value()==='true';
  // Fetch the real billing country only for the original checkout, not recurring payments.

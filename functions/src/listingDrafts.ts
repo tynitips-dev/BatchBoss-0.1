@@ -140,7 +140,8 @@ export const publishBakerListing = onCall(options, async request => {
     const now = Date.now()
     const rights=listingPermissions(region,paid,now)
     const suiteActive=rights.suite,directoryActive=rights.finder
-    const standalonePaid = local && kind === 'marketplace' && (checkout.data()?.status === 'paid' && checkout.data()?.domain === 'live' || existing.data()?.standalonePaid === true)
+    const paidLock=checkout.data(),prior=existing.data();
+    const standalonePaid=kind==='marketplace'&&((paidLock?.status==='paid'&&paidLock?.domain==='live'&&(local||paidLock.provider==='paddle'&&sameListingRegion(paidLock,region)))||(prior?.standalonePaid===true&&(local||prior.standaloneProvider==='paddle')))
     if (kind === 'directoryListing' ? !suiteActive && !directoryActive : !suiteActive && !standalonePaid) {
       throw new HttpsError('failed-precondition', 'An active listing plan is required.')
     }
@@ -153,7 +154,7 @@ export const publishBakerListing = onCall(options, async request => {
 
     const fields = {
       kind, countryCode:region.countryCode,currency:region.currency,title: details.title, area: details.area, description: details.description,
-      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, status: 'published', updatedAt: FieldValue.serverTimestamp(),
+      priceCents: details.priceCents, logo: details.logo ?? '', photos: details.photos ?? [], sellerType: 'baker', standalonePaid, ...(standalonePaid?{standaloneProvider:local?'paystack':'paddle'}:{}), status: 'published', updatedAt: FieldValue.serverTimestamp(),
     }
     transaction.set(publication, fields)
     transaction.set(catalog, { ...fields, ownerUid: uid })
@@ -208,7 +209,7 @@ export const listPublishedBakerListings = onCall({
     const { ownerUid, title, area, description, priceCents, logo, photos } = doc.data()
     const region=listingRegion(doc.data())!
     if(kind==='marketplace'&&(!Number.isSafeInteger(priceCents)||priceCents<1||priceCents>100_000_000))return []
-    return (eligible.has(ownerUid) || (country==='ZA' && kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents:kind==='marketplace'?priceCents:null, logo, photos,countryCode:region.countryCode,currency:region.currency }] : []
+    return (eligible.has(ownerUid) || (kind === 'marketplace' && doc.data().standalonePaid === true && (country==='ZA'||doc.data().standaloneProvider==='paddle') && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents:kind==='marketplace'?priceCents:null, logo, photos,countryCode:region.countryCode,currency:region.currency }] : []
   })
   return { listings, nextCursor }
 })
