@@ -112,7 +112,7 @@ function SetupNotice() {
 
 function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>(new URLSearchParams(location.search).has('signup') ? 'signup' : 'login')
-  const [country,setCountry]=useState<LaunchCountry>('ZA')
+  const [country,setCountry]=useState<LaunchCountry>(()=>{for(const language of navigator.languages||[navigator.language]){try{const code=new Intl.Locale(language).region;if(launchCountries.some(c=>c.code===code))return code as LaunchCountry}catch{/* invalid locale */}}return 'ZA'})
   const regional=regionalRegistration(country)!
   const [internationalCountries,setInternationalCountries]=useState<string[]>([])
   const signupEnabled=regional.registrationEnabled||signupPlatform(location.search)==='web'&&internationalCountries.includes(country)
