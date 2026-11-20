@@ -6,7 +6,7 @@ let started=false
 const pending:{event:string;params:Record<string,string|number>;once?:string}[]=[]
 const seen=new Set<string>()
 export function metaConsent(){try{return localStorage.getItem(key)}catch{return null}}
-function safePage(){return location.protocol==='https:'&&location.hostname==='app.batchboss.co.za'&&![...new URLSearchParams(location.search).keys()].some(k=>!['signup','tab','payment','utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid'].includes(k))}
+function safePage(){return location.protocol==='https:'&&location.hostname==='app.batchboss.co.za'&&![...new URLSearchParams(location.search).keys()].some(k=>!['signup','tab','payment','utm_source','utm_medium','utm_campaign','utm_content','utm_term','fbclid'].includes(k))&&!location.hash}
 export function startMeta(){
  if(metaConsent()!=='yes'||!safePage())return
  try{
@@ -17,7 +17,7 @@ export function startMeta(){
   for(const p of pending.splice(0))send(p.event,p.params,p.once)
  }catch{/* optional marketing must not block the app */}
 }
-export function setMetaConsent(allow:boolean){try{localStorage.setItem(key,allow?'yes':'no')}catch{return}if(allow)startMeta();else{pending.length=0;try{w.fbq?.('consent','revoke')}catch{}}}
+export function setMetaConsent(allow:boolean){try{localStorage.setItem(key,allow?'yes':'no')}catch{return}if(allow){try{if(started&&safePage())w.fbq?.('consent','grant')}catch{}startMeta()}else{pending.length=0;try{w.fbq?.('consent','revoke')}catch{}}}
 function send(event:string,params:Record<string,string|number>,once?:string){
  if(!w.fbq||!safePage()||metaConsent()!=='yes')return
  const k=once?'bb-meta:'+event+':'+once:''
