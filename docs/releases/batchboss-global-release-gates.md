@@ -33,3 +33,7 @@ ZA (ZAR), US (USD), GB (GBP), CA (CAD), AU (AUD), NZ (NZD).
 - Verify invoice/quote/receipt output and native print/share on actual devices.
 - Reconcile any separate production payment/marketplace updates and the open invoice-PDF hotfix PR.
 - Confirm launch countries, pricing, payment provider, merchant approval, and rollout plan. Keep new country registration disabled by default.
+
+## Staged web registration and rollout
+
+International workspaces can now be created only by the server. Default-off public checkout and registration flags are independent of the pilot. An authorized administrator may prepare a new Firebase Auth account matching `PADDLE_TEST_UID` using `preparePaddlePilotWorkspace` (uid, country, bakeryName, firstName, surname). This operation creates only a new free international workspace; existing bakery currency cannot be changed. Keep public flags false until live checkout/lifecycle, regional accounting and legal QA pass. Android remains ZA-only; do not advertise native international access. Public registration opens only with the explicitly configured production flags. Test with a separate owner-approved account; no production account has been created by these development changes.

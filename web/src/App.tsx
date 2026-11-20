@@ -15,7 +15,8 @@ import {
 } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, getDocsFromServer, onSnapshot, serverTimestamp, setDoc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore'
 import { signupPlatform } from './accountPlatform'
-import { auth, db, firebaseConfigured } from './firebase'
+import {getFunctions,httpsCallable} from 'firebase/functions'
+import { auth, db, app, firebaseConfigured } from './firebase'
 import { BakeryTools, ReportsView, RecordsView, StockCards, ProfileName, displayName, isImportHeading } from './WorkspaceExtras'
 import SubscriptionView from './SubscriptionView'
 import { ListingView, UpcomingListingPlans } from './ListingView'
@@ -113,6 +114,9 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
   const [mode, setMode] = useState<'login' | 'signup'>(new URLSearchParams(location.search).has('signup') ? 'signup' : 'login')
   const [country,setCountry]=useState<LaunchCountry>('ZA')
   const regional=regionalRegistration(country)!
+  const [internationalCountries,setInternationalCountries]=useState<string[]>([])
+  const signupEnabled=regional.registrationEnabled||signupPlatform(location.search)==='web'&&internationalCountries.includes(country)
+  useEffect(()=>{let active=true;if(mode==='signup'&&signupPlatform(location.search)==='web')httpsCallable<void,{countries:string[]}>(getFunctions(app,'europe-west1'),'getInternationalRegistrationOptions')().then(({data})=>{if(active&&Array.isArray(data.countries))setInternationalCountries(data.countries)}).catch(()=>{});return()=>{active=false}},[mode])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -133,11 +137,21 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           lastLoginPlatform: 'web', lastLoginPlatformAt: serverTimestamp(),
         }).catch(() => {})
       } else {
-        const regionalFields=regionalSignupFields(country)
+        if(!signupEnabled)throw Error('Registration for this country is not available yet.')
+        const regionalFields=country==='ZA'?regionalSignupFields(country):null
         const bakeryName = String(data.get('bakeryName')).trim()
         const firstName = String(data.get('firstName')).trim()
         const surname = String(data.get('surname')).trim()
-        const credential = await createUserWithEmailAndPassword(auth, email, password)
+        const credential = await createUserWithEmailAndPassword(auth, email, password).catch(async reason=>{
+          // A failed server setup may have left only the Auth account. Retry with
+          // its password; the server refuses to overwrite an existing bakery.
+          if(country!=='ZA'&&reason?.code==='auth/email-already-in-use')return signInWithEmailAndPassword(auth,email,password)
+          throw reason
+        })
+        if(country!=='ZA'){
+          await httpsCallable(getFunctions(app,'europe-west1'),'createInternationalWorkspace')({country,bakeryName,firstName,surname})
+          return
+        }
         const uid = credential.user.uid
         const bakeryRef = doc(collection(db, 'bakeries'))
         const batch = writeBatch(db)
@@ -186,11 +200,11 @@ function AuthScreen({ onBusyChange }: { onBusyChange: (busy: boolean) => void })
           <label>First name<input name="firstName" required /></label>
           <label>Surname<input name="surname" required /></label>
         </div>}
-        {mode === 'signup' && <><label>Bakery name<input name="bakeryName" required /></label><label>Business country<select value={country} onChange={e=>setCountry(e.target.value as LaunchCountry)}>{launchCountries.map(c=><option key={c.code} value={c.code}>{c.name}</option>)}</select></label><p className="regional-signup-summary">Currency: {regional.currency} · {regional.measurementSystem==='us'?'US customary':'Metric'} · °{regional.temperatureUnit}</p>{!regional.registrationEnabled&&<p className="warning-note" role="status">This country is planned for BatchBoss Global. Registration is not yet open for this region.</p>}</>}
+        {mode === 'signup' && <><label>Bakery name<input name="bakeryName" required /></label><label>Business country<select value={country} onChange={e=>setCountry(e.target.value as LaunchCountry)}>{launchCountries.map(c=><option key={c.code} value={c.code}>{c.name}</option>)}</select></label><p className="regional-signup-summary">Currency: {regional.currency} · {regional.measurementSystem==='us'?'US customary':'Metric'} · °{regional.temperatureUnit}</p>{!signupEnabled&&<p className="warning-note" role="status">This country is planned for BatchBoss Global. Registration is not yet open for this region.</p>}</>}
         <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
         <label>Password<input name="password" type="password" minLength={8} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required /></label>
         {error && <div className="error-message">{error}</div>}
-        <button className="primary-button" disabled={busy||(mode==='signup'&&!regional.registrationEnabled)}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<ChevronRight size={18} /></button>
+        <button className="primary-button" disabled={busy||(mode==='signup'&&!signupEnabled)}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<ChevronRight size={18} /></button>
         <button type="button" className="text-button" onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>
           {mode === 'login' ? 'New to BatchBoss? Create an account' : 'Already registered? Sign in'}
         </button>

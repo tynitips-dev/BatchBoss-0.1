@@ -538,3 +538,5 @@ export {resumePaddleCheckout,getPaddleMarketplaceOptions,createPaddleMarketplace
 export {createPayfastSandboxCheckout,payfastSandboxNotify,getPayfastSandboxResult} from './payfastSandbox';
 
 export {getListingRegion,markMarketplaceSold,listListingDrafts,saveListingDraft,publishBakerListing,listPublishedBakerListings} from './listingDrafts';
+
+export {getInternationalRegistrationOptions,createInternationalWorkspace,preparePaddlePilotWorkspace} from './international-signup';

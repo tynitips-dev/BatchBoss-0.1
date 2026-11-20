@@ -17,6 +17,7 @@ const mirrorEnabled=defineString('PADDLE_WEBHOOK_ENABLED',{default:'false'});
 const provisionEnabled=defineString('PADDLE_PROVISION_ENABLED',{default:'false'});
 const portalEnabled=defineString('PADDLE_PORTAL_ENABLED',{default:'false'});
 const checkoutEnabled=defineString('PADDLE_CHECKOUT_ENABLED',{default:'false'});
+const publicCheckoutEnabled=defineString('PADDLE_PUBLIC_CHECKOUT_ENABLED',{default:'false'});
 const pilotUid=defineString('PADDLE_TEST_UID',{default:''});
 const checkoutToken=defineString('PADDLE_CLIENT_TOKEN',{default:''});
 const listingSubscriptionsEnabled=defineString('PADDLE_LISTING_SUBSCRIPTIONS_ENABLED',{default:'false'});
@@ -99,7 +100,7 @@ function subscriptionSnapshot(data:Json){
 // All requests use a server-created transaction, never arbitrary client-side price IDs.
 function checkoutReady(uid:string,m:Mode){
  const token=checkoutToken.value();
- return checkoutEnabled.value()==='true'&&mirrorEnabled.value()==='true'&&!!pilotUid.value()&&pilotUid.value()===uid&&
+ return checkoutEnabled.value()==='true'&&mirrorEnabled.value()==='true'&&((!!pilotUid.value()&&pilotUid.value()===uid)||(m==='live'&&publicCheckoutEnabled.value()==='true'))&&
   (m==='sandbox'?token.startsWith('test_'):token.startsWith('live_')&&provisionEnabled.value()==='true');
 }
 const appOrigin='https://app.batchboss.co.za';
