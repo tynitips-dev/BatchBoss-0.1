@@ -23,3 +23,5 @@ test('seller region is a snapshot, not a currency conversion',()=>{
  assert.equal(marketplaceBillingAvailable(listingRegion({})),true);
  assert.equal(marketplaceBillingAvailable(null),false);
 });
+
+test('international permissions require matching verified region and never use domestic expiry',()=>{const {listingPermissions}=require('../functions/lib/listingRegion');const now=1000,future={toMillis:()=>2000},past={toMillis:()=>0};const gb=listingRegion({countryCode:'GB',currency:'GBP'}),za=listingRegion({});assert.deepEqual(listingPermissions(gb,{fullSuiteExpiresAt:future},now),{finder:false,suite:false});const a={paddleSubscriptionId:'sub_fixture',paddleCountryCode:'GB',paddleCurrency:'GBP',paddleFinderExpiresAt:future,paddleSuiteExpiresAt:past};assert.deepEqual(listingPermissions(gb,a,now),{finder:true,suite:false});assert.deepEqual(listingPermissions(gb,{...a,paddleSuiteExpiresAt:future},now),{finder:true,suite:true});assert.deepEqual(listingPermissions(gb,{...a,paddleCountryCode:'US'},now),{finder:false,suite:false});assert.deepEqual(listingPermissions(za,a,now),{finder:false,suite:false});});

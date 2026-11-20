@@ -30,3 +30,16 @@ export function marketplaceBillingAvailable(region:ReturnType<typeof listingRegi
  // A foreign local-currency asking price is not a currency conversion of the listing fee.
  return region?.countryCode==='ZA'&&region.currency==='ZAR'
 }
+
+// Local Paystack rights must never be used to publish an international listing.
+// New Paddle grants are tied to the checkout's trusted country and currency.
+export function listingPermissions(region:ReturnType<typeof listingRegion>,access:Record<string,any>|undefined,now=Date.now()){
+ const none={finder:false,suite:false};if(!region)return none;
+ if(region.countryCode==='ZA'){
+  const suite=(access?.fullSuiteExpiresAt?.toMillis?.()??0)>now;
+  return {suite,finder:suite||(access?.directoryListingExpiresAt?.toMillis?.()??0)>now};
+ }
+ if(!access?.paddleSubscriptionId||access.paddleCountryCode!==region.countryCode||access.paddleCurrency!==region.currency)return none;
+ const suite=(access.paddleSuiteExpiresAt?.toMillis?.()??0)>now;
+ return {suite,finder:suite||(access.paddleFinderExpiresAt?.toMillis?.()??0)>now};
+}

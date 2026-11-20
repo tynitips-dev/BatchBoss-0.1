@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
-import {listingCountry, listingRegion, listingBelongsToCountry, sameListingRegion, marketplaceBillingAvailable} from './listingRegion'
+import {listingCountry, listingRegions, listingRegion, listingBelongsToCountry, sameListingRegion, marketplaceBillingAvailable, listingPermissions} from './listingRegion'
 
 const options = { region: 'europe-west1', invoker: 'public' }
 type Kind = 'directoryListing' | 'marketplace'
@@ -42,7 +42,10 @@ async function draftCollection(uid: string | undefined) {
 
 export const getListingRegion=onCall(options,async request=>{
  const {region}=await draftCollection(request.auth?.uid)
- return {...region,publicationEnabled:marketplaceBillingAvailable(region)}
+ const local=marketplaceBillingAvailable(region);
+ const access=(await getFirestore().doc('listingEntitlements/'+request.auth!.uid).get()).data();
+ const rights=listingPermissions(region,access);
+ return {...region,publicationEnabled:local||rights.finder||rights.suite,directoryPublicationEnabled:local||rights.finder,marketplacePublicationEnabled:local||rights.suite}
 })
 
 export const listListingDrafts = onCall(options, async request => {
@@ -111,7 +114,7 @@ export const publishBakerListing = onCall(options, async request => {
     throw new HttpsError('invalid-argument', 'Invalid listing ID.')
   }
 
-  if(!marketplaceBillingAvailable(region))throw new HttpsError('failed-precondition','Publication in your region is not enabled yet. You can save private drafts.')
+  const local=marketplaceBillingAvailable(region)
   const db = getFirestore()
   const entitlement = db.collection('listingEntitlements').doc(uid!)
   const workspace = drafts.parent!
@@ -119,7 +122,7 @@ export const publishBakerListing = onCall(options, async request => {
   const publicId = createHash('sha256').update(JSON.stringify([uid, id])).digest('hex')
   const catalog = db.collection('listingCatalogs').doc(kind).collection('entries').doc(publicId)
   const month = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit',
+    timeZone: local?'Africa/Johannesburg':'UTC', year: 'numeric', month: '2-digit',
   }).format(new Date())
   const allowance = workspace.collection('allowances').doc(month)
 
@@ -135,9 +138,9 @@ export const publishBakerListing = onCall(options, async request => {
     if(kind==='marketplace'&&checkout.data()?.status==='pending')throw new HttpsError('failed-precondition','A payment is pending. Complete or verify it before publishing.')
     const paid = access.data()
     const now = Date.now()
-    const suiteActive = (paid?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
-    const directoryActive = (paid?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now
-    const standalonePaid = kind === 'marketplace' && (checkout.data()?.status === 'paid' && checkout.data()?.domain === 'live' || existing.data()?.standalonePaid === true)
+    const rights=listingPermissions(region,paid,now)
+    const suiteActive=rights.suite,directoryActive=rights.finder
+    const standalonePaid = local && kind === 'marketplace' && (checkout.data()?.status === 'paid' && checkout.data()?.domain === 'live' || existing.data()?.standalonePaid === true)
     if (kind === 'directoryListing' ? !suiteActive && !directoryActive : !suiteActive && !standalonePaid) {
       throw new HttpsError('failed-precondition', 'An active listing plan is required.')
     }
@@ -197,14 +200,15 @@ export const listPublishedBakerListings = onCall({
   const now = Date.now()
   const eligible = new Set(owners.filter((_, index) => {
     const access = reads[index * 2 + 1].data()
-    return reads[index * 2].exists && ((access?.fullSuiteExpiresAt?.toMillis?.() ?? 0) > now
-      || (kind === 'directoryListing' && (access?.directoryListingExpiresAt?.toMillis?.() ?? 0) > now))
+    const region=listingRegion({countryCode:country,currency:listingRegions[country].currency});
+    const rights=listingPermissions(region,access,now);
+    return reads[index * 2].exists && (rights.suite || (kind==='directoryListing'&&rights.finder))
   }))
   const listings = rows.flatMap(doc => {
     const { ownerUid, title, area, description, priceCents, logo, photos } = doc.data()
     const region=listingRegion(doc.data())!
     if(kind==='marketplace'&&(!Number.isSafeInteger(priceCents)||priceCents<1||priceCents>100_000_000))return []
-    return (eligible.has(ownerUid) || (kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents:kind==='marketplace'?priceCents:null, logo, photos,countryCode:region.countryCode,currency:region.currency }] : []
+    return (eligible.has(ownerUid) || (country==='ZA' && kind === 'marketplace' && doc.data().standalonePaid === true && reads[owners.indexOf(ownerUid) * 2]?.exists)) ? [{ title, area, description, priceCents:kind==='marketplace'?priceCents:null, logo, photos,countryCode:region.countryCode,currency:region.currency }] : []
   })
   return { listings, nextCursor }
 })

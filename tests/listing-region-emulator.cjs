@@ -20,7 +20,7 @@ const item=id=>({kind:'marketplace',id,title:'Mixer',area:'Local city',descripti
 test('foreign listing drafts use the bakery currency and cannot publish on existing domestic plans',async()=>{
  const uid='listing-us-'+randomUUID(),id=randomUUID();
  await seed(uid,{countryCode:'US',currency:'USD'});
- assert.deepEqual(await invoke(api.getListingRegion,uid,{}),{countryCode:'US',currency:'USD',locale:'en-US',publicationEnabled:false});
+ assert.deepEqual(await invoke(api.getListingRegion,uid,{}),{countryCode:'US',currency:'USD',locale:'en-US',publicationEnabled:false,directoryPublicationEnabled:false,marketplacePublicationEnabled:false});
  await invoke(api.saveListingDraft,uid,{...item(id),countryCode:'ZA',currency:'ZAR'});
  const saved=(await draftRef(uid,id).get()).data();
  assert.equal(saved.countryCode,'US');assert.equal(saved.currency,'USD');assert.equal(saved.priceCents,4599);
@@ -37,7 +37,7 @@ test('legacy SA and new ZAR listings retain their price, and public feed has no 
  await invoke(api.saveListingDraft,uid,item(id));
  await invoke(api.publishBakerListing,uid,{kind:'marketplace',id});
  const foreign='listing-foreign-'+randomUUID();
- await seed(foreign,{countryCode:'GB',currency:'GBP'});await giveSuite(foreign);
+ await seed(foreign,{countryCode:'GB',currency:'GBP'});await db.doc('listingEntitlements/'+foreign).set({paddleSubscriptionId:'sub_fixture',paddleCountryCode:'GB',paddleCurrency:'GBP',paddleSuiteExpiresAt:Timestamp.fromMillis(Date.now()+86400000)});
  const foreignId=createHash('sha256').update(foreign).digest('hex');
  await db.doc(rows+foreignId).set({ownerUid:foreign,kind:'marketplace',countryCode:'GB',currency:'GBP',title:'UK test oven',area:'London',description:'Test',priceCents:12345,status:'published',internalNotes:'private'});
  const local=await invoke(api.listPublishedBakerListings,null,{kind:'marketplace',countryCode:'ZA'});
@@ -57,4 +57,15 @@ test('pending checkout prevents price edits and duplicate publication attempts',
  await assert.rejects(()=>invoke(api.saveListingDraft,uid,{...item(id),priceCents:999}),{code:'failed-precondition'});
  await assert.rejects(()=>invoke(api.publishBakerListing,uid,{kind:'marketplace',id}),{code:'failed-precondition'});
  assert.equal((await draftRef(uid,id).get()).get('priceCents'),4599);
+});
+
+test('region-bound Paddle grants enforce Finder-only rights and three monthly Full Suite listings',async()=>{
+ const uid='listing-paddle-'+randomUUID();await seed(uid,{countryCode:'GB',currency:'GBP'});const access=db.doc('listingEntitlements/'+uid),future=Timestamp.fromMillis(Date.now()+86400000),past=Timestamp.fromMillis(0);
+ await access.set({paddleSubscriptionId:'sub_fixture',paddleCountryCode:'GB',paddleCurrency:'GBP',paddleFinderExpiresAt:future,paddleSuiteExpiresAt:past});
+ let options=await invoke(api.getListingRegion,uid,{});assert.equal(options.directoryPublicationEnabled,true);assert.equal(options.marketplacePublicationEnabled,false);
+ await invoke(api.saveListingDraft,uid,{kind:'directoryListing',title:'Test UK bakery',area:'London',description:'Test',photos:[]});await invoke(api.publishBakerListing,uid,{kind:'directoryListing'});
+ const first=randomUUID();await invoke(api.saveListingDraft,uid,item(first));await assert.rejects(()=>invoke(api.publishBakerListing,uid,{kind:'marketplace',id:first}),{code:'failed-precondition'});
+ await access.update({paddleSuiteExpiresAt:future});
+ for(let i=0;i<4;i++){const id=i===0?first:randomUUID();await invoke(api.saveListingDraft,uid,item(id));if(i<3)await invoke(api.publishBakerListing,uid,{kind:'marketplace',id});else await assert.rejects(()=>invoke(api.publishBakerListing,uid,{kind:'marketplace',id}),{code:'resource-exhausted'});}
+ await access.update({paddleSuiteExpiresAt:past,paddleFinderExpiresAt:past});options=await invoke(api.getListingRegion,uid,{});assert.equal(options.publicationEnabled,false);
 });

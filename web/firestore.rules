@@ -38,7 +38,7 @@ service cloud.firestore {
         && (!('registrationPlatform' in request.resource.data) || request.resource.data.registrationPlatform in ['android','web'])
         && (!('lastLoginPlatform' in request.resource.data) || request.resource.data.lastLoginPlatform in ['android','web'])
         && (!('lastLoginPlatformAt' in request.resource.data) || request.resource.data.lastLoginPlatformAt == request.time)
-        && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode','paddleSubscriptionId','paddleCustomerId','payfastToken','payfastPaymentId','subscriptionRenews'])
+        && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode','paddleSubscriptionId','paddleCustomerId','paddlePlan','paddleSubscriptionStatus','payfastToken','payfastPaymentId','subscriptionRenews'])
         && getAfter(/databases/$(database)/documents/bakeries/$(request.resource.data.bakeryId)).data.ownerUid == uid;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow update: if isAdmin()

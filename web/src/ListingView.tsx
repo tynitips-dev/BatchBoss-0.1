@@ -7,7 +7,7 @@ import { useBakeryRegion } from './BakeryRegion'
 type Kind = 'directoryListing' | 'marketplace'
 type Draft = { id: string; title: string; area: string; description: string; priceCents: number | null; logo: string; photos: string[]; status?: 'draft'|'pending'|'paid'|'published'|'sold';countryCode?:string|null;currency?:string|null;regionMismatch?:boolean }
 const functions = getFunctions(app, 'europe-west1')
-type ListingRegion={countryCode:string;currency:string;locale:string;publicationEnabled:boolean}
+type ListingRegion={countryCode:string;currency:string;locale:string;publicationEnabled:boolean;directoryPublicationEnabled?:boolean;marketplacePublicationEnabled?:boolean}
 const getListingRegion=httpsCallable<void,ListingRegion>(functions,'getListingRegion')
 const listDrafts = httpsCallable<{ kind: Kind }, Draft[]>(functions, 'listListingDrafts')
 const saveDraft = httpsCallable<Draft & { kind: Kind }, { id: string }>(functions, 'saveListingDraft')
@@ -180,11 +180,11 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
         </div>)}</div>
         {processingPhoto && <p role="status">Preparing image…</p>}
         <button className="primary-button" type="submit">{saving ? 'Saving…' : 'Save private draft'}</button>
-        {region.publicationEnabled&&<button className="outline-button" type="submit" value="publish">Save and publish</button>}
-        {marketplace && region.publicationEnabled && !['published','paid','sold','pending'].includes(selectedStatus ?? '') && <button className="primary-button" type="submit" value="pay">{selectedStatus==='pending'?'Resume R20 checkout':'Pay R20 and publish'}</button>}
+        {(marketplace?region.marketplacePublicationEnabled:region.directoryPublicationEnabled)&&<button className="outline-button" type="submit" value="publish">Save and publish</button>}
+        {marketplace && region.countryCode==='ZA' && region.publicationEnabled && !['published','paid','sold','pending'].includes(selectedStatus ?? '') && <button className="primary-button" type="submit" value="pay">{selectedStatus==='pending'?'Resume R20 checkout':'Pay R20 and publish'}</button>}
       </fieldset>
     </form>
-    {marketplace&&region.publicationEnabled&&selectedStatus==='pending'&&!selected?.regionMismatch&&<button type="button" className="primary-button" disabled={saving} onClick={async()=>{setSaving(true);setError('');try{const {data}=await createMarketplaceCheckout({id});const url=new URL(data.checkoutUrl);if(url.origin!=='https://checkout.paystack.com')throw Error('Unexpected payment address.');location.assign(url.href)}catch(reason){setError(reason instanceof Error?reason.message:'Could not resume checkout. Do not pay twice.')}finally{setSaving(false)}}}>Resume existing R20 checkout</button>}
+    {marketplace&&region.countryCode==='ZA'&&region.publicationEnabled&&selectedStatus==='pending'&&!selected?.regionMismatch&&<button type="button" className="primary-button" disabled={saving} onClick={async()=>{setSaving(true);setError('');try{const {data}=await createMarketplaceCheckout({id});const url=new URL(data.checkoutUrl);if(url.origin!=='https://checkout.paystack.com')throw Error('Unexpected payment address.');location.assign(url.href)}catch(reason){setError(reason instanceof Error?reason.message:'Could not resume checkout. Do not pay twice.')}finally{setSaving(false)}}}>Resume existing R20 checkout</button>}
     {marketplace && selectedStatus==='published' && <button type="button" className="outline-button" disabled={saving} onClick={async()=>{if(!window.confirm('Mark this item as sold? It will be removed from the public Marketplace.'))return;setSaving(true);setError('');try{await markSold({id});setDrafts((await listDrafts({kind})).data);setNotice('Item marked as sold.')}catch(reason){setError(reason instanceof Error?reason.message:'Could not mark item sold.')}finally{setSaving(false)}}}>Mark as sold</button>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -214,12 +214,12 @@ export function ListingView({ tab, onViewPlans }: {
       ? 'Show customers what you bake, where you’re based and how they can enquire.'
       : 'List pre-owned baking equipment and supplies for other bakers to discover.'}</p>
     <p>Listing country: {region.countryCode} · Item currency: {region.currency}</p>
-    {region.publicationEnabled?<><p><strong>{isDirectory ? listingPrices.directory : listingPrices.marketplace}</strong></p><p>{isDirectory ? 'Directory Listing is included with Full Suite.' : 'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.'}</p></>:<p role="status">Regional listing plans are not available yet. You can save private drafts in your accounting currency.</p>}
+    {region.countryCode==='ZA'?<><p><strong>{isDirectory?listingPrices.directory:listingPrices.marketplace}</strong></p><p>{isDirectory?'Directory Listing is included with Full Suite.':'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.'}</p></>:<p role="status">{isDirectory?'Baker Finder publication requires an active international Finder or Full Suite plan.':'International Full Suite includes three new Marketplace listings per calendar month (UTC). Individual paid listings are not available yet.'} You can save private drafts in your accounting currency.</p>}
     <div className="card-actions">
       <a className="outline-button" href={publicPreview + (isDirectory ? 'baker-finder.html' : 'marketplace.html')}>
         {isDirectory ? 'Preview Find a Baker' : 'Preview Marketplace'}
       </a>
-      {region.publicationEnabled&&<button className="primary-button" type="button" onClick={onViewPlans}>View listing plans</button>}
+      <button className="primary-button" type="button" onClick={onViewPlans}>View listing plans</button>
     </div>
     <DraftEditor key={tab+':'+region.countryCode} kind={tab} region={region} />
   </section>
