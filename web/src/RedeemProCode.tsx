@@ -1,3 +1,4 @@
+import {trackMeta} from './metaPixel'
 import {useState,type FormEvent} from 'react'
 import {getFunctions,httpsCallable} from 'firebase/functions'
 import {app} from './firebase'
@@ -11,6 +12,7 @@ export default function RedeemProCode(){
    const result=await httpsCallable<{code:string},{redeemed:boolean;alreadyRedeemed:boolean;expiresAt:string}>(getFunctions(app,'europe-west1'),'redeemProCode')({code:code.trim().toUpperCase()})
    setMessage(result.data.alreadyRedeemed?'You have already used this code. It has not been applied again.':`Your Pro access is active until ${new Date(result.data.expiresAt).toLocaleDateString('en-ZA')}. No payment or automatic renewal was started.`)
    setCode('');const url=new URL(location.href);url.searchParams.delete('redeem');history.replaceState(null,'',url)
+   if(result.data.redeemed&&!result.data.alreadyRedeemed)trackMeta('StartTrial',{content_name:'BatchBoss Pro promotional access'})
   }catch(error){setError(error instanceof Error?error.message:'The code could not be redeemed. Please try again.')}
   finally{setBusy(false)}
  }
