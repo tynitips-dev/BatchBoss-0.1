@@ -528,3 +528,5 @@ export { sendBatchBossProPaymentEmail } from './proPaymentEmail';
 export { sendBatchBossFailedPaymentEmail, sendBatchBossCancellationEmail, sendBatchBossRenewalReminders } from './subscriptionEmails';
 
 export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCode} from './proCodes';
+
+export {getPaddleCheckoutOptions,createPaddleCheckout,paddleWebhook,createPaddlePortalSession} from './paddle';

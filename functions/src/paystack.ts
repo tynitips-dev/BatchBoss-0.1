@@ -9,6 +9,7 @@ const secret=defineSecret('PAYSTACK_SECRET_KEY');
 const monthly=defineString('PAYSTACK_MONTHLY_PLAN_CODE',{default:''});
 const annual=defineString('PAYSTACK_ANNUAL_PLAN_CODE',{default:''});
 const enabled=defineString('PAYSTACK_ENABLED',{default:'false'});
+const paddleCheckoutEnabled=defineString('PADDLE_CHECKOUT_ENABLED',{default:'false'});
 const internationalZar=defineString('PAYSTACK_INTERNATIONAL_ZAR_ENABLED',{default:'false'});
 const monthlyPromo=defineString('PAYSTACK_MONTHLY_PROMO_PLAN_CODE',{default:''});
 const annualPromo=defineString('PAYSTACK_ANNUAL_PROMO_PLAN_CODE',{default:''});
@@ -55,7 +56,7 @@ async function checkoutRoute(uid:string){
  const profile=(await db().doc(`users/${uid}`).get()).data();
  if(!profile||typeof profile.bakeryId!=='string'||!profile.bakeryId)return null;
  const bakery=(await db().doc(`bakeries/${profile.bakeryId}`).get()).data();
- return billingRoute(bakery,internationalZar.value()==='true');
+ return billingRoute(bakery,internationalZar.value()==='true'&&paddleCheckoutEnabled.value()!=='true');
 }
 export const getPaystackPlans=onCall(options,async request=>{
  const route=await checkoutRoute(uidOf(request));
@@ -87,7 +88,7 @@ export const createPaystackCheckout=onCall(options,async request=>{
   previousEnded=!!linked&&['cancelled','completed','complete'].includes(linked.remote.status)&&previous.subscriptionExpiresAt?.toMillis?.()<=Date.now();
  }
  const lockRef=db().doc(`paystackCheckouts/${uid}`);const profileRef=db().doc(`users/${uid}`);const reference=`BB-${randomUUID()}`;
- const existing=await db().runTransaction(async t=>{const [lock,profile]=await Promise.all([t.get(lockRef),t.get(profileRef)]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode&&!previousEnded)throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const old=lock.data();if(old&&old.expiresAtMs>Date.now()){if(old.planCode===plan.planCode&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or wait 30 minutes before starting another.');}t.set(lockRef,{reference,interval:plan.interval,planCode:plan.planCode,expiresAtMs:Date.now()+30*60*1000});return null;});
+ const existing=await db().runTransaction(async t=>{const [lock,profile,paddleLock]=await Promise.all([t.get(lockRef),t.get(profileRef),t.get(db().doc(`paddleBilling/live/checkoutLocks/${uid}`))]);if(!profile.exists)throw new HttpsError('failed-precondition','Complete your bakery profile first.');const p=profile.data()!;if(paddleLock.exists||p.subscriptionSource==='paddle'||p.paddleSubscriptionId)throw new HttpsError('failed-precondition','Manage your existing Paddle billing before opening Paystack checkout.');if(p.subscriptionSource==='paystack'&&p.paystackSubscriptionCode&&!previousEnded)throw new HttpsError('failed-precondition','Manage your existing Paystack subscription before starting another.');if(p.subscriptionSource==='payfast'&&p.subscriptionStatus==='active')throw new HttpsError('failed-precondition','Contact support to switch your existing PayFast subscription without duplicate billing.');const old=lock.data();if(old&&old.expiresAtMs>Date.now()){if(old.planCode===plan.planCode&&old.checkoutUrl)return old.checkoutUrl as string;throw new HttpsError('failed-precondition','A checkout is already open. Complete it or wait 30 minutes before starting another.');}t.set(lockRef,{reference,interval:plan.interval,planCode:plan.planCode,expiresAtMs:Date.now()+30*60*1000});return null;});
  if(existing)return {checkoutUrl:existing};
  try{
   const customer=await api('/customer',{email:user.email});const customerCode=String(customer.customer_code);if(!/^CUS_[a-zA-Z0-9]+$/.test(customerCode))throw new Error('Invalid customer');
@@ -111,7 +112,7 @@ async function settle(reference:string,expectedUid?:string,subscriptionCode?:str
  await db().runTransaction(async t=>{const [current,profile]=await Promise.all([t.get(paymentRef),t.get(profileRef)]);if(current.data()?.status==='success')return;if(!profile.exists)throw new Error('Missing profile');const p=profile.data()!;const old=p.subscriptionExpiresAt?.toDate?.();const expiry=old&&old>expires?old:expires;
  t.set(paymentRef,{...expected,reference,status:'success',transactionId:String(transaction.id),paidAt:transaction.paid_at,processedAt:now()},{merge:true});
  // Test mode records test payments but never grants production entitlements.
- if(expected!.domain==='live' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
+ if(expected!.domain==='live' && p.subscriptionSource!=='paddle' && !(p.subscriptionSource==='admin_promotion' && p.subscriptionExpiresAt?.toMillis?.()>Date.now()))t.update(profileRef,{subscriptionPlan:'pro',subscriptionStatus:expiry>new Date()?'active':'expired',subscriptionSource:'paystack',subscriptionBillingInterval:expected!.interval,subscriptionOffer:expected!.offer||null,subscriptionExpiresAt:expiry,paystackCustomerCode:expected!.customer,...(subscriptionCode?{paystackSubscriptionCode:subscriptionCode}:{}),updatedAt:now()});
  });return {status:'success',testMode:expected.domain==='test'};
 }
 export const verifyPaystackPayment=onCall(options,async request=>settle(String(request.data?.reference||''),uidOf(request)));

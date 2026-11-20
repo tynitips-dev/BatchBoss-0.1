@@ -31,3 +31,33 @@ test('verified envelope parser rejects malformed input; signature checking belon
  assert.throws(()=>parseVerifiedPaddleEvent(JSON.stringify({...event,occurred_at:'bad'})));
  assert.throws(()=>parseVerifiedPaddleEvent('{}'));
 });
+
+
+const {paymentRegion,remotePriceMatches,completedMatches,standardPlans,isFreeCheckoutProfile}=require('../functions/lib/paddle-checkout-core');
+test('country routes are derived from verified bakery metadata, never currency alone',()=>{
+ assert.equal(paymentRegion({}).provider,'paystack');
+ for(const [country,currency] of Object.entries({US:'USD',GB:'GBP',CA:'CAD',AU:'AUD',NZ:'NZD'}))assert.deepEqual(paymentRegion({countryCode:country,currency}),{country,currency,provider:'paddle'});
+ assert.equal(paymentRegion({countryCode:'GB',currency:'USD'}),null);
+ assert.equal(paymentRegion({countryCode:'IN',currency:'INR'}),null);
+});
+test('server standard pricing matches the published six-country catalog',()=>{
+ const catalog=require('../web/src/regional-plan-prices.json');
+ for(const [k,name] of Object.entries({weekly:'Weekly Pro',monthly:'Monthly Pro',annual:'Annual Pro'}))assert.deepEqual(standardPlans[k].prices,catalog.find(x=>x.name===name).prices);
+});
+test('remote price must match country override, currency, product, interval and amount',()=>{
+ const e={priceId:'pri_1',productId:'pro_1',interval:'month',country:'GB',currency:'GBP',amount:849};
+ const p={id:e.priceId,product_id:e.productId,status:'active',billing_cycle:{interval:'month',frequency:1},unit_price:{amount:'1099',currency_code:'USD'},unit_price_overrides:[{country_codes:['GB'],unit_price:{amount:'849',currency_code:'GBP'}}]};
+ assert.equal(remotePriceMatches(p,e),true);
+ assert.equal(remotePriceMatches({...p,unit_price_overrides:[]},e),false);
+ assert.equal(remotePriceMatches(p,{...e,amount:850}),false);
+ assert.equal(remotePriceMatches({...p,status:'archived'},e),false);
+});
+test('completed webhook must match the exact server-created checkout',()=>{
+ const expected={transactionId:'txn_one',customerId:'ctm_one',currency:'GBP',priceId:'pri_one',productId:'pro_one',interval:'month'};
+ const tx={id:'txn_one',status:'completed',origin:'api',customer_id:'ctm_one',currency_code:'GBP',collection_mode:'automatic',items:[{quantity:1,price:{id:'pri_one',product_id:'pro_one',billing_cycle:{interval:'month',frequency:1}}}]};
+ assert.equal(completedMatches(tx,expected),true);
+ for(const change of [{id:'txn_other'},{customer_id:'ctm_other'},{currency_code:'USD'},{status:'paid'},{origin:'web'},{items:[]}])assert.equal(completedMatches({...tx,...change},expected),false);
+ assert.equal(completedMatches(tx,undefined),false);
+ assert.equal(isFreeCheckoutProfile({subscriptionPlan:'free',subscriptionStatus:'free'}),true);
+ for(const source of ['paystack','paddle','payfast','admin_promotion'])assert.equal(isFreeCheckoutProfile({subscriptionPlan:'free',subscriptionStatus:'free',subscriptionSource:source}),false);
+});

@@ -20,7 +20,7 @@ service cloud.firestore {
     function hasPro() {
       return signedIn()
         && userDoc().data.subscriptionStatus in ['active', 'trialing']
-        && ((!('subscriptionExpiresAt' in userDoc().data) && userDoc().data.get('subscriptionSource', '') != 'paystack' && userDoc().data.subscriptionPlan != 'promo')
+        && ((!('subscriptionExpiresAt' in userDoc().data) && !(userDoc().data.get('subscriptionSource', '') in ['paystack','paddle']) && userDoc().data.subscriptionPlan != 'promo')
           || userDoc().data.subscriptionExpiresAt > request.time);
     }
 
@@ -38,7 +38,7 @@ service cloud.firestore {
         && (!('registrationPlatform' in request.resource.data) || request.resource.data.registrationPlatform in ['android','web'])
         && (!('lastLoginPlatform' in request.resource.data) || request.resource.data.lastLoginPlatform in ['android','web'])
         && (!('lastLoginPlatformAt' in request.resource.data) || request.resource.data.lastLoginPlatformAt == request.time)
-        && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode'])
+        && !request.resource.data.keys().hasAny(['subscriptionSource','subscriptionExpiresAt','paystackSubscriptionCode','paystackCustomerCode','paddleSubscriptionId','paddleCustomerId'])
         && getAfter(/databases/$(database)/documents/bakeries/$(request.resource.data.bakeryId)).data.ownerUid == uid;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow update: if isAdmin()
