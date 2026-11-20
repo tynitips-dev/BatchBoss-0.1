@@ -40,6 +40,15 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
   }catch(e){setError(e instanceof Error?e.message:'Checkout could not open. Please contact support.')}
   finally{setBusy('')}
  }
+ async function cancelCheckout(){
+  if(busy||!window.confirm('Cancel your unpaid checkout so you can choose another plan?'))return
+  setBusy('cancel');setError('')
+  try{
+   await httpsCallable<{confirm:boolean},{canceled:boolean}>(functions,'cancelPaddleCheckout')({confirm:true})
+   setVerificationNote('Unpaid checkout canceled. You can choose another plan.')
+  }catch(e){setError(e instanceof Error?e.message:'Cancellation could not be confirmed. Do not pay twice.')}
+  finally{setBusy('')}
+ }
  async function manage(){
   setBusy('manage');setError('')
   try{
@@ -57,6 +66,8 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
  {isPro&&<p className="success-note">Your Pro tools are unlocked.</p>}
  {linked?<div className="billing-actions"><button disabled={!!busy} className="outline-button" onClick={manage}>Manage subscription, payment method or invoices</button><small>Scheduled cancellation keeps access until the current billing period ends.</small></div>:!isPro&&!otherBilling&&<>
  <h3>Subscriptions ({region.currency})</h3>
+ {options?.enabled&&!paymentReturned&&<div className="billing-actions"><button className="outline-button" disabled={!!busy} onClick={cancelCheckout}>{busy==='cancel'?'Canceling…':'Cancel unfinished checkout'}</button></div>}
+ {emailVerified&&verificationNote&&<p role="status">{verificationNote}</p>}
  {!emailVerified&&<div className="billing-note"><p>Verify your email address before opening a paid subscription.</p><button className="outline-button" onClick={async()=>{try{if(!auth.currentUser)throw Error('Sign in first.');await sendEmailVerification(auth.currentUser);setVerificationNote('Check your email for the verification link.')}catch{setVerificationNote('Could not send verification email. Try again later.')}}}>Send verification email</button><button className="outline-button" onClick={async()=>{try{await auth.currentUser?.reload();setEmailVerified(auth.currentUser?.emailVerified===true);setVerificationNote(auth.currentUser?.emailVerified?'Email verified.':'Email is not verified yet.')}catch{setVerificationNote('Refresh failed. Please sign in again.')}}}>I have verified my email</button>{verificationNote&&<p role="status">{verificationNote}</p>}</div>}
  {!options?<p>Checking regional payment availability…</p>:!options.enabled?<p className="warning-note">Online subscription checkout is not available in your region yet.</p>:<>
  {options.environment==='sandbox'?<p className="warning-note">Sandbox only. Use test payment details; this does not activate live access.</p>:<p className="warning-note">Private checkout pilot. Confirm payment and renewal terms before continuing.</p>}
