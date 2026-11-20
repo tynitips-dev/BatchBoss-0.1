@@ -22,6 +22,7 @@ import SubscriptionView from './SubscriptionView'
 import { ListingView, UpcomingListingPlans } from './ListingView'
 import SetupGuide from './SetupGuide'
 import AnnouncementBanner from './AnnouncementBanner'
+import BakerInbox from './BakerInbox'
 import { subscriptionAccess } from './subscriptionAccess'
 import SupplierAdBanner from './SupplierAdBanner'
 import type { ModuleKey, UserProfile } from './types'
@@ -466,7 +467,7 @@ function Dashboard({ profile }: { profile: UserProfile }) {
       </div>
     </aside>
     <main className="dashboard-main">
-      <header style={{background:'linear-gradient(125deg,#b62d65,#d45d8c)',borderRadius:18,padding:'18px 20px',color:'#fff',display:'flex',flexWrap:'wrap',gap:12,alignItems:'center'}}><button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu /></button><div style={{flex:'1 1 180px'}}><span style={{color:'#fff'}}>{greeting},</span><h1 style={{color:'#fff',margin:0}}>{displayName(profile)} 👋</h1></div><div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}><button type="button" className={isPro ? 'plan-badge pro' : 'plan-badge'} onClick={()=>setActive('subscription')}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</button><button type="button" className="plan-badge" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button></div></header>
+      <header style={{background:'linear-gradient(125deg,#b62d65,#d45d8c)',borderRadius:18,padding:'18px 20px',color:'#fff',display:'flex',flexWrap:'wrap',gap:12,alignItems:'center'}}><button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu /></button><div style={{flex:'1 1 180px'}}><span style={{color:'#fff'}}>{greeting},</span><h1 style={{color:'#fff',margin:0}}>{displayName(profile)} 👋</h1></div><div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}><BakerInbox key={profile.uid} uid={profile.uid} items={items}/><button type="button" className={isPro ? 'plan-badge pro' : 'plan-badge'} onClick={()=>setActive('subscription')}><Sparkles size={15} />{isPro ? 'BatchBoss Pro' : 'Free plan'}</button><button type="button" className="plan-badge" disabled={syncing} onClick={syncNow}>{syncing ? 'Syncing…' : 'Sync now'}</button></div></header>
       <AnnouncementBanner />
       {active === 'home' && <div className="portal-hero"><img src="/batchboss-bakers-hero.webp" width="1983" height="299" alt="BatchBoss Bakers Portal — Bake smarter, together. Recipes, costs, stock, quotes and grow." fetchPriority="high" decoding="async" /></div>}
       {['home','suppliers','supplierDirectory'].includes(active)&&<SupplierAdBanner countryCode={region.countryCode}/>}
