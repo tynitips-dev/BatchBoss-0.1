@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { app } from './firebase'
+import {initializePaddle} from '@paddle/paddle-js'
+import type {LaunchCountry} from './workspace-utils'
 import { useBakeryRegion } from './BakeryRegion'
 
 type Kind = 'directoryListing' | 'marketplace'
 type Draft = { id: string; title: string; area: string; description: string; priceCents: number | null; logo: string; photos: string[]; status?: 'draft'|'pending'|'paid'|'published'|'sold';countryCode?:string|null;currency?:string|null;regionMismatch?:boolean }
 const functions = getFunctions(app, 'europe-west1')
-type ListingRegion={countryCode:string;currency:string;locale:string;publicationEnabled:boolean;directoryPublicationEnabled?:boolean;marketplacePublicationEnabled?:boolean}
+type MarketOptions={enabled:boolean;amount?:number;currency?:string;environment?:'sandbox'|'live'}
+type MarketCheckout={transactionId:string;customerId:string;country:LaunchCountry;token:string;environment:'sandbox'|'live'}
+type ListingRegion={countryCode:string;currency:string;locale:string;publicationEnabled:boolean;directoryPublicationEnabled?:boolean;marketplacePublicationEnabled?:boolean;paddleOptions?:MarketOptions}
 const getListingRegion=httpsCallable<void,ListingRegion>(functions,'getListingRegion')
 const listDrafts = httpsCallable<{ kind: Kind }, Draft[]>(functions, 'listListingDrafts')
 const saveDraft = httpsCallable<Draft & { kind: Kind }, { id: string }>(functions, 'saveListingDraft')
@@ -58,6 +62,8 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
 
   const selected=drafts.find(draft => draft.id === id)
   const selectedStatus=selected?.status
+  const local=region.countryCode==='ZA',paddleAvailable=region.paddleOptions?.enabled===true&&region.paddleOptions.currency===region.currency&&Number.isSafeInteger(region.paddleOptions.amount)
+  const feeLabel=local?'R20':paddleAvailable?new Intl.NumberFormat(region.locale,{style:'currency',currency:region.currency}).format(region.paddleOptions!.amount!/100):''
 
   function edit(draft: Draft) {
     setId(draft.id)
@@ -73,6 +79,10 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
       if (kind === 'marketplace') {
         const params = new URLSearchParams(location.search)
         const reference = params.get('reference') || params.get('trxref')
+        if(params.get('payment')==='paddle_marketplace'){
+          const paid=data.find(d=>d.id===params.get('listing'));
+          if(paid){edit(paid);setNotice(paid.status==='published'?'Payment verified. Your listing is published.':'Your payment is being verified. Refresh the listing without starting another purchase.')}
+        }
         if (params.get('payment') === 'marketplace' && reference) {
           void verifyMarketplacePayment({reference}).then(async ({data:payment}) => {
             if (!current) return
@@ -109,6 +119,24 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
     }
   }
 
+  async function openListingCheckout(listingId:string){
+    if(local){
+      const {data}=await createMarketplaceCheckout({id:listingId})
+      const url=new URL(data.checkoutUrl)
+      if(url.origin!=='https://checkout.paystack.com')throw Error('Unexpected payment address.')
+      location.assign(url.href);return
+    }
+    if(!paddleAvailable)throw Error('International Marketplace payment is not enabled.')
+    const {data}=await httpsCallable<{id:string},MarketCheckout>(functions,'createPaddleMarketplaceCheckout')({id:listingId})
+    if(data.country!==region.countryCode||data.environment!==region.paddleOptions?.environment||!/^txn_[a-z0-9]{26}$/.test(data.transactionId)||!/^ctm_[a-z0-9]{26}$/.test(data.customerId)||!data.token.startsWith(data.environment==='sandbox'?'test_':'live_'))throw Error('Billing configuration could not be verified.')
+    if(data.environment==='live')setDrafts(previous=>previous.map(d=>d.id===listingId?{...d,status:'pending'}:d))
+    const client=await initializePaddle({token:data.token,...(data.environment==='sandbox'?{environment:'sandbox' as const}:{})})
+    if(!client)throw Error('Checkout could not load. Resume the saved listing rather than creating another.')
+    const url=new URL('/?tab=marketplace&payment=paddle_marketplace',location.origin);url.searchParams.set('listing',listingId)
+    client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',successUrl:url.href}})
+    setNotice(data.environment==='sandbox'?'Sandbox checkout does not publish a live listing.':'Complete secure checkout, then refresh to confirm publication. Do not pay again.')
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (processingPhoto||selected?.regionMismatch||selectedStatus==='pending'||selectedStatus==='sold') return
@@ -127,10 +155,7 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
         setDrafts((await listDrafts({kind})).data)
         setNotice('Listing published.')
       } else if (marketplace && (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'pay') {
-        const {data} = await createMarketplaceCheckout({id:saved.id})
-        const url = new URL(data.checkoutUrl)
-        if(url.origin !== 'https://checkout.paystack.com') throw new Error('Unexpected payment address.')
-        location.assign(url.href)
+        await openListingCheckout(saved.id)
       } else {
         setNotice('Private draft saved.')
       }
@@ -181,10 +206,11 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
         {processingPhoto && <p role="status">Preparing image…</p>}
         <button className="primary-button" type="submit">{saving ? 'Saving…' : 'Save private draft'}</button>
         {(marketplace?region.marketplacePublicationEnabled:region.directoryPublicationEnabled)&&<button className="outline-button" type="submit" value="publish">Save and publish</button>}
-        {marketplace && region.countryCode==='ZA' && region.publicationEnabled && !['published','paid','sold','pending'].includes(selectedStatus ?? '') && <button className="primary-button" type="submit" value="pay">{selectedStatus==='pending'?'Resume R20 checkout':'Pay R20 and publish'}</button>}
+        {marketplace && (local?region.publicationEnabled:paddleAvailable) && !['published','paid','sold','pending'].includes(selectedStatus ?? '') && <button className="primary-button" type="submit" value="pay">{region.paddleOptions?.environment==='sandbox'?'Test listing checkout':`Pay ${feeLabel} and publish`}</button>}
       </fieldset>
     </form>
-    {marketplace&&region.countryCode==='ZA'&&region.publicationEnabled&&selectedStatus==='pending'&&!selected?.regionMismatch&&<button type="button" className="primary-button" disabled={saving} onClick={async()=>{setSaving(true);setError('');try{const {data}=await createMarketplaceCheckout({id});const url=new URL(data.checkoutUrl);if(url.origin!=='https://checkout.paystack.com')throw Error('Unexpected payment address.');location.assign(url.href)}catch(reason){setError(reason instanceof Error?reason.message:'Could not resume checkout. Do not pay twice.')}finally{setSaving(false)}}}>Resume existing R20 checkout</button>}
+    {marketplace&&(local?region.publicationEnabled:paddleAvailable)&&selectedStatus==='pending'&&!selected?.regionMismatch&&<button type="button" className="primary-button" disabled={saving} onClick={async()=>{setSaving(true);setError('');try{await openListingCheckout(id)}catch(reason){setError(reason instanceof Error?reason.message:'Could not resume checkout. Do not pay twice.')}finally{setSaving(false)}}}>Resume existing {feeLabel} checkout</button>}
+    {marketplace&&<button type="button" className="outline-button" disabled={saving||loading} onClick={async()=>{setSaving(true);setError('');try{const fresh=(await listDrafts({kind})).data;setDrafts(fresh);const current=fresh.find(d=>d.id===id);if(current)edit(current);setNotice(current?.status==='published'?'Listing published.':'Listing status refreshed.')}catch{setError('Could not refresh listing status.')}finally{setSaving(false)}}}>Refresh listing status</button>}
     {marketplace && selectedStatus==='published' && <button type="button" className="outline-button" disabled={saving} onClick={async()=>{if(!window.confirm('Mark this item as sold? It will be removed from the public Marketplace.'))return;setSaving(true);setError('');try{await markSold({id});setDrafts((await listDrafts({kind})).data);setNotice('Item marked as sold.')}catch(reason){setError(reason instanceof Error?reason.message:'Could not mark item sold.')}finally{setSaving(false)}}}>Mark as sold</button>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -205,7 +231,7 @@ export function ListingView({ tab, onViewPlans }: {
 }) {
   const isDirectory = tab === 'directoryListing'
   const [region,setRegion]=useState<ListingRegion|null>(null),[regionError,setRegionError]=useState('')
-  useEffect(()=>{let active=true;getListingRegion().then(r=>{if(active)setRegion(r.data)}).catch(()=>{if(active)setRegionError('Could not verify bakery region. Refresh before editing listings.')});return()=>{active=false}},[])
+  useEffect(()=>{let active=true;getListingRegion().then(async r=>{if(!active)return;setRegion(r.data);if(r.data.countryCode!=='ZA'){try{const {data}=await httpsCallable<void,MarketOptions>(functions,'getPaddleMarketplaceOptions')();if(active)setRegion({...r.data,paddleOptions:data})}catch{/* publication and private drafts remain available */}}}).catch(()=>{if(active)setRegionError('Could not verify bakery region. Refresh before editing listings.')});return()=>{active=false}},[])
   if(!region)return <section className="content-card"><p role="status">{regionError||'Loading listing region…'}</p></section>
 
   return <section className="content-card">
@@ -214,7 +240,7 @@ export function ListingView({ tab, onViewPlans }: {
       ? 'Show customers what you bake, where you’re based and how they can enquire.'
       : 'List pre-owned baking equipment and supplies for other bakers to discover.'}</p>
     <p>Listing country: {region.countryCode} · Item currency: {region.currency}</p>
-    {region.countryCode==='ZA'?<><p><strong>{isDirectory?listingPrices.directory:listingPrices.marketplace}</strong></p><p>{isDirectory?'Directory Listing is included with Full Suite.':'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.'}</p></>:<p role="status">{isDirectory?'Baker Finder publication requires an active international Finder or Full Suite plan.':'International Full Suite includes three new Marketplace listings per calendar month (UTC). Individual paid listings are not available yet.'} You can save private drafts in your accounting currency.</p>}
+    {region.countryCode==='ZA'?<><p><strong>{isDirectory?listingPrices.directory:listingPrices.marketplace}</strong></p><p>{isDirectory?'Directory Listing is included with Full Suite.':'Full Suite includes 3 new Marketplace listings per month. Extra listings cost R20 each, once-off.'}</p></>:<p role="status">{isDirectory?'Baker Finder publication requires an active international Finder or Full Suite plan.':'International Full Suite includes three new Marketplace listings per calendar month (UTC). '+(region.paddleOptions?.enabled&&region.paddleOptions.currency===region.currency&&Number.isSafeInteger(region.paddleOptions.amount)?'Individual listings cost '+new Intl.NumberFormat(region.locale,{style:'currency',currency:region.currency}).format(region.paddleOptions.amount!/100)+' once-off.':'Individual paid listings are not available yet.')} You can save private drafts in your accounting currency.</p>}
     <div className="card-actions">
       <a className="outline-button" href={publicPreview + (isDirectory ? 'baker-finder.html' : 'marketplace.html')}>
         {isDirectory ? 'Preview Find a Baker' : 'Preview Marketplace'}
