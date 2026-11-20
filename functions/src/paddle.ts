@@ -104,12 +104,12 @@ function checkoutReady(uid:string,m:Mode){
   (m==='sandbox'?token.startsWith('test_'):token.startsWith('live_')&&provisionEnabled.value()==='true');
 }
 const appOrigin='https://app.batchboss.co.za';
-async function paddleApi(m:Mode,path:string,body?:Json):Promise<Json>{
+async function paddleApi(m:Mode,path:string,body?:Json,method=body?'POST':'GET'):Promise<Json>{
  const origin=m==='live'?'https://api.paddle.com':'https://sandbox-api.paddle.com';
  const key=apiKey.value();
  if(!key)throw new HttpsError('failed-precondition','Paddle API configuration is missing.');
  try{
-  const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Paddle-Version':'1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
+  const response=await fetch(origin+path,{method,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Paddle-Version':'1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Error('Paddle request rejected');
   const result=obj(await response.json());
   return obj(result.data);
@@ -216,6 +216,37 @@ export const createPaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   tx.update(lock,{status:'ready',transactionId});
  });
  return {transactionId,customerId,country:route.country,token:checkoutToken.value(),environment:m};
+});
+
+// Only release the checkout lock after Paddle confirms the unpaid transaction is canceled.
+export const cancelPaddleCheckout=onCall({region:'europe-west1',invoker:'public',cors:[appOrigin],secrets:[apiKey]},async request=>{
+ if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');
+ if(request.data?.confirm!==true)throw new HttpsError('invalid-argument','Confirm that you want to cancel the unpaid checkout.');
+ const uid=request.auth.uid,m=mode(),db=getFirestore(),base=db.collection('paddleBilling').doc(m),lock=base.collection('checkoutLocks').doc(uid);
+ const l=(await lock.get()).data();
+ if(!l)return {canceled:true};
+ if(!checkoutReady(uid,m)||l.uid!==uid||l.status!=='ready'||!id(l.transactionId,'txn')||!id(l.customerId,'ctm'))throw new HttpsError('failed-precondition','This checkout requires billing support; no new payment has been created.');
+ const transactionId=l.transactionId,customerId=l.customerId,intentRef=base.collection('checkoutIntents').doc(transactionId),ownerRef=base.collection('customerBindings').doc(customerId),accountRef=base.collection('accountBindings').doc(uid),profileRef=db.collection('users').doc(uid);
+ const [intentSnap,owner,account,profile]=await Promise.all([intentRef.get(),ownerRef.get(),accountRef.get(),profileRef.get()]);
+ const intent=intentSnap.data();
+ if(!intent||intent.uid!==uid||intent.status!=='pending'||intent.transactionId!==transactionId||intent.customerId!==customerId||owner.data()?.uid!==uid||account.exists||!isFreeCheckoutProfile(profile.data()))throw new HttpsError('failed-precondition','Payment ownership or status needs review.');
+ const path='/transactions/'+transactionId;
+ const matches=(remote:Json)=>remote.id===transactionId&&remote.customer_id===customerId&&remote.currency_code===intent.currency&&remote.origin==='api'&&remote.collection_mode==='automatic'&&!remote.subscription_id;
+ let remote=await paddleApi(m,path);
+ if(!matches(remote)||!['draft','ready','canceled'].includes(str(remote.status)))throw new HttpsError('failed-precondition','This payment cannot be canceled safely. Check payment status or contact support.');
+ if(remote.status!=='canceled'){
+  await paddleApi(m,path,{status:'canceled'},'PATCH');
+  remote=await paddleApi(m,path);
+ }
+ if(!matches(remote)||remote.status!=='canceled')throw new HttpsError('unavailable','Cancellation is not confirmed. Do not start another payment.');
+ await db.runTransaction(async tx=>{
+  const [current,attempt,o,a,p]=await Promise.all([tx.get(lock),tx.get(intentRef),tx.get(ownerRef),tx.get(accountRef),tx.get(profileRef)]);
+  if(attempt.data()?.status==='canceled'&&current.data()?.transactionId!==transactionId)return;
+  if(current.data()?.transactionId!==transactionId||current.data()?.status!=='ready'||attempt.data()?.status!=='pending'||attempt.data()?.uid!==uid||o.data()?.uid!==uid||a.exists||!isFreeCheckoutProfile(p.data()))throw new HttpsError('failed-precondition','Billing changed during cancellation. Please refresh or contact support.');
+  tx.update(intentRef,{status:'canceled',updatedAt:FieldValue.serverTimestamp()});
+  tx.delete(lock);
+ });
+ return {canceled:true};
 });
 
 const listingKey=(uid:string,listingId:string)=>createHash('sha256').update(JSON.stringify([uid,listingId])).digest('hex');
