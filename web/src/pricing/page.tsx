@@ -8,7 +8,7 @@ import catalog from '../regional-plan-prices.json'
 import './pricing.css'
 
 type Plan={name:string;interval:string;prices:Partial<Record<string,number>>}
-type Resume={transactionId:string;customerId:string;country:LaunchCountry;token:string;environment:'sandbox'|'live';listingId:string|null}
+type Resume={transactionId:string;customerId:string;country:LaunchCountry;token:string;environment:'sandbox'|'live';listingId:string|null;launchOffer:boolean}
 const plans=catalog as ReadonlyArray<Plan>
 // Remove Paddle's automatic checkout query before SDK initialization. Only the
 // backend may authorize reopening it, and the original account must be signed in.
@@ -32,7 +32,7 @@ function Pricing(){
    if(!client)throw Error('Checkout could not load.')
    const success=new URL(data.listingId?'/?payment=paddle_marketplace':'/?payment=paddle',location.origin)
    if(data.listingId)success.searchParams.set('listing',data.listingId)
-   client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',successUrl:success.href}})
+   client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',allowLogout:false,...(data.launchOffer?{allowDiscountRemoval:false,showAddDiscounts:false}:{}),successUrl:success.href}})
   }catch(e){setNotice(e instanceof Error?e.message:'Checkout could not be resumed. Contact support before paying again.')}
   finally{setPending(false)}
  }

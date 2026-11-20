@@ -443,8 +443,8 @@ export const resumePaddleCheckout=onCall({region:'europe-west1',invoker:'public'
   if(!sale||sale.mapped.priceId!==intent.priceId||sale.amount!==intent.amount||sale.promo&&sale.promo.discountId!==intent.discountId)throw new HttpsError('failed-precondition','Subscription offer has changed. Contact support.');
  }else if(!validListingId(intent.listingId)||!marketplaceConfig(uid,m,region))throw new HttpsError('failed-precondition','Listing checkout is unavailable.');
  const remote=await paddleApi(m,'/transactions/'+transactionId);
- if(remote.id!==transactionId||remote.customer_id!==intent.customerId||remote.currency_code!==intent.currency||!['draft','ready'].includes(str(remote.status)))throw new HttpsError('failed-precondition','The payment is no longer open. Check your subscription or listing status.');
- return {transactionId,customerId:intent.customerId,country:region.country,token:checkoutToken.value(),environment:m,listingId:listing.exists?intent.listingId:null};
+ if(remote.id!==transactionId||remote.customer_id!==intent.customerId||remote.currency_code!==intent.currency||!['draft','ready'].includes(str(remote.status))||!Array.isArray(remote.items)||remote.items.length!==1||obj(remote.items[0]).quantity!==1||obj(obj(remote.items[0]).price).id!==intent.priceId||intent.discountId&&remote.discount_id!==intent.discountId)throw new HttpsError('failed-precondition','The payment is no longer open. Check your subscription or listing status.');
+ return {transactionId,customerId:intent.customerId,country:region.country,token:checkoutToken.value(),environment:m,listingId:listing.exists?intent.listingId:null,launchOffer:subscription.exists&&isLaunchOffer(intent.plan)};
 });
 export const createPaddlePortalSession=onCall({region:'europe-west1',invoker:'public',secrets:[apiKey]},async request=>{
  if(!request.auth||request.auth.token.firebase?.sign_in_provider==='anonymous')throw new HttpsError('unauthenticated','Sign in first.');

@@ -37,7 +37,7 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
    if(data.country!==region.countryCode||data.environment!==options.environment||!/^txn_[a-z0-9]{26}$/.test(data.transactionId)||!/^ctm_[a-z0-9]{26}$/.test(data.customerId)||!data.token.startsWith(data.environment==='sandbox'?'test_':'live_'))throw Error('Billing configuration could not be verified.')
    const client=await initializePaddle({token:data.token,...(data.environment==='sandbox'?{environment:'sandbox' as const}:{})})
    if(!client)throw Error('Checkout could not load. Try again with the same plan.')
-   client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',successUrl:new URL('/?payment=paddle',location.origin).href}})
+   client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',allowLogout:false,...(plan==='monthly_launch'||plan==='annual_launch'?{allowDiscountRemoval:false,showAddDiscounts:false}:{}),successUrl:new URL('/?payment=paddle',location.origin).href}})
   }catch(e){setError(e instanceof Error?e.message:'Checkout could not open. Please contact support.')}
   finally{setBusy('')}
  }

@@ -133,7 +133,7 @@ function DraftEditor({ kind,region }: { kind: Kind;region:ListingRegion }) {
     const client=await initializePaddle({token:data.token,...(data.environment==='sandbox'?{environment:'sandbox' as const}:{})})
     if(!client)throw Error('Checkout could not load. Resume the saved listing rather than creating another.')
     const url=new URL('/?tab=marketplace&payment=paddle_marketplace',location.origin);url.searchParams.set('listing',listingId)
-    client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',successUrl:url.href}})
+    client.Checkout.open({transactionId:data.transactionId,customer:{id:data.customerId,address:{countryCode:data.country}},settings:{displayMode:'overlay',variant:'one-page',allowLogout:false,successUrl:url.href}})
     setNotice(data.environment==='sandbox'?'Sandbox checkout does not publish a live listing.':'Complete secure checkout, then refresh to confirm publication. Do not pay again.')
   }
 

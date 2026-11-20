@@ -20,7 +20,7 @@ const db={doc:p=>new Ref(p),collection:p=>({doc:id=>new Ref(p+'/'+id)}),async ru
  return result;
 }};
 class HttpsError extends Error{constructor(code,message){super(message);this.code=code}}
-const ids={customer:'ctm_'+'c'.repeat(26),sub:'sub_'+'s'.repeat(26),txn:'txn_'+'t'.repeat(26),address:'add_'+'a'.repeat(26),monthly:'pri_'+'m'.repeat(26),annual:'pri_'+'y'.repeat(26),product:'pro_'+'p'.repeat(26),finder:'pri_'+'f'.repeat(26),suite:'pri_'+'u'.repeat(26),market:'pri_'+'k'.repeat(26),marketTxn:'txn_'+'v'.repeat(26),marketProduct:'pro_'+'m'.repeat(26)};
+const ids={customer:'ctm_'+'c'.repeat(26),sub:'sub_'+'s'.repeat(26),txn:'txn_'+'t'.repeat(26),address:'add_'+'a'.repeat(26),monthly:'pri_'+'m'.repeat(26),annual:'pri_'+'y'.repeat(26),product:'pro_'+'p'.repeat(26),finder:'pri_'+'f'.repeat(26),suite:'pri_'+'u'.repeat(26),market:'pri_'+'k'.repeat(26),marketTxn:'txn_'+'v'.repeat(26),marketProduct:'pro_'+'m'.repeat(26),launch:'dsc_'+'d'.repeat(26)};
 const signing='pdl_ntfset_fixture_secret_never_real';
 const config={PADDLE_ENVIRONMENT:'live',PADDLE_WEBHOOK_ENABLED:'true',PADDLE_PROVISION_ENABLED:'true',PADDLE_PORTAL_ENABLED:'true',PADDLE_CHECKOUT_ENABLED:'true',PADDLE_TEST_UID:'baker1',PADDLE_CLIENT_TOKEN:'live_fixture',PADDLE_API_KEY:'pdl_live_apikey_'+ 'x'.repeat(64),PADDLE_WEBHOOK_SECRET:signing,PADDLE_LISTING_SUBSCRIPTIONS_ENABLED:'true',PADDLE_MARKETPLACE_ENABLED:'true',PADDLE_MARKETPLACE_PRICE_ID:ids.market,PADDLE_MARKETPLACE_PRODUCT_ID:ids.marketProduct,PADDLE_PRO_PRICE_MAP:JSON.stringify({[ids.monthly]:{productId:ids.product,interval:'month'},[ids.annual]:{productId:ids.product,interval:'year'},[ids.finder]:{productId:ids.product,interval:'month',plan:'finder'},[ids.suite]:{productId:ids.product,interval:'month',plan:'full_suite'}})};
 const oldLoad=Module._load;
@@ -42,8 +42,9 @@ const item=(annual=false)=>({quantity:1,price:{...price(annual),status:'active',
 const plus=(days)=>new Date(Date.now()+days*86400000).toISOString();
 const future=plus(7),renewal=plus(37);
 let seq=0,requests=[],addressCountry='GB',checkoutPlan='monthly';
+const launchEnd=plus(30);
 function reset(mode='live'){
- records.clear();seq=0;requests=[];addressCountry='GB';checkoutPlan='monthly';config.PADDLE_MARKETPLACE_ENABLED='true';config.PADDLE_LISTING_SUBSCRIPTIONS_ENABLED='true';config.PADDLE_ENVIRONMENT=mode;config.PADDLE_CLIENT_TOKEN=mode==='live'?'live_fixture':'test_fixture';config.PADDLE_PROVISION_ENABLED='true';config.PADDLE_CHECKOUT_ENABLED='true';
+ records.clear();seq=0;requests=[];addressCountry='GB';checkoutPlan='monthly';config.PADDLE_LAUNCH_ENABLED='false';config.PADDLE_LAUNCH_DISCOUNT_MAP='{}';config.PADDLE_MARKETPLACE_ENABLED='true';config.PADDLE_LISTING_SUBSCRIPTIONS_ENABLED='true';config.PADDLE_ENVIRONMENT=mode;config.PADDLE_CLIENT_TOKEN=mode==='live'?'live_fixture':'test_fixture';config.PADDLE_PROVISION_ENABLED='true';config.PADDLE_CHECKOUT_ENABLED='true';
  set('users/baker1',{subscriptionPlan:'free',subscriptionStatus:'free',bakeryId:'bakery1'});
  set('bakeries/bakery1',{ownerUid:'baker1',countryCode:'GB',currency:'GBP'});
 }
@@ -54,10 +55,11 @@ global.fetch=async(url,opts)=>{
  if(path==='/prices/'+ids.monthly)data={...price(),status:'active',unit_price:{amount:'1099',currency_code:'USD'},unit_price_overrides:[{country_codes:['GB'],unit_price:{amount:'849',currency_code:'GBP'}}]};
  else if(path==='/prices/'+ids.finder||path==='/prices/'+ids.suite){const finder=path.endsWith(ids.finder);data={...price(),id:finder?ids.finder:ids.suite,status:'active',unit_price:{amount:finder?'399':'1699',currency_code:'USD'},unit_price_overrides:[{country_codes:['GB'],unit_price:{amount:finder?'299':'1299',currency_code:'GBP'}}]};}
  else if(path==='/prices/'+ids.market)data={id:ids.market,product_id:ids.marketProduct,status:'active',billing_cycle:null,trial_period:null,unit_price:{amount:'149',currency_code:'USD'},unit_price_overrides:[{country_codes:['GB'],unit_price:{amount:'119',currency_code:'GBP'}}]};
+ else if(path==='/discounts/'+ids.launch)data={id:ids.launch,status:'active',mode:'standard',type:'flat',amount:'300',currency_code:'GBP',restrict_to:[ids.monthly],enabled_for_checkout:false,expires_at:launchEnd,recur:true,maximum_recurring_intervals:2};
  else if(path==='/customers'){assert.equal(JSON.parse(opts.body).email,'fixture@example.com');data={id:ids.customer}}
- else if(path==='/transactions'){const body=JSON.parse(opts.body);assert.equal(body.customer_id,ids.customer);assert.equal(body.currency_code,'GBP');assert.deepEqual(body.items,[{price_id:checkoutPlan==='marketplace'?ids.market:checkoutPlan==='finder'?ids.finder:checkoutPlan==='full_suite'?ids.suite:ids.monthly,quantity:1}]);data={id:checkoutPlan==='marketplace'?ids.marketTxn:ids.txn,customer_id:ids.customer,currency_code:'GBP'}}
- else if(path==='/transactions/'+ids.txn)data={id:ids.txn,customer_id:ids.customer,currency_code:'GBP',status:'ready'};
- else if(path==='/transactions/'+ids.marketTxn)data={id:ids.marketTxn,customer_id:ids.customer,currency_code:'GBP',status:'ready'};
+ else if(path==='/transactions'){const body=JSON.parse(opts.body);assert.equal(body.customer_id,ids.customer);assert.equal(body.currency_code,'GBP');assert.deepEqual(body.items,[{price_id:checkoutPlan==='marketplace'?ids.market:checkoutPlan==='finder'?ids.finder:checkoutPlan==='full_suite'?ids.suite:ids.monthly,quantity:1}]);if(checkoutPlan==='monthly_launch')assert.equal(body.discount_id,ids.launch);data={id:checkoutPlan==='marketplace'?ids.marketTxn:ids.txn,customer_id:ids.customer,currency_code:'GBP',...(checkoutPlan==='monthly_launch'?{discount_id:ids.launch}:{})}}
+ else if(path==='/transactions/'+ids.txn)data={id:ids.txn,customer_id:ids.customer,currency_code:'GBP',status:'ready',items:[item()]};
+ else if(path==='/transactions/'+ids.marketTxn)data={id:ids.marketTxn,customer_id:ids.customer,currency_code:'GBP',status:'ready',items:oneOffDone().items};
  else if(path==='/customers/'+ids.customer+'/addresses/'+ids.address)data={id:ids.address,customer_id:ids.customer,country_code:addressCountry};
  else throw Error('Unexpected fixture API path '+path);
  return {ok:true,json:async()=>({data})};
@@ -210,3 +212,15 @@ test('Marketplace is independently gated and cannot sell a nonexistent, relabell
 });
 
 test('approved payment URL can only resume a server-owned pending transaction',async()=>{reset();await begin();const data=await api.resumePaddleCheckout(request('baker1',{transactionId:ids.txn}));assert.equal(data.transactionId,ids.txn);assert.equal(data.customerId,ids.customer);await assert.rejects(api.resumePaddleCheckout(request('baker1',{transactionId:ids.marketTxn})),e=>e.code==='permission-denied');await assert.rejects(api.resumePaddleCheckout(request('other',{transactionId:ids.txn})));const intent=records.get(root()+'checkoutIntents/'+ids.txn);intent.status='linked';await assert.rejects(api.resumePaddleCheckout(request('baker1',{transactionId:ids.txn})),e=>e.code==='permission-denied');});
+
+test('launch offer uses verified standard recurring price, requires consent and matches signed discount',async()=>{
+ for(const mismatch of [false,true]){
+  reset();checkoutPlan='monthly_launch';config.PADDLE_LAUNCH_ENABLED='true';config.PADDLE_LAUNCH_DISCOUNT_MAP=JSON.stringify({GB:{monthly_launch:{discountId:ids.launch,endsAt:launchEnd,periods:2}}});
+  const options=await api.getPaddleCheckoutOptions(request());const offer=options.plans.find(p=>p.plan==='monthly_launch');assert.equal(offer.amount,549);assert.equal(offer.regularAmount,849);assert.equal(offer.periods,2);
+  await assert.rejects(api.createPaddleCheckout(request('baker1',{plan:'monthly_launch'})),e=>e.code==='invalid-argument');
+  const out=await api.createPaddleCheckout(request('baker1',{plan:'monthly_launch',launchTermsAccepted:true}));assert.equal(out.transactionId,ids.txn);
+  const intent=records.get(root()+'checkoutIntents/'+ids.txn);assert.equal(intent.priceId,ids.monthly);assert.equal(intent.discountId,ids.launch);assert.equal(intent.amount,549);
+  assert.equal(await hook(event('subscription.created',subscription('active',future))),200);assert.equal(await hook(event('transaction.completed',completion({discount_id:mismatch?null:ids.launch}))),200);
+  assert.equal(user().subscriptionStatus,mismatch?'free':'active');assert.equal(records.get(root()+'checkoutIntents/'+ids.txn).status,mismatch?'review':'linked');
+ }
+});
