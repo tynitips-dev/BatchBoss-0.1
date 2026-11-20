@@ -21,6 +21,13 @@ type Account = {
   surname: string
   subscriptionPlan: string
   subscriptionStatus: string
+  subscriptionSource?: string
+  subscriptionBillingInterval?: string
+  subscriptionOffer?: string
+  paddlePlan?: string
+  paddleSubscriptionStatus?: string
+  countryCode?: string
+  accountingCurrency?: string
   registrationPlatform?: 'android' | 'web' | 'unknown'
   lastLoginPlatform?: 'android' | 'web' | 'unknown'
   lastLoginPlatformAt?: string | null
@@ -139,6 +146,8 @@ function platformName(value: unknown) {
 
 function Dashboard({ user }: { user: User }) {
   const [section,setSection]=useState<'overview'|'accounts'|'analytics'|'subscriptions'|'promotions'|'deletions'|'activity'|'suppliers'|'campaigns'>('overview')
+  const [billingFilter,setBillingFilter]=useState('all')
+  const [billingSearch,setBillingSearch]=useState('')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [requests, setRequests] = useState<DeletionRequest[]>([])
   const [audit, setAudit] = useState<AuditLog[]>([])
@@ -242,7 +251,7 @@ function Dashboard({ user }: { user: User }) {
       </section>}
       {section==='overview'&&<section className="lower-grid"><article className="panel"><h2>Website & app visits</h2><p>Visitor analytics are not connected yet. Configure Google Analytics 4 to see actual visitor figures.</p><button className="secondary" onClick={()=>setSection('analytics')}>View analytics setup</button></article><article className="panel"><h2>Attention needed</h2><p>{requests.filter(item=>item.status==='pending').length} pending deletions</p><p>{accounts.filter(item=>item.disabled).length} disabled accounts</p></article></section>}
       {section==='analytics'&&<section className="panel"><h2>Visitor tracking</h2><p>To measure app.batchboss.co.za visits, connect a Google Analytics 4 property and configure consent on the public web app.</p><p><strong>Tracking status:</strong> Not connected. No visitor totals are available yet.</p><p>After configuration, view verified figures in <a href="https://analytics.google.com/" target="_blank" rel="noreferrer">Google Analytics</a>. Displaying them inside this admin site requires a separate authenticated reporting connection.</p></section>}
-      {section==='subscriptions'&&<section className="panel"><h2>Subscription summary</h2><p>Account status totals, not verified payment revenue.</p><p>Paid Pro: {accounts.filter(a=>a.subscriptionPlan==='pro'&&a.subscriptionStatus==='active').length}</p><p>Pro gifts: {accounts.filter(a=>a.subscriptionPlan==='promo'&&a.subscriptionStatus==='active').length}</p></section>}
+      {section==='subscriptions'&&<section className="panel"><div className="panel-title"><div><h2>Subscription overview</h2><p>Stored account and entitlement status, not verified payment revenue. Sync now to refresh.</p></div></div><div className="stats">{[['Paystack','paystack'],['Paddle','paddle'],['Pro gifts','admin_promotion']].map(([label,source])=><article key={source}><CreditCard/><div><span>{label} · active / trialing</span><strong>{accounts.filter(a=>a.subscriptionSource===source&&['active','trialing'].includes(a.subscriptionStatus)&&a.subscriptionPlan!=='free'&&(!a.subscriptionExpiresAt||Date.parse(a.subscriptionExpiresAt)>Date.now())).length}</strong></div></article>)}</div><div className="panel-title"><label className="search"><Search/><input value={billingSearch} onChange={e=>setBillingSearch(e.target.value)} placeholder="Search accounts or bakeries…"/></label><label>Provider <select value={billingFilter} onChange={e=>setBillingFilter(e.target.value)}><option value="all">All providers</option><option value="paystack">Paystack</option><option value="paddle">Paddle</option><option value="admin_promotion">Pro gifts</option><option value="other">Other / unknown</option></select></label></div><div className="table-wrap"><table><thead><tr>{['Bakery / account','Country','Provider','Plan','Billing period','Status','Access until'].map(h=><th key={h} scope="col">{h}</th>)}</tr></thead><tbody>{accounts.filter(a=>(a.subscriptionPlan!=='free'||!!a.subscriptionSource)&&(billingFilter==='all'||(billingFilter==='other'?!['paystack','paddle','admin_promotion'].includes(a.subscriptionSource||''):a.subscriptionSource===billingFilter))&&[a.email,a.bakeryName,a.firstName,a.surname].some(v=>v?.toLowerCase().includes(billingSearch.trim().toLowerCase()))).map(a=><tr key={a.uid}><td><strong>{a.bakeryName||a.displayName||a.email}</strong><small>{a.email}</small></td><td>{a.countryCode||'Unknown'}{a.accountingCurrency&&<small>{a.accountingCurrency}</small>}</td><td>{a.subscriptionSource==='paystack'?'Paystack':a.subscriptionSource==='paddle'?'Paddle':a.subscriptionSource==='admin_promotion'?'Pro gift':a.subscriptionSource==='payfast'?'Legacy':a.subscriptionSource||'Unknown'}</td><td>{a.paddlePlan||a.subscriptionPlan||'Unknown'}{a.subscriptionOffer&&<small>{a.subscriptionOffer}</small>}</td><td>{a.subscriptionBillingInterval||'—'}</td><td><span className={`status ${a.subscriptionStatus==='active'?'active':'pending'}`}>{a.subscriptionStatus||'Unknown'}</span>{a.paddleSubscriptionStatus&&a.paddleSubscriptionStatus!==a.subscriptionStatus&&<small>Billing: {a.paddleSubscriptionStatus}</small>}</td><td>{a.subscriptionExpiresAt?new Date(a.subscriptionExpiresAt).toLocaleDateString('en-ZA'):'—'}</td></tr>)}</tbody></table></div><p><small>Legacy records are retained for audit. No payment or cancellation action is performed here.</small></p></section>}
       {(section==='suppliers'||section==='campaigns')&&<SuppliersAdmin key={section} initialTab={section==='campaigns'?'campaigns':'accounts'} />}
       {section==='promotions'&&<ProCodesAdmin/>}
       {section==='promotions'&&<section className="panel"><h2>Pro gifts</h2><p>Choose a customer below, select the gift duration and click Gift Pro. Seven-day gifts use the existing email flow when deployed.</p></section>}
