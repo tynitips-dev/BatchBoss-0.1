@@ -522,7 +522,7 @@ export const getMyPayfastPayments=onCall({region:"europe-west1",invoker:"public"
   return {payments:items.docs.map(doc=>{const p=doc.data();return {reference:doc.id,plan:p.plan,amountCents:p.amountCents,currency:p.currency,status:p.status,paidAt:p.paidAt?.toDate?.().toISOString()||null};}).sort((a,b)=>String(b.paidAt).localeCompare(String(a.paidAt)))};
 });
 
-export {getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
+export {createMarketplaceCheckout,verifyMarketplacePayment,managePaystackDirectory,getPaystackPlans,createPaystackCheckout,verifyPaystackPayment,managePaystackSubscription,paystackWebhook,expirePaystackAccess} from './paystack';
 
 export { sendBatchBossWelcomeEmail } from './welcomeEmail';
 export { sendBatchBossGiftProEmail } from './giftProEmail';
@@ -536,3 +536,5 @@ export {createProRedeemCode,redeemProCode,listProRedeemCodes,disableProRedeemCod
 export {getPaddleCheckoutOptions,createPaddleCheckout,paddleWebhook,createPaddlePortalSession} from './paddle';
 
 export {createPayfastSandboxCheckout,payfastSandboxNotify,getPayfastSandboxResult} from './payfastSandbox';
+
+export {getListingRegion,markMarketplaceSold,listListingDrafts,saveListingDraft,publishBakerListing,listPublishedBakerListings} from './listingDrafts';

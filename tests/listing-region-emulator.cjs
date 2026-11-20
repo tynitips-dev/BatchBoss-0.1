@@ -1,0 +1,60 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {createRequire}=require('node:module');
+const path=require('node:path');
+const {randomUUID,createHash}=require('node:crypto');
+const sdk=createRequire(path.join(__dirname,'../functions/package.json'));
+const host=process.env.FIRESTORE_EMULATOR_HOST||'',project=process.env.GCLOUD_PROJECT||'';
+if(!/^(127\.0\.0\.1|localhost):\d+$/.test(host)||!/^demo-/.test(project))throw Error('Regional listing tests require an isolated Firestore emulator.');
+sdk('firebase-admin/app').initializeApp({projectId:project});
+const {getFirestore,Timestamp}=sdk('firebase-admin/firestore');
+const db=getFirestore();
+const api=require('../functions/lib/listingDrafts');
+const member=uid=>({uid,token:{email:uid+'@example.test'}});
+const rows='listingCatalogs/marketplace/entries/';
+const draftRef=(uid,id)=>db.doc('listingWorkspaces/'+uid+'/drafts/'+id);
+const invoke=(fn,uid,data)=>fn.run({auth:uid?member(uid):undefined,data});
+async function seed(uid,region){await db.doc('users/'+uid).set({bakeryId:'bakery-'+uid});await db.doc('bakeries/bakery-'+uid).set(region);}
+async function giveSuite(uid){await db.doc('listingEntitlements/'+uid).set({fullSuiteExpiresAt:Timestamp.fromMillis(Date.now()+86400000)});}
+const item=id=>({kind:'marketplace',id,title:'Mixer',area:'Local city',description:'Example item',priceCents:4599,photos:[]});
+test('foreign listing drafts use the bakery currency and cannot publish on existing domestic plans',async()=>{
+ const uid='listing-us-'+randomUUID(),id=randomUUID();
+ await seed(uid,{countryCode:'US',currency:'USD'});
+ assert.deepEqual(await invoke(api.getListingRegion,uid,{}),{countryCode:'US',currency:'USD',locale:'en-US',publicationEnabled:false});
+ await invoke(api.saveListingDraft,uid,{...item(id),countryCode:'ZA',currency:'ZAR'});
+ const saved=(await draftRef(uid,id).get()).data();
+ assert.equal(saved.countryCode,'US');assert.equal(saved.currency,'USD');assert.equal(saved.priceCents,4599);
+ await giveSuite(uid);
+ await assert.rejects(()=>invoke(api.publishBakerListing,uid,{kind:'marketplace',id}),{code:'failed-precondition'});
+ assert.equal((await db.doc(rows+createHash('sha256').update(JSON.stringify([uid,id])).digest('hex')).get()).exists,false);
+ await db.doc('bakeries/bakery-'+uid).set({countryCode:'ZA',currency:'ZAR'});
+ await assert.rejects(()=>invoke(api.saveListingDraft,uid,item(id)),{code:'failed-precondition'});
+ assert.equal((await draftRef(uid,id).get()).get('currency'),'USD');
+});
+test('legacy SA and new ZAR listings retain their price, and public feed has no private data',async()=>{
+ const uid='listing-za-'+randomUUID(),id=randomUUID();
+ await seed(uid,{});await giveSuite(uid);
+ await invoke(api.saveListingDraft,uid,item(id));
+ await invoke(api.publishBakerListing,uid,{kind:'marketplace',id});
+ const foreign='listing-foreign-'+randomUUID();
+ await seed(foreign,{countryCode:'GB',currency:'GBP'});await giveSuite(foreign);
+ const foreignId=createHash('sha256').update(foreign).digest('hex');
+ await db.doc(rows+foreignId).set({ownerUid:foreign,kind:'marketplace',countryCode:'GB',currency:'GBP',title:'UK test oven',area:'London',description:'Test',priceCents:12345,status:'published',internalNotes:'private'});
+ const local=await invoke(api.listPublishedBakerListings,null,{kind:'marketplace',countryCode:'ZA'});
+ const uk=await invoke(api.listPublishedBakerListings,null,{kind:'marketplace',countryCode:'GB'});
+ assert.ok(local.listings.some(x=>x.title==='Mixer'&&x.priceCents===4599&&x.currency==='ZAR'));
+ assert.ok(local.listings.every(x=>x.countryCode==='ZA'));
+ assert.ok(uk.listings.some(x=>x.title==='UK test oven'&&x.priceCents===12345&&x.currency==='GBP'));
+ assert.ok(uk.listings.every(x=>x.countryCode==='GB'&&!('ownerUid' in x)&&!('internalNotes' in x)));
+ await assert.rejects(()=>invoke(api.listPublishedBakerListings,null,{kind:'marketplace',countryCode:'ZZ'}),{code:'invalid-argument'});
+ await invoke(api.markMarketplaceSold,uid,{id});
+ assert.equal((await db.doc(rows+createHash('sha256').update(JSON.stringify([uid,id])).digest('hex')).get()).exists,false);
+});
+test('pending checkout prevents price edits and duplicate publication attempts',async()=>{
+ const uid='listing-pending-'+randomUUID(),id=randomUUID();await seed(uid,{countryCode:'ZA',currency:'ZAR'});await giveSuite(uid);
+ await invoke(api.saveListingDraft,uid,item(id));
+ await db.doc('listingWorkspaces/'+uid+'/marketplaceCheckouts/'+id).set({status:'pending'});
+ await assert.rejects(()=>invoke(api.saveListingDraft,uid,{...item(id),priceCents:999}),{code:'failed-precondition'});
+ await assert.rejects(()=>invoke(api.publishBakerListing,uid,{kind:'marketplace',id}),{code:'failed-precondition'});
+ assert.equal((await draftRef(uid,id).get()).get('priceCents'),4599);
+});
