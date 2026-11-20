@@ -65,10 +65,22 @@ export function parseVerifiedPaddleEvent(raw:string):Event{
  if(!id(e.event_id,'evt')||typeof e.event_type!=='string'||!Number.isFinite(millis(e.occurred_at))||!e.data||typeof e.data!=='object')throw Error('Invalid event envelope');
  return {event_id:e.event_id,event_type:e.event_type,occurred_at:str(e.occurred_at),data:obj(e.data)};
 }
+// Paddle timestamps can contain microseconds; preserve fractional ordering instead
+// of dropping distinct events that happen in the same JavaScript millisecond.
+export function providerEventClock(value:unknown):number{
+ const ms=millis(value);
+ if(!Number.isFinite(ms))return NaN;
+ const fraction=typeof value==='string'?/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/i.exec(value)?.[1]||'':'';
+ const micros=Number(fraction.padEnd(6,'0').slice(3,6)||'0');
+ return ms*1000+micros;
+}
 function subscriptionSnapshot(data:Json){
  const period=obj(data.current_billing_period),change=obj(data.scheduled_change);
  const end=millis(period.ends_at),next=millis(data.next_billed_at);
- const expiry=Number.isFinite(end)?end:(data.status==='trialing'&&Number.isFinite(next)?next:null);
+ // Trial billing periods can be null; next_billed_at is the card-backed trial end.
+ // Also retain an explicitly supplied item trial end when no billing date exists.
+ const trialEnds=Array.isArray(data.items)?data.items.map(item=>millis(obj(obj(item).trial_dates).ends_at)).filter(Number.isFinite):[];
+ const expiry=data.status==='trialing'?(Number.isFinite(end)?end:Number.isFinite(next)?next:trialEnds.length?Math.min(...trialEnds):null):Number.isFinite(end)?end:null;
  return {customerId:str(data.customer_id),status:str(data.status),expiresAtMs:expiry,scheduledAction:str(change.action)||null,scheduledAt:str(change.effective_at)||null,items:Array.isArray(data.items)?data.items:[],updatedAt:str(data.updated_at)||null};
 }
 
@@ -175,8 +187,9 @@ async function applyEvent(m:Mode,e:Event){
  const db=getFirestore(),base=db.collection('paddleBilling').doc(m);
  const kind=e.event_type.split('.')[0],prefix=kind==='subscription'?'sub':kind==='customer'?'ctm':'txn';
  if(!id(e.data.id,prefix))throw Error('Invalid Paddle entity ID');
- const entityId=e.data.id,occurredAtMs=millis(e.occurred_at);
+ const entityId=e.data.id,occurredAtMs=millis(e.occurred_at),occurredAtMicros=providerEventClock(e.occurred_at);
  const ref=base.collection(kind+'s').doc(entityId),receipt=base.collection('events').doc(e.event_id);
+ if((await receipt.get()).exists)return 'duplicate';
  const prices=kind==='subscription'||kind==='transaction'?config():{};
  const liveProvision=m==='live'&&provisionEnabled.value()==='true';
  // Fetch the real billing country only for the original checkout, not recurring payments.
@@ -192,7 +205,8 @@ async function applyEvent(m:Mode,e:Event){
   const [seen,old]=await Promise.all([tx.get(receipt),tx.get(ref)]);
   if(seen.exists)return 'duplicate';
   const oldData=old.data();
-  const isNew=shouldApplyPaddleEvent(oldData?.occurredAtMs,occurredAtMs);
+  const previousClock=typeof oldData?.occurredAtMicros==='number'?oldData.occurredAtMicros:typeof oldData?.occurredAtMs==='number'?oldData.occurredAtMs*1000:undefined;
+  const isNew=shouldApplyPaddleEvent(previousClock,occurredAtMicros);
   let binding:Json={},profile:Json={},profileRef:FirebaseFirestore.DocumentReference|undefined;
   if(kind==='subscription'&&isNew&&liveProvision){
    const b=await tx.get(base.collection('subscriptionBindings').doc(entityId));
@@ -232,13 +246,13 @@ async function applyEvent(m:Mode,e:Event){
   }
   if(isNew){
    const data=kind==='subscription'?subscriptionSnapshot(e.data):kind==='customer'?{email:str(e.data.email),status:str(e.data.status)}:{customerId:str(e.data.customer_id),subscriptionId:str(e.data.subscription_id)||null,status:str(e.data.status),currency:str(e.data.currency_code),totals:obj(obj(e.data.details).totals)};
-   tx.set(ref,{...data,occurredAtMs,lastEventId:e.event_id,updatedAt:FieldValue.serverTimestamp()});
+   tx.set(ref,{...data,occurredAtMs,occurredAtMicros,lastEventId:e.event_id,updatedAt:FieldValue.serverTimestamp()});
    if(kind==='subscription'&&profileRef){
     const patch=projection(profile,entityId,subscriptionSnapshot(e.data),prices,liveProvision);
     if(patch)tx.update(profileRef,patch);
    }
   }
-  tx.create(receipt,{eventType:e.event_type,entityId,occurredAtMs,applied:isNew,receivedAt:FieldValue.serverTimestamp()});
+  tx.create(receipt,{eventType:e.event_type,entityId,occurredAtMs,occurredAtMicros,applied:isNew,receivedAt:FieldValue.serverTimestamp()});
   return isNew?'mirrored':'stale';
  });
 }

@@ -61,3 +61,5 @@ test('completed webhook must match the exact server-created checkout',()=>{
  assert.equal(isFreeCheckoutProfile({subscriptionPlan:'free',subscriptionStatus:'free'}),true);
  for(const source of ['paystack','paddle','payfast','admin_promotion'])assert.equal(isFreeCheckoutProfile({subscriptionPlan:'free',subscriptionStatus:'free',subscriptionSource:source}),false);
 });
+
+test('event ordering preserves provider microsecond precision',()=>{const {providerEventClock}=require('../functions/lib/paddle');const a=providerEventClock('2026-11-20T09:00:00.123001Z'),b=providerEventClock('2026-11-20T09:00:00.123002Z');assert.equal(b-a,1);assert.equal(shouldApplyPaddleEvent(b,a),false);assert.equal(providerEventClock('2026-11-20T11:00:00.123002+02:00'),b);});
