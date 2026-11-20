@@ -234,7 +234,7 @@ type WorkspaceItem = { id: string; name?: string; title?: string; description?: 
 function Dashboard({ profile }: { profile: UserProfile }) {
   const region=useBakeryRegion()
   const [supplierCategory,setSupplierCategory]=useState('')
-  const [active, setActive] = useState<ModuleKey>(()=>{const params=new URLSearchParams(location.search);if(['marketplace','paddle_marketplace'].includes(params.get('payment')||''))return 'marketplace';if(params.has('payment')||params.has('redeem'))return 'subscription';const tab=params.get('tab');return tab==='directoryListing'||tab==='marketplace'?tab:'home'})
+  const [active, setActive] = useState<ModuleKey>(()=>{const params=new URLSearchParams(location.search);if(['marketplace','paddle_marketplace'].includes(params.get('payment')||''))return 'marketplace';if(params.has('payment')||params.has('redeem'))return 'subscription';const tab=params.get('tab');return tab==='directoryListing'||tab==='marketplace'||tab==='subscription'?tab:'home'})
   const [items, setItems] = useState<Record<string, WorkspaceItem[]>>({})
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkspaceItem | null>(null)
