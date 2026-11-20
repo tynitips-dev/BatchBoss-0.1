@@ -63,10 +63,10 @@ function event(type,data,at){
  return {event_id:'evt_'+n.toString(36).padStart(26,'0'),event_type:type,occurred_at:at??new Date(Date.now()+n*1000).toISOString(),data};
 }
 function subscription(status='active',expiry=future,extra={}){
- return {id:ids.sub,customer_id:ids.customer,status,current_billing_period:expiry?{ends_at:expiry}:null,next_billed_at:expiry,items:[item()],...extra};
+ return {id:ids.sub,customer_id:ids.customer,status,billing_cycle:{interval:'month',frequency:1},current_billing_period:expiry?{starts_at:plus(-1),ends_at:expiry}:null,next_billed_at:expiry,items:[item()],...extra};
 }
 function completion(extra={}){
- return {id:ids.txn,subscription_id:ids.sub,customer_id:ids.customer,address_id:ids.address,currency_code:'GBP',collection_mode:'automatic',origin:'api',status:'completed',items:[item()],details:{totals:{total:'0'}},...extra}
+ return {id:ids.txn,subscription_id:ids.sub,customer_id:ids.customer,address_id:ids.address,currency_code:'GBP',collection_mode:'automatic',origin:'api',status:'completed',items:[item()],payments:[],details:{tax_rates_used:[],line_items:[],totals:{total:'0'}},...extra}
 }
 async function hook(e,{valid=true,alter=false,raw=true}={}){
  const body=JSON.stringify(e),ts=Math.floor(Date.now()/1000),sig=createHmac('sha256',signing).update(ts+':'+body).digest('hex');let code;
