@@ -7,7 +7,6 @@ import type {UserProfile} from './types'
 import {useBakeryRegion} from './BakeryRegion'
 import type {LaunchCountry} from './workspace-utils'
 import RedeemProCode from './RedeemProCode'
-import RegionalPlanPrices from './RegionalPlanPrices'
 
 type Plan='weekly'|'monthly'|'annual'|'finder'|'full_suite'|'monthly_launch'|'annual_launch'
 type Mode='sandbox'|'live'
@@ -51,7 +50,7 @@ export default function PaddleSubscriptionView({profile,isPro}:{profile:UserProf
   }catch(e){setError(e instanceof Error?e.message:'Account management is temporarily unavailable.')}
   finally{setBusy('')}
  }
- return <section className="subscription-view"><RedeemProCode/><RegionalPlanPrices/><a href="/pricing/">Compare BatchBoss plans and regional prices</a>
+ return <section className="subscription-view"><RedeemProCode/>
  <div className="subscription-intro"><span className="eyebrow">Your plan</span><h2>{isPro?'BatchBoss Pro is active':linked&&profile.paddlePlan==='finder'?'Your Baker Finder subscription':'Choose your BatchBoss plan'}</h2><p>Recipe costing, products, suppliers, invoices, quotes and receipts in one bakery workspace.</p></div>
  {error&&<p role="alert" className="error-message">{error}</p>}
  {paymentReturned&&<p role="status" className="success-note">{isPro?'Your subscription is active.':'Your payment is being verified. Access updates after the secure payment confirmation. Please do not start another purchase.'}</p>}
